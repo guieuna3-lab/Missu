@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "MissU",
+    "slug": "missu",
+    "version": "0.1.0",
+    "scheme": "missu",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "plugins": ["expo-router"],
+    "web": {
+      "output": "static"
+    }
+  }
+}
