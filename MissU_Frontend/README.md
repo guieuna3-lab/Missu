@@ -1,7 +1,7 @@
 # MissU Frontend
 
 React Native + Expo + TypeScript로 개발하는 미슈 모바일 앱이다.
-현재는 Expo Router 기반 시작 화면과 타입·린트·포맷 검사를 제공한다. 백엔드 연동은 아직 없다.
+Expo Router 기반 시작 화면과 03 습득물 검색·공개 상세를 제공한다. 검색·상세는 모의 데이터이며 백엔드 연동은 아직 없다.
 
 ## 실행 (Windows PowerShell / VS Code 터미널)
 
@@ -35,6 +35,9 @@ npm start
 
 - `src/app/_layout.tsx`: 공통 레이아웃·라우터.
 - `src/app/index.tsx`: 개발 환경 확인용 시작 화면. 실제 홈 UI 설계가 아니다.
+- `src/app/search/index.tsx`: 검색 전·조건·결과·결과 없음 화면.
+- `src/app/items/[id].tsx`: 비회원 공개 상세.
+- 검색 예시·팀원 연결 지점·검증 기록: [검색 구현 안내](../docs/SEARCH_IMPLEMENTATION.md).
 - `@/`: `src/`를 가리키는 별칭.
 - 기능 추가 시 `src/features/`, 실제 공통 UI가 생기면 `src/components/`, API 공통 처리가 필요하면 `src/lib/`를 만든다.
 - 라우트 폴더에는 화면 경로와 레이아웃만 둔다. 컴포넌트·데이터 파일을 넣으면 화면으로 해석될 수 있다.
