@@ -25,7 +25,13 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <Stack screenOptions={{ headerShown: false }} />
+      <PreviewProvider>
+        <SignupDraftProvider>
+          <Stack
+            screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}
+          />
+        </SignupDraftProvider>
+      </PreviewProvider>
     </SafeAreaProvider>
   );
 }

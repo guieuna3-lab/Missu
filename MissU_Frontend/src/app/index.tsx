@@ -18,11 +18,3 @@ export default function HomeScreen() {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFFFF' },
-  content: { flex: 1, justifyContent: 'center', padding: 24, gap: 12 },
-  title: { color: '#111827', fontSize: 32, fontWeight: '700' },
-  description: { color: '#374151', fontSize: 18 },
-  note: { color: '#6B7280', fontSize: 14 },
-});
