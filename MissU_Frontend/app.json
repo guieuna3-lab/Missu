@@ -6,7 +6,7 @@
     "scheme": "missu",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-router"],
+    "plugins": ["expo-router", "expo-image", "expo-font"],
     "web": {
       "output": "static"
     }
