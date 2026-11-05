@@ -1,0 +1,20 @@
+{
+  "verifiedAt": "2026-11-02T21:38:52.251Z",
+  "environment": "Windows local PostgreSQL, test DB only",
+  "concurrentUsers": 30,
+  "foundItems": 10000,
+  "photoMetadata": 30000,
+  "warmupSeconds": 60,
+  "measureSeconds": 300,
+  "measured": "검색·상세·근처 JSON 읽기 + 분실 신고 쓰기. 사진 파일 다운로드·외부 발송·프런트엔드 제외.",
+  "requests": 29578,
+  "failures": 0,
+  "failureRate": 0,
+  "readP95Ms": 634.8,
+  "writeP95Ms": 564.73,
+  "statusCounts": {
+    "200": 26620,
+    "201": 2958
+  },
+  "targetsPassed": true
+}
