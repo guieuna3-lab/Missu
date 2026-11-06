@@ -17,6 +17,7 @@ const icons = {
   'user-active': require('../../assets/icons/user-active.svg'),
   lock: require('../../assets/icons/lock.svg'),
   back: require('../../assets/icons/back.svg'),
+  search: require('../../assets/icons/search.svg'),
 };
 export type IconName = keyof typeof icons;
 

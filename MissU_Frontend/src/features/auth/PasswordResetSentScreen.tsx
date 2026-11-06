@@ -2,9 +2,9 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { Card } from '@/components/Card';
 import { AuthScreen } from './AuthScreen';
-import { FormField, FormMessage, TextLink } from './FormField';
 import { requestPasswordReset } from './mockAuthApi';
 import { requestErrorMessage } from './validation';
 

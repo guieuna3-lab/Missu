@@ -1,7 +1,7 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, typography } from '@/constants/theme';
-import { usePreview } from '@/lib/preview/PreviewProvider';
+import { usePreview, type LoginOrigin } from '@/lib/preview/PreviewProvider';
 import { ActionButton } from './ActionButton';
 import { Icon } from './Icon';
 
@@ -10,14 +10,18 @@ export function Header({
   title,
   onBack,
   backLabel = '뒤로 가기',
+  accountOrigin,
 }: {
   welcome?: boolean;
   /** Shows a screen title instead of the logo. */
   title?: string;
   onBack?: () => void;
   backLabel?: string;
+  /** Shows the account controls beside a titled header. */
+  accountOrigin?: LoginOrigin;
 }) {
   const { profile, startLogin } = usePreview();
+  const showAccount = !welcome && (title === undefined || accountOrigin !== undefined);
   return (
     <View style={[styles.header, welcome && { paddingHorizontal: 24 }]}>
       {title !== undefined ? (
@@ -37,31 +41,29 @@ export function Header({
           <Text style={[typography.action, styles.title]}>{title}</Text>
         </View>
       ) : (
-        <>
-          <Text style={[styles.wordmark, welcome && { fontSize: 18, lineHeight: 25 }]}>
-            MissU<Text style={welcome && { color: colors.blue }}>.</Text>
-          </Text>
-          {!welcome &&
-            (profile ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${profile.name} 님 내역`}
-                onPress={() => router.replace('/history')}
-                style={styles.member}
-              >
-                <Text numberOfLines={1} style={typography.label}>
-                  {profile.name} 님
-                </Text>
-              </Pressable>
-            ) : (
-              <ActionButton
-                label="로그인"
-                onPress={() => startLogin('home')}
-                style={styles.login}
-              />
-            ))}
-        </>
+        <Text style={[styles.wordmark, welcome && { fontSize: 18, lineHeight: 25 }]}>
+          MissU<Text style={welcome && { color: colors.blue }}>.</Text>
+        </Text>
       )}
+      {showAccount &&
+        (profile ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`${profile.name} 님 내역`}
+            onPress={() => router.replace('/history')}
+            style={styles.member}
+          >
+            <Text numberOfLines={1} style={typography.label}>
+              {profile.name} 님
+            </Text>
+          </Pressable>
+        ) : (
+          <ActionButton
+            label="로그인"
+            onPress={() => startLogin(accountOrigin ?? 'home')}
+            style={styles.login}
+          />
+        ))}
     </View>
   );
 }

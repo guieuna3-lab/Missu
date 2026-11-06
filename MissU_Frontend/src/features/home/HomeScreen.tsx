@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -19,7 +20,12 @@ export function HomeScreen() {
           <Text accessibilityRole="header" style={[typography.heading, styles.white]}>
             {'잃어버린 물건,\n같이 찾아요'}
           </Text>
-          <ActionButton label="습득물 검색하기" variant="white" style={{ marginTop: 8 }} />
+          <ActionButton
+            label="습득물 검색하기"
+            variant="white"
+            style={{ marginTop: 8 }}
+            onPress={() => router.push('/search')}
+          />
         </View>
         <Pressable
           disabled
@@ -58,10 +64,8 @@ export function HomeScreen() {
             previewItems.map((item) => (
               <Pressable
                 key={item.id}
-                disabled
                 accessibilityRole="button"
-                accessibilityState={{ disabled: true }}
-                accessibilityHint={unavailableHint}
+                onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
                 style={styles.item}
               >
                 <Icon name={item.icon} />

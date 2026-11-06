@@ -1,4 +1,5 @@
 import { Image } from 'expo-image';
+import { router } from 'expo-router';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Header } from '@/components/Header';
@@ -34,7 +35,7 @@ export function WelcomeScreen() {
         </View>
       </ScrollView>
       <View style={styles.actions}>
-        <ActionButton label="습득물 먼저 찾아보기" large />
+        <ActionButton label="습득물 먼저 찾아보기" large onPress={() => router.push('/search')} />
         <ActionButton
           label="로그인 / 회원가입"
           variant="plain"

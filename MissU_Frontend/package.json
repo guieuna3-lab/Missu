@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "main": "expo-router/entry",
   "dependencies": {
-    "@expo-google-fonts/noto-sans-kr": "^0.4.4",
     "expo": "~58.0.20",
     "expo-constants": "~58.0.13",
     "expo-font": "~58.0.11",

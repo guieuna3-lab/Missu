@@ -5,16 +5,23 @@ import {
   BackHandler,
   FlatList,
   Keyboard,
+  KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Button } from '@/components/Button';
+import { ActionBar, ActionButton } from '@/components/ActionButton';
+import { BottomNavigation } from '@/components/BottomNavigation';
+import { Card } from '@/components/Card';
 import { FormField } from '@/components/FormField';
-import { BottomNavigation, Icon, Notice, Screen } from '@/components/Screen';
+import { Header } from '@/components/Header';
+import { Icon } from '@/components/Icon';
+import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
+import { usePreview } from '@/lib/preview/PreviewProvider';
 import { formatFoundAt, itemRepository } from './items';
 import type { PublicItem, SearchFilters } from './items';
 
@@ -27,12 +34,12 @@ const periods = [
 type SearchState = { status: 'idle' | 'loading' | 'success' | 'error'; items: PublicItem[] };
 
 export default function SearchScreen() {
+  const { profile } = usePreview();
   const [filters, setFilters] = useState(initialFilters);
   const [draft, setDraft] = useState(initialFilters);
   const [conditions, setConditions] = useState(false);
   const [choosingPeriod, setChoosingPeriod] = useState(false);
   const [validation, setValidation] = useState('');
-  const [notice, setNotice] = useState('');
   const [state, setState] = useState<SearchState>({ status: 'idle', items: [] });
   const pending = useRef(false);
   const requestId = useRef(0);
@@ -80,11 +87,11 @@ export default function SearchScreen() {
     setValidation('');
     setConditions(true);
   }
-  const goHome = () => router.replace('/');
-  const login = () =>
-    setNotice(
-      '로그인이 필요한 기능이에요. 로그인 화면이 연결되면 이 물품에서 계속 진행할 수 있어요.',
-    );
+  function back() {
+    if (conditions) setConditions(false);
+    else if (router.canGoBack()) router.back();
+    else router.replace('/home');
+  }
   const heading = (
     <>
       <FormField
@@ -98,15 +105,13 @@ export default function SearchScreen() {
         editable={state.status !== 'loading'}
         returnKeyType="search"
         onSubmitEditing={() => void search()}
-        error={validation}
+        error={validation || undefined}
       />
-      <Button
+      <ActionButton
+        label="기간·장소 조건"
         variant="outline"
-        disabled={state.status === 'loading'}
-        onPress={() => openConditions()}
-      >
-        기간·장소 조건
-      </Button>
+        onPress={state.status === 'loading' ? undefined : () => openConditions()}
+      />
       {(filters.period !== 'all' || filters.place.trim()) && (
         <Text style={typography.body}>
           {periods.find((p) => p.value === filters.period)?.label} ·{' '}
@@ -139,7 +144,7 @@ export default function SearchScreen() {
             검색하지 못했어요
           </Text>
           <Text style={typography.body}>잠시 후 다시 시도해 주세요. 입력한 조건은 유지돼요.</Text>
-          <Button onPress={() => void search()}>다시 시도</Button>
+          <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
       {state.status === 'success' &&
@@ -161,41 +166,26 @@ export default function SearchScreen() {
               일치하는 습득물이 없어요
             </Text>
             <Text style={typography.body}>검색어를 줄이거나 기간·장소 조건을 넓혀 보세요.</Text>
-            <Button variant="outline" onPress={() => openConditions(true)}>
-              검색 조건 다시 설정
-            </Button>
+            <ActionButton
+              label="검색 조건 다시 설정"
+              variant="outline"
+              onPress={() => openConditions(true)}
+            />
           </>
         ))}
     </>
   );
   return (
-    <>
-      <Screen
-        title={conditions ? '검색 조건' : '습득물 검색'}
-        onBack={() => (conditions ? setConditions(false) : goHome())}
-        onLogin={conditions ? undefined : login}
-        action={
-          <Button
-            loading={state.status === 'loading'}
-            onPress={() => void search(conditions ? draft : filters)}
-          >
-            {conditions
-              ? '검색 결과 보기'
-              : state.status === 'idle'
-                ? '습득물 검색'
-                : '다시 검색하기'}
-          </Button>
-        }
-        navigation={
-          conditions ? undefined : (
-            <BottomNavigation
-              onSelect={(name) =>
-                name === '홈' ? goHome() : setNotice(`${name} 화면은 아직 연결되지 않았어요.`)
-              }
-            />
-          )
-        }
+    <Screen>
+      <KeyboardAvoidingView
+        style={styles.page}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
+        <Header
+          title={conditions ? '검색 조건' : '습득물 검색'}
+          onBack={back}
+          accountOrigin={conditions ? undefined : 'search'}
+        />
         {conditions ? (
           <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
             <View style={styles.stack}>
@@ -209,7 +199,7 @@ export default function SearchScreen() {
                   setDraft((f) => ({ ...f, query }));
                   setValidation('');
                 }}
-                error={validation}
+                error={validation || undefined}
               />
               <View style={styles.field}>
                 <Text style={typography.label}>기간</Text>
@@ -262,38 +252,47 @@ export default function SearchScreen() {
             ListHeaderComponent={<View style={styles.stack}>{heading}</View>}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
             renderItem={({ item }) => (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${item.name}, ${item.location}, 상세 보기`}
+              <Card
+                title={item.name}
                 onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
-                style={({ pressed }) => [styles.card, pressed && styles.pressed]}
               >
-                <Text style={typography.label}>{item.name}</Text>
-                <Text style={typography.body}>
-                  {item.location} · {formatFoundAt(item.foundAt).slice(5)}
-                  {'\n'}보관 중
-                </Text>
-              </Pressable>
+                {item.location} · {formatFoundAt(item.foundAt).slice(5)}
+                {'\n'}보관 중
+              </Card>
             )}
             ListFooterComponent={
               state.status === 'success' && state.items.length > 0 ? (
                 <Text style={[typography.body, styles.footer]}>
-                  {'공개 정보는 누구나 볼 수 있어요.\n반환 요청은 로그인 후 가능합니다.'}
+                  공개 정보는 누구나 볼 수 있어요.
+                  {!profile && '\n반환 요청은 로그인 후 가능합니다.'}
                 </Text>
               ) : undefined
             }
           />
         )}
-      </Screen>
-      <Notice message={notice} onClose={() => setNotice('')} />
-    </>
+        <ActionBar>
+          <ActionButton
+            label={
+              conditions
+                ? '검색 결과 보기'
+                : state.status === 'idle'
+                  ? '습득물 검색'
+                  : '다시 검색하기'
+            }
+            loading={state.status === 'loading'}
+            onPress={() => void search(conditions ? draft : filters)}
+          />
+        </ActionBar>
+        {!conditions && <BottomNavigation selected="home" />}
+      </KeyboardAvoidingView>
+    </Screen>
   );
 }
 const styles = StyleSheet.create({
+  page: { flex: 1 },
   content: { paddingHorizontal: 20, paddingVertical: 24 },
   stack: { gap: 16, marginBottom: 16 },
   intro: { backgroundColor: colors.lightBlue, padding: 16, borderRadius: 12, gap: 8 },
-  card: { backgroundColor: colors.white, padding: 16, borderRadius: 12, gap: 8 },
   field: { gap: 8 },
   select: {
     minHeight: 52,
@@ -310,5 +309,4 @@ const styles = StyleSheet.create({
   feedback: { gap: 16, paddingVertical: 16 },
   separator: { height: 16 },
   footer: { marginTop: 16 },
-  pressed: { opacity: 0.65 },
 });

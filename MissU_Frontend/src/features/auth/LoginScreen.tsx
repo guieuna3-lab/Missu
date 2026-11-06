@@ -2,16 +2,16 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { AuthScreen } from './AuthScreen';
-import { FormField, FormMessage, TextLink } from './FormField';
 import { login } from './mockAuthApi';
 import { isEmail, requestErrorMessage } from './validation';
 
 // Figma 02.01 (empty), 02.02 (filled) and 02-A.01 (error) are states of this screen.
 export function LoginScreen() {
-  const { signIn, continueAfterLogin } = usePreview();
+  const { signIn, cancelLogin, continueAfterLogin } = usePreview();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<{ message: string; fields: boolean } | null>(null);
@@ -41,7 +41,7 @@ export function LoginScreen() {
   return (
     <AuthScreen
       title="로그인"
-      onBack={() => router.dismissTo('/home')}
+      onBack={cancelLogin}
       heading="이메일로 로그인하세요"
       description="MissU 계정으로 신고와 반환을 이어가세요."
     >

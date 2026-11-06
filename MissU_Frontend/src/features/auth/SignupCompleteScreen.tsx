@@ -16,9 +16,12 @@ export function SignupCompleteScreen() {
       centered
       actions={
         <>
-          <ActionButton label="MissU 시작하기" onPress={continueAfterLogin} />
-          {/* 03.01 search is outside the implemented areas, so this stays disabled. */}
-          <ActionButton label="회원 습득물 둘러보기" variant="outline" />
+          <ActionButton label="MissU 시작하기" onPress={() => continueAfterLogin()} />
+          <ActionButton
+            label="회원 습득물 둘러보기"
+            variant="outline"
+            onPress={() => continueAfterLogin('/search')}
+          />
         </>
       }
     >

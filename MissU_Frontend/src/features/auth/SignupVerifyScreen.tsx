@@ -2,10 +2,10 @@ import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FormField, FormMessage } from '@/components/FormField';
 import { typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { AuthScreen } from './AuthScreen';
-import { FormField, FormMessage } from './FormField';
 import { confirmSignup, resendSignupCode } from './mockAuthApi';
 import { useSignupDraft } from './SignupDraft';
 import { isVerificationCode, requestErrorMessage } from './validation';
@@ -17,7 +17,7 @@ export function SignupVerifyScreen() {
   const signup = useSignupDraft();
   // Read once: the draft is cleared while this screen may still be closing.
   const [draft] = useState(signup.draft);
-  const { signIn } = usePreview();
+  const { completeSignup } = usePreview();
   const [code, setCode] = useState('');
   const [codeError, setCodeError] = useState<string>();
   const [message, setMessage] = useState<Message | null>(null);
@@ -48,10 +48,7 @@ export function SignupVerifyScreen() {
     setSubmitting(true);
     setMessage(null);
     try {
-      signIn(await confirmSignup({ email: draft.email, nickname: draft.nickname, code }));
-      // Sign-up is finished, so its screens leave the history.
-      if (router.canDismiss()) router.dismissAll();
-      router.replace('/signup/complete');
+      completeSignup(await confirmSignup({ email: draft.email, nickname: draft.nickname, code }));
     } catch (requestError) {
       setMessage({ text: requestErrorMessage(requestError), tone: 'error' });
       setSubmitting(false);
