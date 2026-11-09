@@ -31,6 +31,7 @@ const periods = [
   { value: '30', label: '최근 30일' },
 ] as const;
 type SearchState = { status: 'idle' | 'loading' | 'success' | 'error'; items: PublicItem[] };
+const initialState: SearchState = { status: 'idle', items: [] };
 
 export default function SearchScreen() {
   const { profile } = usePreview();
@@ -39,7 +40,7 @@ export default function SearchScreen() {
   const [conditions, setConditions] = useState(false);
   const [choosingPeriod, setChoosingPeriod] = useState(false);
   const [validation, setValidation] = useState('');
-  const [state, setState] = useState<SearchState>({ status: 'idle', items: [] });
+  const [state, setState] = useState(initialState);
   const pending = useRef(false);
   const requestId = useRef(0);
   useEffect(
@@ -98,7 +99,9 @@ export default function SearchScreen() {
         placeholder="예: 검정 이어폰, 자동차 키"
         value={filters.query}
         onChangeText={(query) => {
+          if (pending.current) return;
           setFilters((f) => ({ ...f, query }));
+          setState(initialState);
           setValidation('');
         }}
         editable={state.status !== 'loading'}

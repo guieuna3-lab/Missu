@@ -61,9 +61,8 @@ function ItemRow({ item }: { item: NearbyItem }) {
 
 export function NearbyScreen() {
   const [offset, setOffset] = useState<MapPoint>(zeroOffset);
-  const [searchedOffset, setSearchedOffset] = useState<MapPoint>(zeroOffset);
+  const [searchedArea, setSearchedArea] = useState({ offset: zeroOffset, label: '삼선동' });
   const [filters, setFilters] = useState(defaultFilters);
-  const [area, setArea] = useState('삼선동');
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<string[]>([]);
   const [selectedId, setSelectedId] = useState<string>();
@@ -82,9 +81,13 @@ export function NearbyScreen() {
     }, [searching]),
   );
 
-  const items = searchNearby(filters, query, searchedOffset);
+  const items = searchNearby(filters, query, searchedArea.offset);
   const selected = items.find(({ id }) => id === selectedId);
-  const moved = offset.x !== searchedOffset.x || offset.y !== searchedOffset.y;
+  const moved = offset.x !== searchedArea.offset.x || offset.y !== searchedArea.offset.y;
+  const hasFilters =
+    filters.category !== defaultFilters.category ||
+    filters.registeredDays !== defaultFilters.registeredDays ||
+    filters.radiusM !== defaultFilters.radiusM;
   const category = categories.find(({ value }) => value === filters.category)?.label;
   const radius = radii.find(({ value }) => value === filters.radiusM)?.label;
   const resultLabel = filters.category === 'ALL' ? '이 주변 습득물' : category;
@@ -97,13 +100,16 @@ export function NearbyScreen() {
   function centerMap(point: MapPoint, label: string) {
     const next = { x: mapOrigin.x - point.x, y: mapOrigin.y - point.y };
     moveMap(next);
-    setSearchedOffset(next);
-    setArea(label);
+    setSearchedArea({ offset: next, label });
+  }
+
+  function searchVisibleArea() {
+    if (moved) setSearchedArea({ offset, label: '선택한 지역' });
   }
 
   function updateFilters(next: NearbyFilters) {
     setFilters(next);
-    setSearchedOffset(offset);
+    searchVisibleArea();
     setSelectedId(undefined);
     setOverlay(undefined);
   }
@@ -115,7 +121,7 @@ export function NearbyScreen() {
       setQuery('');
     } else {
       setQuery(input);
-      setSearchedOffset(offset);
+      searchVisibleArea();
     }
     if (input)
       setRecent((previous) => [input, ...previous.filter((term) => term !== input)].slice(0, 5));
@@ -151,12 +157,12 @@ export function NearbyScreen() {
             <View style={styles.header}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`현재 검색 지역 ${area}, 장소 변경`}
+                accessibilityLabel={`현재 검색 지역 ${searchedArea.label}, 장소 변경`}
                 onPress={() => setSearching(true)}
                 style={styles.area}
               >
                 <Text style={styles.areaName} numberOfLines={1}>
-                  {area}
+                  {searchedArea.label}
                 </Text>
                 <MapIcon source={mapArt.chevron} size={16} />
               </Pressable>
@@ -218,10 +224,7 @@ export function NearbyScreen() {
                   {moved && (
                     <Pressable
                       accessibilityRole="button"
-                      onPress={() => {
-                        setSearchedOffset(offset);
-                        setArea('선택한 지역');
-                      }}
+                      onPress={searchVisibleArea}
                       style={styles.mapButton}
                     >
                       <Text style={[styles.controlText, styles.blue]}>이 지역 재검색</Text>
@@ -254,9 +257,11 @@ export function NearbyScreen() {
                   <TextLink label="지도 보기" onPress={() => setExpanded(false)} />
                 ) : items.length ? (
                   <TextLink label="전체 보기" onPress={() => setExpanded(true)} />
-                ) : (
+                ) : hasFilters ? (
                   <TextLink label="필터 해제" onPress={() => updateFilters(defaultFilters)} />
-                )}
+                ) : query ? (
+                  <TextLink label="검색어 지우기" onPress={() => setQuery('')} />
+                ) : null}
               </View>
               {selected ? (
                 <>
