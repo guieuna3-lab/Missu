@@ -19,10 +19,19 @@ export interface SessionRequest extends Request {
 export class SessionService {
   constructor(private readonly db: DatabaseService) {}
   async find(req: Request) {
-    const raw: unknown = req.cookies?.[config().cookieName];
+    const authorization = req.get('Authorization');
+    const raw: unknown =
+      authorization === undefined
+        ? req.cookies?.[config().cookieName]
+        : /^Bearer ([a-f0-9]{64})$/i.exec(authorization)?.[1];
     if (typeof raw !== 'string' || !/^[a-f0-9]{64}$/.test(raw)) return null;
     const session = await this.db.session.findUnique({
-      where: { tokenDigest: digest(raw) },
+      // 전달 방식까지 해시에 포함해 웹 쿠키와 앱 토큰을 서로 바꿔 쓸 수 없게 합니다.
+      where: {
+        tokenDigest: digest(
+          authorization === undefined ? raw : 'mobile:' + raw,
+        ),
+      },
       include: { user: true },
     });
     if (
@@ -37,9 +46,9 @@ export class SessionService {
     });
     return session;
   }
-  async create(
-    res: Response,
-    userId: string | null = null,
+  async issue(
+    transport: 'cookie' | 'bearer',
+    userId: string | null,
     client: Pick<DatabaseService, 'session'> = this.db,
   ) {
     const raw = token(),
@@ -47,23 +56,29 @@ export class SessionService {
     const session = await client.session.create({
       data: {
         userId,
-        tokenDigest: digest(raw),
+        tokenDigest: digest(transport === 'bearer' ? 'mobile:' + raw : raw),
         csrfDigest: digest(csrfToken),
         expiresAt: new Date(Date.now() + (userId ? 7 * 86400000 : 30 * 60000)),
       },
     });
+    return { session, raw, csrfToken };
+  }
+  setCookie(res: Response, raw: string, expiresAt: Date) {
     res.cookie(config().cookieName, raw, {
       httpOnly: true,
       secure: config().production,
       sameSite: 'lax',
       path: '/',
-      maxAge: userId ? 7 * 86400000 : 30 * 60000,
+      expires: expiresAt,
     });
-    return { session, csrfToken };
   }
   async csrf(req: SessionRequest, res: Response) {
-    const session = await this.find(req);
-    if (!session) return { csrfToken: (await this.create(res)).csrfToken };
+    const session = req.authSession;
+    if (!session) {
+      const issued = await this.issue('cookie', null);
+      this.setCookie(res, issued.raw, issued.session.expiresAt);
+      return { csrfToken: issued.csrfToken };
+    }
     const csrfToken = token();
     await this.db.session.update({
       where: { id: session.id },

@@ -17,6 +17,9 @@ import { fail } from '../common/http';
 import { config } from '../config';
 
 export const Public = () => SetMetadata('public', true);
+// 인증 수단을 처음 발급하는 경로에서만 사용합니다. 일반 API는 검증된 세션을 사용합니다.
+export const AuthEntry = (mode: 'cookie' | 'mobile') =>
+  SetMetadata('auth-entry', mode);
 @Injectable()
 export class AuthGuard implements CanActivate {
   constructor(
@@ -32,11 +35,28 @@ export class AuthGuard implements CanActivate {
     ]);
     // 서버/DB 상태 확인은 세션 조회 없이 처리합니다. DB 장애여도 live는 응답해야 합니다.
     if (req.path === '/' || req.path.startsWith('/health/')) return true;
+    const entry = this.reflector.get<'cookie' | 'mobile'>(
+      'auth-entry',
+      context.getHandler(),
+    );
+    const bearer = req.get('Authorization') !== undefined;
+    const cookie = req.cookies?.[config().cookieName] !== undefined;
+    if (!isPublic || req.path.includes('/auth/'))
+      res.setHeader('Cache-Control', 'no-store');
+    if (
+      (bearer && (cookie || entry === 'cookie')) ||
+      (cookie && entry === 'mobile')
+    )
+      fail(400, 'AUTH_TRANSPORT_MISMATCH', '인증 방식은 한 가지만 사용하세요.');
     const session = await this.sessions.find(req);
     req.authSession = session ?? undefined;
-    if (!isPublic && !session?.userId)
+    if ((bearer && !session) || (!isPublic && !session?.userId))
       fail(401, 'AUTH_REQUIRED', '로그인이 필요합니다.');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+    if (
+      !bearer &&
+      entry !== 'mobile' &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+    ) {
       const origin = req.get('Origin'),
         csrf = req.get('X-CSRF-Token');
       if (
@@ -48,8 +68,6 @@ export class AuthGuard implements CanActivate {
       )
         fail(403, 'CSRF_INVALID', '접속 주소와 CSRF 토큰을 확인하세요.');
     }
-    if (!isPublic || req.path.includes('/auth/'))
-      res.setHeader('Cache-Control', 'no-store');
     return true;
   }
 }
