@@ -1,0 +1,13 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Icon / wallet" clip-path="url(#clip0_0_134)">
+<path id="Vector" d="M10.5 3.5H3.5C2.5335 3.5 1.75 4.2835 1.75 5.25V10.5C1.75 11.4665 2.5335 12.25 3.5 12.25H10.5C11.4665 12.25 12.25 11.4665 12.25 10.5V5.25C12.25 4.2835 11.4665 3.5 10.5 3.5Z" fill="#DBEAFE" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+<path id="Vector_2" d="M2.33333 3.5L9.91667 1.75V3.5" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+<path id="Vector_3" d="M9.33333 6.41667H12.25V9.91667H9.33333C8.8692 9.91667 8.42409 9.73229 8.0959 9.4041C7.76771 9.07591 7.58333 8.6308 7.58333 8.16667C7.58333 7.70254 7.76771 7.25742 8.0959 6.92923C8.42409 6.60104 8.8692 6.41667 9.33333 6.41667Z" fill="#93C5FD" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+<path id="Vector_4" d="M9.91667 8.16667H9.975" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+</g>
+<defs>
+<clipPath id="clip0_0_134">
+<rect width="14" height="14" fill="white"/>
+</clipPath>
+</defs>
+</svg>

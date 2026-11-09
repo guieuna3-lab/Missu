@@ -5,7 +5,7 @@ import { colors } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { Icon, type IconName } from './Icon';
 
-type Tab = 'home' | 'report' | 'history';
+type Tab = 'home' | 'nearby' | 'report' | 'history';
 export function BottomNavigation({ selected }: { selected: Tab }) {
   const { profile } = usePreview();
   const tabs: { key: string; label: string; icon: IconName; onPress?: () => void }[] = [
@@ -15,7 +15,14 @@ export function BottomNavigation({ selected }: { selected: Tab }) {
       icon: selected === 'home' ? 'home-active' : 'home',
       onPress: () => router.replace('/home'),
     },
-    { key: 'nearby', label: '근처', icon: 'map' },
+    {
+      key: 'nearby',
+      label: '근처',
+      icon: selected === 'nearby' ? 'map-active' : 'map',
+      onPress: () => {
+        if (selected !== 'nearby') router.replace('/nearby');
+      },
+    },
     {
       key: 'report',
       label: '신고',

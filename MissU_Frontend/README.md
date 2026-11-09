@@ -2,9 +2,9 @@
 
 React Native + Expo + TypeScript로 개발하는 미슈 모바일 앱이다.
 Figma 1번 영역의 환영, 홈, 내역, 로그인 안내, 등록 물품과 프로필 수정 화면,
-2번 영역의 로그인·회원가입·비밀번호 재설정 화면을 제공한다.
+2번 영역의 로그인·회원가입·비밀번호 재설정, 3번 영역의 습득물 검색·상세, 10번 영역의 근처 화면을 제공한다.
 백엔드·실제 인증 연동은 아직 없고, 2번 영역은 개발용 모의 인증으로 동작한다.
-구현 범위와 검증 기록은 [1번 영역](docs/AREA_ONE.md), [2번 영역](docs/AREA_TWO.md)을 확인한다.
+구현 범위와 검증 기록은 [1번 영역](docs/AREA_ONE.md), [3번 영역](../docs/SEARCH_IMPLEMENTATION.md)을 확인한다.
 
 ## 실행 (Windows PowerShell / VS Code 터미널)
 
@@ -37,15 +37,11 @@ npm start
 ## 현재 구조와 추가 원칙
 
 - `src/app/_layout.tsx`: 공통 레이아웃·라우터.
-- `src/app/index.tsx`: 환영 화면. 개발용 미리보기 모드에서는 홈으로 진입한다.
-- `src/app/home.tsx`, `history.tsx`, `report.tsx`, `registered-item.tsx`, `welcome.tsx`: 1번 영역 화면 경로.
-- `src/app/login.tsx`, `signup/`, `password-reset/`, `privacy-notice.tsx`: 2번 영역 화면 경로.
-- `src/features/<기능>/`: 기능별 화면. `welcome`, `home`, `history`(내역·등록 물품·프로필 수정),
-  `auth`(로그인 안내, 로그인·회원가입·비밀번호 재설정, 모의 인증 `mockAuthApi.ts`).
-- `src/components/`: 여러 화면이 공유하는 UI(`Screen`, `Header`, `BottomNavigation`, `ActionButton`, `Card`, `Icon`).
-- `src/constants/`: 디자인 값(`theme.ts`)과 공통 문구(`messages.ts`).
-- `src/lib/preview/`: 개발용 미리보기 상태와 Figma 모의 데이터. 인증이 아니다.
-- `assets/icons/`, `assets/images/`, `assets/fonts/`: 정적 자산.
+- `src/app/index.tsx`: 기본 환영 화면. 개발용 guest/member 미리보기에서는 홈으로 이동한다.
+- `src/app/search/index.tsx`: 검색 전·조건·결과·결과 없음 화면.
+- `src/app/items/[id].tsx`: 물품 상세와 비회원·회원별 하단 버튼.
+- `src/app/nearby.tsx`: 근처 예시 지도·목록·장소 검색. [근처 구현 안내](../docs/NEARBY_IMPLEMENTATION.md).
+- 검색 예시·팀원 연결 지점·검증 기록: [검색 구현 안내](../docs/SEARCH_IMPLEMENTATION.md).
 - `@/`: `src/`를 가리키는 별칭.
 - 기능 추가 시 `src/features/<기능>/`에 화면을 두고, 두 곳 이상에서 쓰는 UI만 `src/components/`로 올린다. API 공통 처리는 `src/lib/`에 둔다.
 - 라우트 폴더에는 화면 경로와 레이아웃만 둔다. 컴포넌트·데이터 파일을 넣으면 화면으로 해석될 수 있다.
@@ -60,7 +56,8 @@ API 연동을 시작할 때만 `.env.example`을 `.env`로 복사하고 서버 �
 
 ## Figma 1번 영역 미리보기
 
-범위 밖 검색·지도·상세·반환 버튼은 사용자 합의에 따라 비활성이다.
+환영과 홈에서 습득물 검색을 열 수 있고, 홈의 예시 물품을 누르면 해당 상세로 이동한다.
+홈의 내 근처 습득물 카드와 근처 탭에서 예시 지도를 열 수 있다. 반환 버튼은 미연동 상태다.
 로그인 버튼(환영, 헤더, 내것·신고 안내)은 2번 영역 화면으로 이어진다.
 환경 변수 없이도 개발 서버에서 환영 → 로그인(모의) → 내역 순서로 회원 화면을 볼 수 있다.
 예시 물품 목록까지 보려면 개발 서버 실행 전에 다음과 같이 설정한다. 실제 로그인은 수행하지 않는다.

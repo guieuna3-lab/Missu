@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
+import { FormField, FormMessage } from '@/components/FormField';
 import { AuthScreen } from './AuthScreen';
-import { FormField, FormMessage } from './FormField';
 import { requestPasswordReset } from './mockAuthApi';
 import { isEmail, requestErrorMessage } from './validation';
 

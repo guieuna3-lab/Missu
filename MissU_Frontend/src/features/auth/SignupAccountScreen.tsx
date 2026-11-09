@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
+import { FormField } from '@/components/FormField';
 import { AuthScreen } from './AuthScreen';
-import { FormField } from './FormField';
 import { useSignupDraft } from './SignupDraft';
 import { isEmail, MIN_PASSWORD_LENGTH } from './validation';
 

@@ -4,13 +4,13 @@ export type Profile = typeof previewProfile;
 
 export const previewItems = [
   {
-    id: 'figma-buds',
+    id: 'buds',
     icon: 'buds',
     title: '갤럭시 버즈2 (검정)',
     location: '중앙도서관 3층 · 150m',
   },
-  { id: 'figma-key', icon: 'key', title: '자동차 키 (현대)', location: '학생식당 앞 · 280m' },
-  { id: 'figma-wallet', icon: 'wallet', title: '검정 반지갑', location: '공학관 1층 · 430m' },
+  { id: 'key', icon: 'key', title: '자동차 키 (현대)', location: '학생식당 앞 · 280m' },
+  { id: 'wallet', icon: 'wallet', title: '검정 반지갑', location: '공학관 1층 · 430m' },
 ] as const;
 
 export const previewActivity = {
