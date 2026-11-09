@@ -3,7 +3,24 @@ import { Image } from 'expo-image';
 import { Animated, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, typography } from '@/constants/theme';
 import { MapIcon, mapArt } from './mapArt';
-import { mapOrigin, places, zeroOffset, type MapPoint, type NearbyItem } from './nearbyItems';
+import {
+  mapOrigin,
+  places,
+  zeroOffset,
+  type MapCoordinate,
+  type MapPoint,
+  type NearbyItem,
+} from './nearbyItems';
+
+export type CampusMapProps = {
+  offset: MapPoint;
+  items: NearbyItem[];
+  selectedId: string | undefined;
+  showOrigin: boolean;
+  userPosition?: MapCoordinate;
+  onMove: (offset: MapPoint) => void;
+  onSelect: (id: string) => void;
+};
 
 const widthInDesign = 390;
 const labels = [
@@ -27,14 +44,7 @@ export function CampusMap({
   showOrigin,
   onMove,
   onSelect,
-}: {
-  offset: MapPoint;
-  items: NearbyItem[];
-  selectedId: string | undefined;
-  showOrigin: boolean;
-  onMove: (offset: MapPoint) => void;
-  onSelect: (id: string) => void;
-}) {
+}: CampusMapProps) {
   const [width, setWidth] = useState(widthInDesign);
   const scale = width / widthInDesign;
   const [drag] = useState(() => new Animated.ValueXY());

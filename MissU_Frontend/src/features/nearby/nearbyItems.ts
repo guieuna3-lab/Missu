@@ -4,6 +4,38 @@ export type MapPoint = { x: number; y: number };
 export const mapOrigin: MapPoint = { x: 220, y: 364 };
 export const zeroOffset: MapPoint = { x: 0, y: 0 };
 
+export type MapCoordinate = { latitude: number; longitude: number };
+const campusCenter = { latitude: 37.582552553035875, longitude: 127.01021759756136 };
+// Approximate projection of the example campus artwork onto the native map.
+const latitudePerPoint = 0.000027;
+const longitudePerPoint = 0.000034;
+
+export function coordinateForPoint(point: MapPoint): MapCoordinate {
+  return {
+    latitude: campusCenter.latitude + (mapOrigin.y - point.y) * latitudePerPoint,
+    longitude: campusCenter.longitude + (point.x - mapOrigin.x) * longitudePerPoint,
+  };
+}
+
+export function pointForCoordinate({ latitude, longitude }: MapCoordinate): MapPoint {
+  return {
+    x: mapOrigin.x + (longitude - campusCenter.longitude) / longitudePerPoint,
+    y: mapOrigin.y - (latitude - campusCenter.latitude) / latitudePerPoint,
+  };
+}
+
+function distanceInMeters(from: MapCoordinate, to: MapCoordinate) {
+  const radians = Math.PI / 180;
+  const latDelta = (to.latitude - from.latitude) * radians;
+  const lonDelta = (to.longitude - from.longitude) * radians;
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(from.latitude * radians) *
+      Math.cos(to.latitude * radians) *
+      Math.sin(lonDelta / 2) ** 2;
+  return 12_742_000 * Math.asin(Math.sqrt(Math.min(a, 1)));
+}
+
 export const categories = [
   { value: 'ALL', label: '전체' },
   { value: 'ELECTRONICS', label: '전자기기' },
@@ -38,9 +70,14 @@ export const places = [
   { name: '공학관', point: { x: 316, y: 323 } },
   { name: '행정실', point: { x: 168, y: 442 } },
   { name: '솔숲공원', point: { x: 330, y: 522 } },
-  { name: '한성대입구역', point: { x: 233, y: 669 } },
+  {
+    name: '한성대입구역',
+    point: { x: 233, y: 669 },
+    coordinate: { latitude: 37.58842, longitude: 127.00618 },
+  },
   { name: '삼선교로', point: { x: 43, y: 131 } },
   { name: '버스 정류장', point: { x: 54, y: 236 } },
+  { name: '한성대학교', point: mapOrigin },
 ] as const;
 
 // Local illustration coordinates and approximate distances for the Figma campus preview.
@@ -62,6 +99,7 @@ export function searchNearby(
   query: string,
   offset: MapPoint,
   now = Date.now(),
+  center?: MapCoordinate,
 ) {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const cutoff =
@@ -81,6 +119,12 @@ export function searchNearby(
     })
     .map((item) => {
       const { x, y, distance } = item.marker;
+      if (center) {
+        return {
+          ...item,
+          distanceM: Math.round(distanceInMeters(center, coordinateForPoint({ x, y }))),
+        };
+      }
       const dx = x - mapOrigin.x;
       const dy = y - mapOrigin.y;
       const scale = distance / Math.hypot(dx, dy);
