@@ -129,6 +129,12 @@ export function completeOpenApi(document: OpenAPIObject) {
   };
   document.components ??= {};
   document.components.schemas ??= {};
+  document.components.securitySchemes ??= {};
+  document.components.securitySchemes.mobileBearer = {
+    type: 'http',
+    scheme: 'bearer',
+    description: '모바일 로그인 또는 가입용 익명 세션에서 받은 토큰',
+  };
   for (const [name, schema] of Object.entries(schemas))
     document.components.schemas['Missu' + name] = schema;
   const envelope = (data: Schema, meta?: Schema) =>
@@ -154,6 +160,16 @@ export function completeOpenApi(document: OpenAPIObject) {
     'post /api/v1/auth/login': [
       200,
       envelope(object({ user: ref('Profile'), csrfToken: string })),
+    ],
+    'post /api/v1/auth/mobile/login': [
+      200,
+      envelope(
+        object({ user: ref('Profile'), accessToken: string, expiresAt: date }),
+      ),
+    ],
+    'post /api/v1/auth/mobile/session': [
+      201,
+      envelope(object({ accessToken: string, expiresAt: date })),
     ],
     'post /api/v1/auth/logout': [204, null],
     'post /api/v1/auth/password-reset': [204, null],
@@ -266,16 +282,23 @@ export function completeOpenApi(document: OpenAPIObject) {
     const operation =
       document.paths[path]?.[method as 'get' | 'post' | 'patch'];
     if (!operation) throw new Error('API contract missing route: ' + key);
+    const mobileEntry = path.startsWith('/api/v1/auth/mobile/');
+    const webLogin = path === '/api/v1/auth/login';
     operation.security =
-      method === 'get' && anonymousGet.has(path) ? [] : [{ sessionCookie: [] }];
+      mobileEntry || (method === 'get' && anonymousGet.has(path))
+        ? []
+        : webLogin
+          ? [{ sessionCookie: [] }]
+          : [{ sessionCookie: [] }, { mobileBearer: [] }];
     operation.parameters ??= [];
-    if (method !== 'get')
+    if (method !== 'get' && !mobileEntry)
       operation.parameters.push({
         in: 'header',
         name: 'X-CSRF-Token',
-        required: true,
+        required: webLogin,
         schema: string,
-        description: '/auth/csrf 또는 로그인 응답의 최신 토큰',
+        description:
+          '웹 쿠키 인증에서만 필수. /auth/csrf 또는 웹 로그인 응답의 최신 토큰',
       });
     if (
       method === 'post' &&
@@ -302,6 +325,13 @@ export function completeOpenApi(document: OpenAPIObject) {
             other.name === parameter.name,
         ) === index,
     );
+    for (const parameter of operation.parameters) {
+      if ('name' in parameter && parameter.name === 'X-CSRF-Token') {
+        parameter.required = webLogin;
+        parameter.description =
+          '웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.';
+      }
+    }
     operation.responses = {
       [status]: {
         description: status === 204 ? '성공, 응답 본문 없음' : '성공',

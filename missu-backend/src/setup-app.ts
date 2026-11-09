@@ -32,7 +32,12 @@ export function setupApp(app: INestApplication) {
   app.enableCors({
     origin: config().origins,
     credentials: true,
-    allowedHeaders: ['Content-Type', 'X-CSRF-Token', 'Idempotency-Key'],
+    allowedHeaders: [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'Idempotency-Key',
+    ],
   });
   app.useGlobalPipes(
     new ValidationPipe({
