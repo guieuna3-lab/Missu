@@ -141,7 +141,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -266,6 +266,246 @@
         ]
       }
     },
+    "/api/v1/auth/mobile/login": {
+      "post": {
+        "operationId": "AuthController_mobileLogin",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "user": {
+                          "$ref": "#/components/schemas/MissuProfile"
+                        },
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "user",
+                        "accessToken",
+                        "expiresAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Auth"
+        ],
+        "security": []
+      }
+    },
+    "/api/v1/auth/mobile/session": {
+      "post": {
+        "operationId": "AuthController_mobileSession",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "accessToken": {
+                          "type": "string"
+                        },
+                        "expiresAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "accessToken",
+                        "expiresAt"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Auth"
+        ],
+        "security": []
+      }
+    },
     "/api/v1/auth/logout": {
       "post": {
         "operationId": "AuthController_logout",
@@ -273,11 +513,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "responses": {
@@ -361,6 +601,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -373,10 +616,22 @@
             "name": "q",
             "required": false,
             "in": "query",
+            "description": "공백으로 구분한 모든 단어가 물품명 또는 공개 특징에 포함되어야 합니다.",
             "schema": {
               "minLength": 0,
               "maxLength": 80,
               "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "default": 20,
+              "type": "integer"
             }
           },
           {
@@ -413,21 +668,6 @@
               "minLength": 1,
               "maxLength": 1000,
               "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 20,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
             }
           }
         ],
@@ -548,10 +788,11 @@
           {
             "name": "X-CSRF-Token",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "name": "Idempotency-Key",
@@ -685,6 +926,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1157,6 +1401,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1168,10 +1415,11 @@
           {
             "name": "X-CSRF-Token",
             "in": "header",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
-            }
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -1305,6 +1553,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1355,11 +1606,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -1487,6 +1738,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1600,6 +1854,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1704,6 +1961,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       },
@@ -1713,11 +1973,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -1826,6 +2086,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -1986,6 +2249,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2025,11 +2291,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -2156,6 +2422,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2175,11 +2444,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -2299,6 +2568,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2310,11 +2582,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -2432,6 +2704,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2443,11 +2718,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -2541,6 +2816,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2560,11 +2838,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -2699,6 +2977,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2812,6 +3093,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -2831,11 +3115,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -2984,6 +3268,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -3157,6 +3444,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       },
@@ -3174,11 +3464,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           }
         ],
         "requestBody": {
@@ -3287,6 +3577,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -3306,11 +3599,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -3464,6 +3757,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -3483,11 +3779,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -3641,6 +3937,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -3660,11 +3959,11 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
             "schema": {
               "type": "string"
             },
-            "description": "/auth/csrf 또는 로그인 응답의 최신 토큰"
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
           },
           {
             "in": "header",
@@ -3804,6 +4103,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -3942,6 +4244,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ]
       }
@@ -4213,6 +4518,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4225,7 +4533,8 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.",
             "schema": {
               "type": "string"
             }
@@ -4352,6 +4661,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4372,7 +4684,8 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.",
             "schema": {
               "type": "string"
             }
@@ -4497,6 +4810,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4517,7 +4833,8 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.",
             "schema": {
               "type": "string"
             }
@@ -4615,6 +4932,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4718,6 +5038,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4848,6 +5171,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4858,7 +5184,8 @@
           {
             "in": "header",
             "name": "X-CSRF-Token",
-            "required": true,
+            "required": false,
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.",
             "schema": {
               "type": "string"
             }
@@ -4944,6 +5271,9 @@
         "security": [
           {
             "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
           }
         ],
         "description": "본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요."
@@ -4964,6 +5294,11 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "mishu_session"
+      },
+      "mobileBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "모바일 로그인 또는 가입용 익명 세션에서 받은 토큰"
       }
     },
     "schemas": {

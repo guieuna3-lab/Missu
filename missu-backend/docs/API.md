@@ -1,8 +1,15 @@
-> 이 문서는 2026-11-03 MVP 작업 기록입니다. 이후 동선·구글 지도 추가와 현재 검증 결과는 [최신 README](../README.md) 및 [동선 안내](DAILY_ROUTES.md)를 우선 확인하세요.
-
 # 미슈 MVP API 계약
 
 개발 기본 주소: http://localhost:3000/api/v1
+
+## React Native 앱 로그인
+
+아래 경로는 기본 주소의 `/api/v1` 다음에 붙입니다. 운영 환경에서는 배포 후 발급된 HTTPS 주소를 사용합니다.
+
+1. `POST /auth/mobile/login`에 이메일과 비밀번호를 JSON으로 보냅니다. 성공하면 HTTP 200과 `data.user`, `data.accessToken`, `data.expiresAt`(절대 만료 시각)을 받습니다.
+2. 토큰은 기기 보안 저장소에 보관하고 `Authorization: Bearer <accessToken>`으로 보냅니다. 예를 들어 `GET /me`로 현재 계정을 조회합니다. 모바일 토큰 요청은 쿠키·Origin·X-CSRF-Token을 생략합니다. 개별 API가 요구하는 Idempotency-Key는 함께 보냅니다.
+3. 회원 토큰은 발급 후 최대 7일, 마지막 사용 후 30분까지 유효합니다. 만료 시(401) 다시 로그인합니다. `POST /auth/logout`이 204를 반환하면 서버에서 토큰이 폐기된 것이므로 앱에서도 지웁니다.
+4. 가입·비밀번호 재설정은 먼저 `POST /auth/mobile/session`에서 임시 토큰(201, `data.accessToken`, `data.expiresAt`, 30분 유효)을 받습니다. 인증번호 요청·확인과 최종 가입 또는 재설정까지 같은 토큰을 사용합니다. 가입 후 그 토큰으로 모바일 로그인하면 회원 토큰으로 교체됩니다. 개인 정보 조회에는 회원 토큰이 필요합니다.
 
 성공은 {data, meta?}, 오류는 {error:{code,message,requestId,fields?}}입니다.
 204 응답은 본문이 없습니다. 입력·출력 스키마 전체는 openapi.json과 실행 중인 /docs에 있습니다.
@@ -127,7 +134,9 @@ dev-v1은 개발용 버전 표식이며 실제 약관·개인정보 처리방침
 ~~~
 
 일반 검색: q,place,foundFrom,foundTo,cursor,limit(기본 20/최대 50).
-물품명·공개 특징·기간·장소는 AND 조건입니다. 커서는 서버 응답을 그대로 사용하고 조건을 바꾸면 버립니다.
+검색어는 공백으로 나눕니다. 모든 단어가 물품명 또는 공개 특징에 있어야 하며, 단어 순서는 무관합니다. 장소와 습득 기간도 동시에 적용합니다. 예를 들어 이름이 ‘이어폰’이고 공개 특징이 ‘검정 케이스’인 물품은 `q=검정 이어폰`으로 찾을 수 있습니다.
+앱의 기간 필터(전체·최근 7일·최근 30일)는 기존 `foundFrom`과 `foundTo`를 사용합니다. 검색 시각을 한 번 정해 종료 시각으로 쓰고, 7일·30일은 해당 시간만큼 뺀 시작 시각도 보냅니다. 전체 기간은 시작 시각을 생략합니다. 양쪽 경계를 포함하며 시각은 시간대가 있는 ISO 문자열입니다. 다음 페이지에는 첫 요청의 조건과 시각을 그대로 두고 응답의 `meta.nextCursor`를 전달합니다.
+목록은 `data[]`, 상세(`GET /api/v1/items/{id}`)는 `data`에 같은 공개 물품 형식을 담습니다. 앱에서는 공개 설명을 `publicFeatures`, 장소명을 `foundLocation.label`, 보관 장소를 `storagePlace`, 수령 안내를 `pickupGuide`에서 읽습니다. 공개 설명과 수령 안내는 비어 있을 수 있습니다. 두 조회 모두 로그인 없이 사용할 수 있습니다.
 AVAILABLE·RESERVED만 기본 검색에 나오며 RETURNED의 상세 직접 조회는 유지합니다.
 
 근처 검색: lat,lng 필수, radiusM=500|1000|3000(기본 1000), category=ALL|ELECTRONICS|WALLET_BAG,
