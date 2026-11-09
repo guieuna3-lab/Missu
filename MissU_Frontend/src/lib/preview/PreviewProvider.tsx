@@ -1,10 +1,11 @@
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { previewProfile, type Profile } from './fixtures';
+import { api, apiBase } from '../backend';
 
 // Opt-in, development-only visual fixtures and the mock sign-in state.
 // Never establishes a real session or stores credentials.
-const previewMode = __DEV__ ? process.env.EXPO_PUBLIC_MISSU_PREVIEW : undefined;
+const previewMode = __DEV__ && !apiBase ? process.env.EXPO_PUBLIC_MISSU_PREVIEW : undefined;
 export const isPreview = previewMode === 'guest' || previewMode === 'member';
 
 /** Where the login started (Figma `loginReturnTo`). */
@@ -25,7 +26,8 @@ type PreviewState = {
   startLogin: (origin: LoginOrigin) => void;
   cancelLogin: () => void;
   /** Switches to the member state with a mock auth result. */
-  signIn: (profile: Profile) => void;
+  signIn: (profile: Profile, token?: string) => void;
+  accessToken: string | null;
   completeSignup: (profile: Profile) => void;
   /** Clears the login/sign-up screens from history and opens the destination. */
   continueAfterLogin: (destination?: '/search') => void;
@@ -37,14 +39,25 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     previewMode === 'member' ? { ...previewProfile } : null,
   );
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   return (
     <PreviewContext.Provider
       value={{
         profile,
+        accessToken,
         updateProfile: (next) => {
           if (profile) setProfile(next);
         },
-        exitMemberPreview: () => setProfile(null),
+        exitMemberPreview: () => {
+          if (accessToken) {
+            void api('/auth/logout', {
+              method: 'POST',
+              headers: { Authorization: 'Bearer ' + accessToken },
+            }).catch(() => {});
+          }
+          setAccessToken(null);
+          setProfile(null);
+        },
         startLogin: (origin) => {
           setLoginOrigin(origin);
           router.push('/login');
@@ -53,7 +66,10 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           setLoginOrigin(null);
           router.dismissTo(getSearchReturnTo(loginOrigin) ?? '/home');
         },
-        signIn: (next) => setProfile(next),
+        signIn: (next, token) => {
+          setAccessToken(token ?? null);
+          setProfile(next);
+        },
         completeSignup: (next) => {
           setProfile(next);
           if (getSearchReturnTo(loginOrigin)) {
@@ -72,7 +88,11 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           }
           if (router.canDismiss()) router.dismissAll();
           // Keep the existing 01/02 destinations for report and history.
-          router.replace(loginOrigin === 'report' ? '/report' : '/history');
+          router.replace(
+            loginOrigin === 'report' || (apiBase && loginOrigin === 'home')
+              ? '/report'
+              : '/history',
+          );
         },
       }}
     >
