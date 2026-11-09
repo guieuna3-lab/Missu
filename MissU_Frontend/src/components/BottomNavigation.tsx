@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { unavailableHint } from '@/constants/messages';
+import { apiBase } from '@/lib/backend';
 import { colors } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { Icon, type IconName } from './Icon';
@@ -27,7 +28,7 @@ export function BottomNavigation({ selected }: { selected: Tab }) {
       key: 'report',
       label: '신고',
       icon: selected === 'report' ? 'edit-active' : 'edit',
-      onPress: profile ? undefined : () => router.replace('/report'),
+      onPress: apiBase || !profile ? () => router.replace('/report') : undefined,
     },
     {
       key: 'history',
