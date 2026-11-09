@@ -21,7 +21,8 @@ import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { formatFoundAt, itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
+import { formatFoundAt, type PublicItem, type SearchFilters } from '@/lib/items';
+import { itemRepository } from '@/lib/publicItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
@@ -259,7 +260,8 @@ export default function SearchScreen() {
                 onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
               >
                 {item.location} · {formatFoundAt(item.foundAt).slice(5)}
-                {'\n'}보관 중
+                {'\n'}
+                {item.statusLabel ?? '보관 중'}
               </Card>
             )}
             ListFooterComponent={
