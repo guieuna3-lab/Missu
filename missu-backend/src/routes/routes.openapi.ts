@@ -132,7 +132,7 @@ export function completeRoutesOpenApi(doc: OpenAPIObject) {
   for (const c of contracts) {
     const operation = doc.paths['/api/v1/me/routes' + c.path]?.[c.method];
     if (!operation) throw new Error('Route contract missing');
-    operation.security = [{ sessionCookie: [] }];
+    operation.security = [{ sessionCookie: [] }, { mobileBearer: [] }];
     operation.description =
       '본인만 사용. 관측 시각부터 48시간 보관. DEMO는 개발 서버 전용. 좌표를 로그나 영구 백업에 넣지 마세요.';
     operation.parameters = (operation.parameters ?? []).filter(
@@ -142,7 +142,9 @@ export function completeRoutesOpenApi(doc: OpenAPIObject) {
       operation.parameters.push({
         in: 'header',
         name: 'X-CSRF-Token',
-        required: true,
+        required: false,
+        description:
+          '웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다.',
         schema: str,
       });
     if (!c.path)
