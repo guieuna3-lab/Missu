@@ -77,28 +77,21 @@ export class ItemsService {
         'VALIDATION_ERROR',
         '검색 시작일은 종료일보다 늦을 수 없습니다.',
       );
+    // 앱의 검색 화면처럼, 모든 단어가 물품명 또는 공개 특징 중 한 곳에 있어야 합니다.
+    const words = query.q?.split(/\s+/).filter(Boolean) ?? [];
+    const keywords = words.map((word): Prisma.FoundItemWhereInput => {
+      const match = { contains: literal(word), mode: 'insensitive' as const };
+      return { OR: [{ name: match }, { publicFeatures: match }] };
+    });
     const where: Prisma.FoundItemWhereInput = {
       status: { in: ['AVAILABLE', 'RESERVED'] },
-      ...(query.q
-        ? {
-            OR: [
-              { name: { contains: literal(query.q), mode: 'insensitive' } },
-              {
-                publicFeatures: {
-                  contains: literal(query.q),
-                  mode: 'insensitive',
-                },
-              },
-            ],
-          }
-        : {}),
       ...(query.place
         ? {
             foundLabel: { contains: literal(query.place), mode: 'insensitive' },
           }
         : {}),
       ...(from || to ? { foundAt: { gte: from, lte: to } } : {}),
-      AND: olderThan(cursor),
+      AND: cursor ? [...keywords, olderThan(cursor)] : keywords,
     };
     const rows = await this.db.foundItem.findMany({
       where,

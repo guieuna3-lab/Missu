@@ -21,6 +21,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Category } from '../generated/prisma/enums';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { LocationDto, LostTimeDto, Trim, Type } from '../common/dto';
 
 export class CreateItemDto {
@@ -44,12 +45,31 @@ export class CreateItemDto {
   @IsOptional() @Trim() @IsString() @Length(0, 300) privateFeatures?: string;
 }
 export class SearchItemsDto {
-  @IsOptional() @Trim() @IsString() @Length(0, 80) q?: string;
+  @ApiPropertyOptional({
+    description:
+      '공백으로 구분한 모든 단어가 물품명 또는 공개 특징에 포함되어야 합니다.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Length(0, 80)
+  q?: string;
   @IsOptional() @Trim() @IsString() @Length(0, 200) place?: string;
   @IsOptional() @IsDateString({ strict: true }) foundFrom?: string;
   @IsOptional() @IsDateString({ strict: true }) foundTo?: string;
   @IsOptional() @IsString() @Length(1, 1000) cursor?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) limit = 20;
+  @ApiPropertyOptional({
+    type: 'integer',
+    minimum: 1,
+    maximum: 50,
+    default: 20,
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(50)
+  limit = 20;
 }
 export class CreateLostReportDto {
   @Trim() @IsString() @Length(1, 20) name: string;
