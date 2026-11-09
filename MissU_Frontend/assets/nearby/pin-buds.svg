@@ -1,0 +1,12 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="Icon / buds" clip-path="url(#clip0_0_174)">
+<path id="Vector" d="M9.91667 7H4.08333C2.79467 7 1.75 8.04467 1.75 9.33333V9.91667C1.75 11.2053 2.79467 12.25 4.08333 12.25H9.91667C11.2053 12.25 12.25 11.2053 12.25 9.91667V9.33333C12.25 8.04467 11.2053 7 9.91667 7Z" fill="#DBEAFE" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+<path id="Vector_2" d="M1.75 9.33333H12.25" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+<path id="Vector_3" d="M3.5 1.75C3.96413 1.75 4.40925 1.93437 4.73744 2.26256C5.06563 2.59075 5.25 3.03587 5.25 3.5V5.83333H3.5V4.08333C3.19058 4.08333 2.89383 3.96042 2.67504 3.74162C2.45625 3.52283 2.33333 3.22609 2.33333 2.91667C2.33333 2.60725 2.45625 2.3105 2.67504 2.09171C2.89383 1.87292 3.19058 1.75 3.5 1.75ZM10.5 1.75C10.0359 1.75 9.59075 1.93437 9.26256 2.26256C8.93437 2.59075 8.75 3.03587 8.75 3.5V5.83333H10.5V4.08333C10.8094 4.08333 11.1062 3.96042 11.325 3.74162C11.5438 3.52283 11.6667 3.22609 11.6667 2.91667C11.6667 2.60725 11.5438 2.3105 11.325 2.09171C11.1062 1.87292 10.8094 1.75 10.5 1.75Z" fill="#93C5FD" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" stroke="#3B82F6"/>
+</g>
+<defs>
+<clipPath id="clip0_0_174">
+<rect width="14" height="14" fill="white"/>
+</clipPath>
+</defs>
+</svg>

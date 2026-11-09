@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { filterItems, formatFoundAt, mockItems } from '../src/features/search/items.ts';
+import { filterItems, formatFoundAt, mockItems } from '../src/lib/items.ts';
 
 const now = new Date('2026-10-07T14:20:00+09:00').getTime();
 const base = { query: '이어폰', period: 'all', place: '' };

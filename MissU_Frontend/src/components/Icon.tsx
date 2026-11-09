@@ -11,6 +11,7 @@ const icons = {
   home: require('../../assets/icons/home.svg'),
   'home-active': require('../../assets/icons/home-active.svg'),
   map: require('../../assets/icons/map.svg'),
+  'map-active': require('../../assets/nearby/nav-active.svg'),
   edit: require('../../assets/icons/edit.svg'),
   'edit-active': require('../../assets/icons/edit-active.svg'),
   user: require('../../assets/icons/user.svg'),

@@ -5,7 +5,6 @@ import { BottomNavigation } from '@/components/BottomNavigation';
 import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
-import { unavailableHint } from '@/constants/messages';
 import { colors, typography } from '@/constants/theme';
 import { previewActivity, previewItems } from '@/lib/preview/fixtures';
 import { isPreview } from '@/lib/preview/PreviewProvider';
@@ -28,10 +27,8 @@ export function HomeScreen() {
           />
         </View>
         <Pressable
-          disabled
           accessibilityRole="button"
-          accessibilityState={{ disabled: true }}
-          accessibilityHint={unavailableHint}
+          onPress={() => router.push('/nearby')}
           style={styles.nearby}
         >
           <Icon name="pin" />

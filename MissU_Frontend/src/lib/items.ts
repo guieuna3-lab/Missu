@@ -37,6 +37,24 @@ export const mockItems: PublicItem[] = [
     storage: '공학관 행정실',
     collectionGuide: '평일 09:00–18:00 · 방문 전 보관 여부 확인',
   },
+  {
+    id: 'student-id',
+    name: '학생증',
+    description: '학생 신분증',
+    foundAt: '2026-10-03T12:00:00+09:00',
+    location: '행정실',
+    storage: '행정실 안내데스크',
+    collectionGuide: '평일 09:00–18:00 · 방문 전 보관 여부 확인',
+  },
+  {
+    id: 'backpack',
+    name: '분홍 책가방',
+    description: '분홍색 가방',
+    foundAt: '2026-10-02T12:00:00+09:00',
+    location: '버스 정류장',
+    storage: '학생회관 안내데스크',
+    collectionGuide: '평일 09:00–18:00 · 방문 전 보관 여부 확인',
+  },
 ];
 export function filterItems(items: PublicItem[], filters: SearchFilters, now = Date.now()) {
   const words = filters.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);

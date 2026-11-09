@@ -21,9 +21,8 @@ import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
+import { formatFoundAt, itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { formatFoundAt, itemRepository } from './items';
-import type { PublicItem, SearchFilters } from './items';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
 const periods = [

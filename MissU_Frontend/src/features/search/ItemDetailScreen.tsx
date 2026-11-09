@@ -6,9 +6,8 @@ import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
+import { formatFoundAt, itemRepository, type PublicItem } from '@/lib/items';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { formatFoundAt, itemRepository } from './items';
-import type { PublicItem } from './items';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
