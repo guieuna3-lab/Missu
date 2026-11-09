@@ -298,6 +298,40 @@ describe('MissU PostgreSQL API', () => {
       .query({ q: suffix, cursor: cursor + 'x' })
       .expect(400);
   });
+  it('앱의 여러 검색어·장소·습득 기간으로 공개 물품을 찾아 상세를 연다', async () => {
+    const search = (
+      q: string,
+      place = '도서관',
+      foundTo = '2026-11-01T03:00:00Z',
+    ) =>
+      request(app.getHttpServer())
+        .get('/api/v1/items')
+        .query({
+          q,
+          place,
+          foundFrom: '2026-10-31T03:00:00Z',
+          foundTo,
+          limit: 1,
+        })
+        .expect(200);
+    const words = '별무늬  ' + suffix + ' 파란';
+    const first = await search(words);
+    expect(first.body.data).toHaveLength(1);
+    const detail = await request(app.getHttpServer())
+      .get('/api/v1/items/' + first.body.data[0].id)
+      .expect(200);
+    expect(detail.body.data).toMatchObject({
+      name: baseItem([]).name,
+      publicFeatures: '파란 별무늬',
+      foundLocation: { label: '한성대학교 도서관' },
+    });
+    expect((await search(words + ' 각인')).body.data).toEqual([]);
+    expect((await search(words + ' %')).body.data).toEqual([]);
+    expect((await search(words, '체육관')).body.data).toEqual([]);
+    expect(
+      (await search(words, '도서관', '2026-11-01T02:59:59Z')).body.data,
+    ).toEqual([]);
+  });
   it('분실 신고를 본인에게만 보여주고 시간 범위를 검증한다', async () => {
     const body = {
       name: '분실지갑' + suffix,

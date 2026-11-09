@@ -187,6 +187,7 @@ export async function harness() {
     app,
     db,
     userIds,
+    sessionIds,
     rateIds,
     anonymous,
     login,
