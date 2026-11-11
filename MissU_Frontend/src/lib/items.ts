@@ -100,7 +100,7 @@ export type ServerItem = {
   foundLocation: { label: string; lat: number; lng: number };
   storagePlace: string;
   pickupGuide: string | null;
-  photos: { url: string }[];
+  photos: { id: string; url: string }[];
   status: string;
 };
 export function fromServer(item: ServerItem): PublicItem {
