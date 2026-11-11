@@ -11,6 +11,8 @@ import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack } from '@/lib/navigation';
 import { CategoryTiles } from './CategoryTiles';
 import { DATE_TIME_FORMAT_ERROR } from './LostWhenScreen';
+import { usePreview } from '@/lib/preview/PreviewProvider';
+import { choosePhoto } from './choosePhoto';
 import { PhotoAttachment } from './PhotoAttachment';
 import { useReportDraft } from './ReportDraft';
 
@@ -18,6 +20,7 @@ import { useReportDraft } from './ReportDraft';
 export function FoundItemScreen() {
   const { found, updateFound } = useReportDraft();
   const { updateFoundItem } = useActivity();
+  const { accessToken } = usePreview();
   const editing = !!found.editingId;
   const [errors, setErrors] = useState<{ name?: string; foundAt?: string }>({});
   const [denied, setDenied] = useState(false);
@@ -142,6 +145,9 @@ export function FoundItemScreen() {
       </View>
       <PhotoAttachment
         count={found.photos}
+        attachments={found.attachments}
+        chooseAsset={(source) => choosePhoto(source, accessToken)}
+        setAttachments={(attachments) => updateFound({ attachments, photos: attachments.length })}
         onChange={(photos) => updateFound({ photos })}
         onDenied={() => setDenied(true)}
       />
