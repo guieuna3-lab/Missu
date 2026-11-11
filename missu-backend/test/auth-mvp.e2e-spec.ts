@@ -217,7 +217,7 @@ describe('가입·인증·재설정 PostgreSQL 계약', () => {
       sender.mockRestore();
     }
   });
-  it('동시 문자 요청은 한 건만 발송하고, 재발송 대기 중 눌러도 시간당 횟수를 소모하지 않는다', async () => {
+  it('문자는 세 건까지 연속 접수하고 세 번째부터 60초 대기하며 거절된 요청은 대기를 늘리지 않는다', async () => {
     const actor = await h.user('phone-retry', false);
     const body = {
       purpose: 'PHONE',
@@ -225,32 +225,65 @@ describe('가입·인증·재설정 PostgreSQL 계약', () => {
       consent: { kind: 'PHONE', agreed: true, policyVersion: 'dev-v1' },
     };
     const send = () => h.post(actor, '/auth/challenges').send(body);
-    const results = await Promise.all([send(), send()]);
+    const priorRateIds = new Set(h.rateIds);
+    const first = await send().expect(202);
+    const smsIds = [...h.rateIds].filter((id) => !priorRateIds.has(id));
+    expect(first.body.data.retryAfter).toBe(0);
+    // 첫 요청의 대기 창이 거의 끝나도 세 번째 접수부터 다시 60초를 셉니다.
+    const minuteBuckets = {
+      id: { in: smsIds },
+      expiresAt: { lte: new Date(Date.now() + 60000) },
+    };
+    await h.db.rateLimitBucket.updateMany({
+      where: minuteBuckets,
+      data: { expiresAt: new Date(Date.now() + 5000) },
+    });
+    const results = await Promise.all([send(), send(), send()]);
     expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
-      202, 429,
+      202, 202, 429,
     ]);
-    for (let i = 0; i < 5; i++) {
-      const denied = await send().expect(429);
-      expect(denied.body.error.message).toMatch(/재요청.*\d+초 후/);
-    }
-    for (let i = 1; i < 5; i++) {
-      // 이번 시험의 60초 대기만 만료시켜 시간당 한도를 그대로 검증합니다.
-      await h.db.rateLimitBucket.updateMany({
-        where: {
-          id: { in: [...h.rateIds] },
-          expiresAt: { lte: new Date(Date.now() + 60000) },
-        },
-        data: { expiresAt: new Date(Date.now() - 1) },
-      });
-      await send().expect(202);
-    }
+    const delays = results
+      .filter((r) => r.status === 202)
+      .map((r) => Number(r.body.data.retryAfter))
+      .sort((a, b) => a - b);
+    expect(delays[0]).toBe(0);
+    expect(delays[1]).toBeGreaterThan(55);
+    expect(delays[1]).toBeLessThanOrEqual(60);
+    const latest = await h.db.rateLimitBucket.findMany({
+      where: {
+        id: { in: smsIds },
+        count: 3,
+        expiresAt: { gt: new Date(Date.now() + 50000) },
+      },
+      orderBy: { id: 'asc' },
+    });
+    expect(latest).toHaveLength(2);
     const blocked = await send().expect(429);
-    expect(blocked.body.error.message).toMatch(/시간당 한도.*\d+분 후/);
+    expect(blocked.body.error.message).toMatch(/3회.*\d+초 후/);
+    // 번호를 바꿔도 같은 계정에는 동일한 대기가 적용됩니다.
+    await h
+      .post(actor, '/auth/challenges')
+      .send({ ...body, target: '01012345679' })
+      .expect(429);
+    const other = await h.user('second-phone-retry', false);
+    await h.post(other, '/auth/challenges').send(body).expect(429);
+    expect(
+      await h.db.rateLimitBucket.findMany({
+        where: { id: { in: latest.map((row) => row.id) } },
+        orderBy: { id: 'asc' },
+      }),
+    ).toEqual(latest);
+    await h.db.rateLimitBucket.updateMany({
+      where: { id: { in: latest.map((row) => row.id) } },
+      data: { expiresAt: new Date(Date.now() - 1) },
+    });
+    const next = await send().expect(202);
+    expect(next.body.data.retryAfter).toBe(0);
     expect(
       await h.db.authChallenge.count({
         where: { userId: actor.id, purpose: 'PHONE' },
       }),
-    ).toBe(5);
+    ).toBe(4);
   });
   it('비밀번호 재설정 후 모든 기존 로그인과 인증 세션을 무효화한다', async () => {
     const user = await h.user('reset'),
