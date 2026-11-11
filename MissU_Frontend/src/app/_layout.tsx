@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
-import { ActivityIndicator, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Text, View } from 'react-native';
 import { SignupDraftProvider } from '@/features/auth/SignupDraft';
 import { ReportDraftProvider } from '@/features/report/ReportDraft';
 import { ActivityProvider } from '@/lib/activity/ActivityProvider';
@@ -19,7 +19,8 @@ export default function RootLayout() {
       fontDefinitions: [{ path: require('../../assets/fonts/Outfit.ttf'), weight: '100 900' }],
     },
   ]);
-  if (!loaded)
+  // 웹은 시스템 글꼴로 먼저 열고 내려받은 글꼴을 적용합니다.
+  if (!loaded && Platform.OS !== 'web')
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         {error ? (

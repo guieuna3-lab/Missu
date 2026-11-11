@@ -1,8 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
-import * as Location from 'expo-location';
 import {
-  Alert,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -18,46 +16,40 @@ import { TextLink } from '@/components/FormField';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { formatFoundAt } from '@/lib/items';
-import { CampusMap } from './CampusMap';
+import { readDeviceLocation } from './deviceLocation';
+import { StreetMap } from './StreetMap';
+import { campus, mapApi, type MapItem, type Coordinates } from './mapData';
 import { MapIcon, mapArt } from './mapArt';
-import {
-  categories,
-  coordinateForPoint,
-  defaultFilters,
-  mapOrigin,
-  places,
-  pointForCoordinate,
-  radii,
-  nearbyFromServer,
-  zeroOffset,
-  type MapCoordinate,
-  type MapPoint,
-  type NearbyFilters,
-  type NearbyItem,
-} from './nearbyItems';
+import { categories, defaultFilters, radii, type NearbyFilters } from './nearbyItems';
 import { Chips, FilterSheet, LocationDialog } from './NearbyOptions';
 import { NearbySearch } from './NearbySearch';
-
-const hasNativeMap = Platform.OS === 'android' || Platform.OS === 'ios';
-const defaultAreaLabel = hasNativeMap ? '한성대학교' : '삼선동';
 
 function openDetail(id: string) {
   router.push({ pathname: '/items/[id]', params: { id } });
 }
 
-function ItemRow({ item }: { item: NearbyItem }) {
+function ItemRow({ item }: { item: MapItem }) {
   const date = formatFoundAt(item.foundAt).slice(5, 10);
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.name} 상세 보기, ${item.location}, ${item.distanceM}m`}
+      accessibilityLabel={`${item.name} 상세 보기, ${item.foundLocation.label}, ${item.distanceM}m`}
       onPress={() => openDetail(item.id)}
       style={styles.item}
     >
-      <MapIcon source={mapArt.rows[item.marker.icon]} size={24} />
+      <MapIcon
+        source={
+          item.category === 'ELECTRONICS'
+            ? mapArt.rows.buds
+            : item.category === 'WALLET_BAG'
+              ? mapArt.rows.bag
+              : mapArt.place
+        }
+        size={24}
+      />
       <View style={styles.itemText}>
         <Text style={typography.label}>{item.name}</Text>
-        <Text style={styles.caption}>{item.location}</Text>
+        <Text style={styles.caption}>{item.foundLocation.label}</Text>
       </View>
       <View style={styles.distance}>
         <Text style={[typography.label, styles.blue]}>{item.distanceM}m</Text>
@@ -67,9 +59,21 @@ function ItemRow({ item }: { item: NearbyItem }) {
   );
 }
 
+const emptyItems: MapItem[] = [];
 export function NearbyScreen() {
-  const [offset, setOffset] = useState<MapPoint>(zeroOffset);
-  const [searchedArea, setSearchedArea] = useState({ offset: zeroOffset, label: defaultAreaLabel });
+  const [center, setCenter] = useState(campus);
+  const [visible, setVisible] = useState(campus);
+  const [searchedArea, setSearchedArea] = useState<{ point: Coordinates; label: string }>();
+  const [position, setPosition] = useState<Coordinates>();
+  const [result, setResult] = useState<{
+    params: string;
+    reload: number;
+    rows: MapItem[];
+    error: string;
+  }>();
+  const [message, setMessage] = useState('');
+  const [reload, setReload] = useState(0);
+  const locationAttempt = useRef(0);
   const [filters, setFilters] = useState(defaultFilters);
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<string[]>([]);
@@ -77,8 +81,6 @@ export function NearbyScreen() {
   const [expanded, setExpanded] = useState(false);
   const [searching, setSearching] = useState(false);
   const [overlay, setOverlay] = useState<'filters' | 'location'>();
-  const [userPosition, setUserPosition] = useState<MapCoordinate>();
-  const locating = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -91,34 +93,41 @@ export function NearbyScreen() {
     }, [searching]),
   );
 
-  const searchCenter = coordinateForPoint({
-    x: mapOrigin.x - searchedArea.offset.x,
-    y: mapOrigin.y - searchedArea.offset.y,
-  });
-  const { latitude, longitude } = searchCenter;
-  const queryKey = JSON.stringify([filters, query, latitude, longitude]);
-  const [result, setResult] = useState<{
-    key: string;
-    rows: NearbyItem[];
-    state: 'ready' | 'error';
-  }>();
-  const items = result?.key === queryKey ? result.rows : [];
-  const nearbyState = result?.key === queryKey ? result.state : 'loading';
+  const params = searchedArea
+    ? new URLSearchParams({
+        lat: String(searchedArea.point.lat),
+        lng: String(searchedArea.point.lng),
+        radiusM: String(filters.radiusM),
+        category: filters.category,
+        registeredDays: filters.registeredDays,
+        q: query,
+      }).toString()
+    : '';
+  const loading = result?.params !== params || result.reload !== reload;
+  const items = loading ? emptyItems : result.rows;
+  const loadError = loading ? '' : result.error;
   useEffect(() => {
-    let active = true;
-    nearbyFromServer(filters, query, latitude, longitude)
+    if (!params) return;
+    const controller = new AbortController();
+    mapApi<MapItem[]>('/items/nearby?' + params, { signal: controller.signal })
       .then((rows) => {
-        if (active) setResult({ key: queryKey, rows, state: 'ready' });
+        if (!controller.signal.aborted) setResult({ params, reload, rows, error: '' });
       })
       .catch(() => {
-        if (active) setResult({ key: queryKey, rows: [], state: 'error' });
+        if (!controller.signal.aborted)
+          setResult({ params, reload, rows: [], error: '주변 습득물을 불러오지 못했어요.' });
       });
-    return () => {
-      active = false;
-    };
-  }, [filters, query, latitude, longitude, queryKey]);
+    return () => controller.abort();
+  }, [params, reload]);
+  const pins = useMemo(
+    () => items.map((i) => ({ ...i.foundLocation, id: i.id, title: i.name })),
+    [items],
+  );
   const selected = items.find(({ id }) => id === selectedId);
-  const moved = offset.x !== searchedArea.offset.x || offset.y !== searchedArea.offset.y;
+  const moved =
+    searchedArea &&
+    (Math.abs(visible.lat - searchedArea.point.lat) > 0.00005 ||
+      Math.abs(visible.lng - searchedArea.point.lng) > 0.00005);
   const hasFilters =
     filters.category !== defaultFilters.category ||
     filters.registeredDays !== defaultFilters.registeredDays ||
@@ -127,50 +136,55 @@ export function NearbyScreen() {
   const radius = radii.find(({ value }) => value === filters.radiusM)?.label;
   const resultLabel = filters.category === 'ALL' ? '이 주변 습득물' : category;
 
-  const moveMap = useCallback((point: MapPoint) => {
-    setOffset(point);
+  const centerMap = useCallback((point: Coordinates, label: string) => {
+    locationAttempt.current++;
+    setMessage('');
+    setCenter({ ...point });
+    setVisible(point);
+    setSearchedArea({ point, label });
     setSelectedId(undefined);
   }, []);
-
-  function centerMap(point: MapPoint, label: string) {
-    const next = { x: mapOrigin.x - point.x, y: mapOrigin.y - point.y };
-    moveMap(next);
-    setSearchedArea({ offset: next, label });
-  }
-
-  async function locate() {
-    if (locating.current) return;
-    locating.current = true;
-    try {
-      const { granted } = await Location.requestForegroundPermissionsAsync();
-      if (!granted) {
-        Alert.alert('위치 권한이 필요해요.', '장소를 직접 검색할 수도 있어요.');
-        return;
-      }
-      const { coords } = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.High,
-        mayShowUserSettingsDialog: false,
-      });
-      const point = { latitude: coords.latitude, longitude: coords.longitude };
-      setUserPosition(point);
-      centerMap(pointForCoordinate(point), '내 위치');
-      setQuery('');
-      setSearching(false);
-      setExpanded(false);
-    } catch {
-      Alert.alert(
-        '현재 위치를 가져오지 못했어요.',
-        '기기의 위치 설정을 확인하거나 장소를 검색해 주세요.',
-      );
-    } finally {
-      locating.current = false;
-    }
-  }
-
   function searchVisibleArea() {
-    if (moved) setSearchedArea({ offset, label: '선택한 지역' });
+    if (moved) setSearchedArea({ point: visible, label: '선택한 지역' });
   }
-
+  const locate = useCallback(async () => {
+    const attempt = ++locationAttempt.current;
+    setOverlay(undefined);
+    setSearching(false);
+    setExpanded(false);
+    setSearchedArea(undefined);
+    setPosition(undefined);
+    setMessage('현재 위치를 확인하고 있어요.');
+    try {
+      const p = await readDeviceLocation();
+      if (attempt !== locationAttempt.current) return;
+      const point = { lat: p.coords.latitude, lng: p.coords.longitude };
+      setPosition(point);
+      centerMap(point, '내 주변');
+      setQuery('');
+      setMessage(
+        p.coords.accuracy !== null
+          ? '기기 추정 위치 · 예상 오차 반경 약 ' + Math.ceil(p.coords.accuracy) + 'm'
+          : '기기가 추정한 위치를 표시했어요.',
+      );
+    } catch (e) {
+      if (attempt !== locationAttempt.current) return;
+      centerMap(campus, '기본 지도 · 한성대학교');
+      setQuery('');
+      setMessage(
+        (e instanceof Error ? e.message : '현재 위치를 찾지 못했어요.') +
+          ' 장소를 직접 검색할 수도 있어요.',
+      );
+    }
+  }, [centerMap]);
+  useFocusEffect(
+    useCallback(() => {
+      void locate();
+      return () => {
+        locationAttempt.current++;
+      };
+    }, [locate]),
+  );
   function updateFilters(next: NearbyFilters) {
     setFilters(next);
     searchVisibleArea();
@@ -179,11 +193,8 @@ export function NearbyScreen() {
   }
 
   function submitSearch(input: string) {
-    const place = places.find(({ name }) => name === input);
-    if (place) {
-      const point =
-        hasNativeMap && 'coordinate' in place ? pointForCoordinate(place.coordinate) : place.point;
-      centerMap(point, place.name);
+    if (input === '한성대학교') {
+      centerMap(campus, input);
       setQuery('');
     } else {
       setQuery(input);
@@ -196,7 +207,7 @@ export function NearbyScreen() {
   }
 
   function showAll() {
-    centerMap(mapOrigin, defaultAreaLabel);
+    searchVisibleArea();
     setFilters(defaultFilters);
     setQuery('');
     setExpanded(true);
@@ -215,38 +226,44 @@ export function NearbyScreen() {
             query={query}
             recent={recent}
             onClose={() => setSearching(false)}
-            onLocate={locate}
+            onLocate={() => setOverlay('location')}
             onSearch={submitSearch}
+            onPlace={(point, label) => {
+              centerMap(point, label);
+              setQuery('');
+              setSearching(false);
+            }}
           />
         ) : (
           <>
             <View style={styles.header}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`현재 검색 지역 ${searchedArea.label}, 장소 변경`}
+                accessibilityLabel={`현재 검색 지역 ${searchedArea?.label ?? '위치 확인 중'}, 장소 변경`}
                 onPress={() => setSearching(true)}
                 style={styles.area}
               >
                 <Text style={styles.areaName} numberOfLines={1}>
-                  {searchedArea.label}
+                  {searchedArea?.label ?? '위치 확인 중'}
                 </Text>
                 <MapIcon source={mapArt.chevron} size={16} />
               </Pressable>
-              <Text style={styles.caption}>{hasNativeMap ? '주변 습득물' : '위치 안내도'}</Text>
+              <TextLink label="내 하루 경로" onPress={() => router.push('/daily-route')} />
             </View>
             <View style={[styles.map, expanded && styles.shortMap]}>
-              <CampusMap
-                offset={offset}
-                items={items}
-                selectedId={selectedId}
-                showOrigin={overlay !== 'location'}
-                userPosition={userPosition}
-                onMove={moveMap}
-                onSelect={(id) => {
-                  setSelectedId(id);
-                  setExpanded(false);
-                }}
-              />
+              {searchedArea && (
+                <StreetMap
+                  center={center}
+                  position={position}
+                  pins={pins}
+                  selectedId={selectedId}
+                  onMove={setVisible}
+                  onSelect={(id) => {
+                    setSelectedId(id);
+                    setExpanded(false);
+                  }}
+                />
+              )}
               <View style={styles.tools} pointerEvents="box-none">
                 <Pressable
                   accessibilityRole="button"
@@ -300,7 +317,7 @@ export function NearbyScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="내 주변"
-                    onPress={locate}
+                    onPress={() => void locate()}
                     style={[styles.mapButton, styles.locate]}
                   >
                     <MapIcon source={mapArt.locate} size={22} />
@@ -316,13 +333,11 @@ export function NearbyScreen() {
                   accessibilityLiveRegion="polite"
                   style={styles.sheetTitle}
                 >
-                  {nearbyState === 'loading'
-                    ? '불러오는 중…'
-                    : nearbyState === 'error'
-                      ? '주변 습득물을 불러오지 못했어요.'
-                      : selected
-                        ? '선택한 습득물'
-                        : `${resultLabel} ${items.length}개`}
+                  {selected
+                    ? '선택한 습득물'
+                    : loading
+                      ? '근처 습득물'
+                      : `${resultLabel} ${items.length}개`}
                 </Text>
                 {selected ? (
                   <TextLink label="닫기" onPress={() => setSelectedId(undefined)} />
@@ -336,7 +351,22 @@ export function NearbyScreen() {
                   <TextLink label="검색어 지우기" onPress={() => setQuery('')} />
                 ) : null}
               </View>
-              {selected ? (
+              {!!message && (
+                <Text accessibilityLiveRegion="polite" style={styles.caption}>
+                  {message}
+                </Text>
+              )}
+              {searchedArea?.label === '기본 지도 · 한성대학교' && (
+                <TextLink label="내 위치 다시 확인" onPress={() => void locate()} />
+              )}
+              {!searchedArea ? null : loading ? (
+                <Text style={styles.caption}>주변 습득물을 불러오는 중이에요.</Text>
+              ) : loadError ? (
+                <>
+                  <Text accessibilityRole="alert">{loadError}</Text>
+                  <TextLink label="다시 시도" onPress={() => setReload((n) => n + 1)} />
+                </>
+              ) : selected ? (
                 <>
                   <ItemRow item={selected} />
                   <ActionButton label="물품 상세 보기" onPress={() => openDetail(selected.id)} />
@@ -362,7 +392,7 @@ export function NearbyScreen() {
             </View>
           </>
         )}
-        <BottomNavigation selected="nearby" />
+        <BottomNavigation selected="nearby" onNearbyReselect={() => void locate()} />
       </KeyboardAvoidingView>
       {overlay === 'filters' && (
         <FilterSheet
@@ -378,13 +408,7 @@ export function NearbyScreen() {
             setOverlay(undefined);
             setSearching(true);
           }}
-          onUseExample={() => {
-            centerMap(mapOrigin, defaultAreaLabel);
-            setQuery('');
-            setExpanded(false);
-            setSearching(false);
-            setOverlay(undefined);
-          }}
+          onLocate={() => void locate()}
         />
       )}
     </Screen>

@@ -116,11 +116,11 @@ export function FilterSheet({
 
 export function LocationDialog({
   onClose,
-  onUseExample,
+  onLocate,
   onSearch,
 }: {
   onClose: () => void;
-  onUseExample: () => void;
+  onLocate: () => void;
   onSearch: () => void;
 }) {
   return (
@@ -131,9 +131,9 @@ export function LocationDialog({
           내 주변 물품을 찾아볼까요?
         </Text>
         <Text style={[typography.body, styles.locationText]}>
-          {'예시 지도에서는 삼선동을 기준으로 탐색해요.\n장소를 직접 검색할 수도 있어요.'}
+          {'기기 위치를 사용해 가까운 습득물을 찾아요.\n장소를 직접 검색할 수도 있어요.'}
         </Text>
-        <ActionButton label="예시 위치 사용하기" onPress={onUseExample} style={styles.fullWidth} />
+        <ActionButton label="내 위치 사용하기" onPress={onLocate} style={styles.fullWidth} />
         <TextLink label="장소로 직접 검색하기" onPress={onSearch} />
       </View>
     </Overlay>
