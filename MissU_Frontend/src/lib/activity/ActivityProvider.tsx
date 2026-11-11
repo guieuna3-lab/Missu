@@ -8,6 +8,8 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { api, ApiError } from '@/lib/backend';
+import type { ServerItem } from '@/lib/items';
 import { respond } from '@/lib/mockRequest';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { emptyActivity, sampleActivity } from './fixtures';
@@ -71,7 +73,7 @@ const LOAD_DELAY_MS = 300;
 type Loaded = { session: number; state: ActivityState };
 
 export function ActivityProvider({ children }: { children: ReactNode }) {
-  const { profile, sessionId, activityPreset } = usePreview();
+  const { profile, sessionId, activityPreset, accessToken } = usePreview();
   const signedIn = !!profile;
   // Activity is keyed by the session that loaded it; a new session starts empty and loading.
   const [loaded, setLoaded] = useState<Loaded | null>(null);
@@ -81,6 +83,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   // Actions read the latest state here, so two quick taps cannot work on stale data.
   const stateRef = useRef(state);
   const counter = useRef(0);
+  const attempt = useRef<{ form: string; key: string } | null>(null);
 
   useEffect(() => {
     stateRef.current = state;
@@ -88,6 +91,55 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!signedIn) return;
+    if (accessToken) {
+      let active = true;
+      const headers = { Authorization: 'Bearer ' + accessToken };
+      void (async () => {
+        const history = await api<{ data: { id: string; createdAt: string }[] }>(
+          '/me/history?type=MY_ITEMS',
+          { headers },
+        );
+        const foundItems = await Promise.all(
+          history.data.map(async (row) => {
+            const { data } = await api<{ data: ServerItem & { privateFeatures?: string } }>(
+              '/items/' + row.id + '/manage',
+              { headers },
+            );
+            return {
+              id: row.id,
+              name: data.name,
+              createdAt: row.createdAt,
+              category: data.category === 'WALLET_BAG' ? ('BAG' as const) : data.category,
+              foundAt: data.foundAt,
+              place: {
+                name: data.foundLocation.label,
+                detail: data.foundLocation.label,
+                lat: data.foundLocation.lat,
+                lng: data.foundLocation.lng,
+              },
+              photos: data.photos.length,
+              storage: data.storagePlace,
+              pickupGuide: data.pickupGuide ?? '',
+              privateFeature: data.privateFeatures ?? '',
+            };
+          }),
+        );
+        if (active)
+          setLoaded((current) =>
+            current?.session === sessionId
+              ? current
+              : { session: sessionId, state: { ...emptyActivity, foundItems } },
+          );
+      })().catch(() => {
+        if (active)
+          setLoaded((current) =>
+            current?.session === sessionId ? current : { session: sessionId, state: emptyActivity },
+          );
+      });
+      return () => {
+        active = false;
+      };
+    }
     const timer = setTimeout(() => {
       setLoaded({
         session: sessionId,
@@ -95,7 +147,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       });
     }, LOAD_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [signedIn, sessionId, activityPreset]);
+  }, [signedIn, sessionId, activityPreset, accessToken]);
 
   // Ids must not collide with the fixture ids (such as lost-1), so they carry a time part.
   const clock = useCallback((prefix: string) => {
@@ -132,11 +184,49 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       updateLostReport: (id: string, patch: Partial<LostReportInput>) =>
         apply((current) => updateLostReport(current, id, patch)),
       deleteLostReport: (id: string) => apply((current) => deleteLostReport(current, id)),
-      registerFoundItem: (input: FoundItemInput) =>
-        run((current) => {
-          const { state: next, item } = addFoundItem(current, input, clock('found'));
-          return { state: next, result: item };
-        }),
+      registerFoundItem: async (input: FoundItemInput) => {
+        if (!accessToken) throw new ApiError(401, '로그인이 필요합니다.');
+        if (!input.photoIds?.length || input.place.lat == null || input.place.lng == null)
+          throw new ApiError(400, '물품 사진과 습득 위치를 다시 선택해 주세요.');
+        const category =
+          input.category === 'WALLET' || input.category === 'BAG'
+            ? 'WALLET_BAG'
+            : input.category === 'ELECTRONICS'
+              ? 'ELECTRONICS'
+              : 'OTHER';
+        const payload = {
+          name: input.name,
+          category,
+          foundAt: input.foundAt,
+          foundLocation: { label: input.place.detail, lat: input.place.lat, lng: input.place.lng },
+          photoIds: input.photoIds,
+          storagePlace: input.storage,
+          pickupGuide: input.pickupGuide,
+          privateFeatures: input.privateFeature,
+        };
+        const fingerprint = JSON.stringify(payload);
+        if (attempt.current?.form !== fingerprint)
+          attempt.current = { form: fingerprint, key: crypto.randomUUID() };
+        const result = await api<{ data: { id: string } }>('/items', {
+          method: 'POST',
+          headers: {
+            Authorization: 'Bearer ' + accessToken,
+            'Content-Type': 'application/json',
+            'Idempotency-Key': attempt.current.key,
+          },
+          body: fingerprint,
+        });
+        const { state: next, item } = addFoundItem(stateRef.current, input, {
+          id: result.data.id,
+          now: new Date().toISOString(),
+        });
+        next.foundItems = next.foundItems.filter(
+          (v, i, arr) => arr.findIndex((x) => x.id === v.id) === i,
+        );
+        stateRef.current = next;
+        setLoaded({ session: sessionId, state: next });
+        return item;
+      },
       updateFoundItem: (id: string, patch: Partial<FoundItemInput>) =>
         apply((current) => updateFoundItem(current, id, patch)),
       sendRequest: (input: RequestInput) =>
@@ -161,7 +251,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           reportSuspicious(current, id, { ...report, createdAt: new Date().toISOString() }),
         ),
     }),
-    [apply, clock, run],
+    [apply, clock, run, accessToken, sessionId],
   );
 
   const value = useMemo(() => ({ ...state, status, ...actions }), [state, status, actions]);
