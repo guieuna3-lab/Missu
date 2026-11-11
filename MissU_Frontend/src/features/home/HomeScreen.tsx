@@ -1,4 +1,6 @@
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
+import { useState, useCallback } from 'react';
+import { itemRepository, type PublicItem } from '@/lib/items';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -6,10 +8,33 @@ import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { previewActivity, previewItems } from '@/lib/preview/fixtures';
+import { previewActivity } from '@/lib/preview/fixtures';
 import { isPreview } from '@/lib/preview/PreviewProvider';
 
 export function HomeScreen() {
+  const [recent, setRecent] = useState<PublicItem[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      setState('loading');
+      itemRepository
+        .search({ query: '', place: '', period: 'all' })
+        .then((items) => {
+          if (active) {
+            setRecent(items.slice(0, 3));
+            setState('ready');
+          }
+        })
+        .catch(() => {
+          if (active) setState('error');
+        });
+      return () => {
+        active = false;
+      };
+    }, []),
+  );
+
   return (
     <Screen>
       <Header />
@@ -58,22 +83,30 @@ export function HomeScreen() {
         </Text>
         <View style={styles.items}>
           {/* Figma 01.03-E: no recent items yet. */}
-          {!isPreview && <Text style={styles.secondary}>최근 등록된 습득물이 없어요</Text>}
-          {isPreview &&
-            previewItems.map((item) => (
+          {state === 'loading' && <Text style={styles.secondary}>최근 습득물을 불러오는 중…</Text>}
+          {state === 'error' && (
+            <Text style={styles.secondary}>최근 습득물을 불러오지 못했어요.</Text>
+          )}
+          {state === 'ready' && !recent.length && (
+            <Text style={styles.secondary}>최근 등록된 습득물이 없어요</Text>
+          )}
+          {state === 'ready' &&
+            recent.map((item) => (
               <Pressable
                 key={item.id}
                 accessibilityRole="button"
                 onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
                 style={styles.item}
               >
-                <Icon name={item.icon} />
+                <Icon name="search" />
                 <View style={styles.itemText}>
-                  <Text style={typography.label}>{item.title}</Text>
+                  <Text style={typography.label}>{item.name}</Text>
                   <Text style={styles.secondary}>{item.location}</Text>
                 </View>
                 <View style={styles.status}>
-                  <Text style={[typography.label, { color: colors.green }]}>보관 중</Text>
+                  <Text style={[typography.label, { color: colors.green }]}>
+                    {item.statusLabel}
+                  </Text>
                 </View>
               </Pressable>
             ))}
