@@ -2,10 +2,10 @@ import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
 import { typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { AuthScreen } from './AuthScreen';
 import { confirmSignup, resendSignupCode } from './mockAuthApi';
 import { useSignupDraft } from './SignupDraft';
 import { isVerificationCode, requestErrorMessage } from './validation';
@@ -56,7 +56,7 @@ export function SignupVerifyScreen() {
   };
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="이메일 인증"
       onBack={() => router.dismissTo('/signup')}
       heading="이메일을 확인할게요"
@@ -82,6 +82,6 @@ export function SignupVerifyScreen() {
       />
       <Text style={typography.body}>이메일은 로그인과 비밀번호 찾기에 사용됩니다.</Text>
       {message && <FormMessage tone={message.tone}>{message.text}</FormMessage>}
-    </AuthScreen>
+    </FlowScreen>
   );
 }

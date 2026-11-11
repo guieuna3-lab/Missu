@@ -2,10 +2,10 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { AuthScreen } from './AuthScreen';
 import { login } from './mockAuthApi';
 import { isEmail, requestErrorMessage } from './validation';
 
@@ -39,7 +39,7 @@ export function LoginScreen() {
   }
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="로그인"
       onBack={cancelLogin}
       heading="이메일로 로그인하세요"
@@ -78,7 +78,7 @@ export function LoginScreen() {
         </Text>
         <TextLink label="비밀번호 찾기" onPress={() => router.push('/password-reset')} />
       </View>
-    </AuthScreen>
+    </FlowScreen>
   );
 }
 

@@ -2,12 +2,10 @@ import { router } from 'expo-router';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { unavailableHint } from '@/constants/messages';
 import { colors } from '@/constants/theme';
-import { usePreview } from '@/lib/preview/PreviewProvider';
 import { Icon, type IconName } from './Icon';
 
 type Tab = 'home' | 'nearby' | 'report' | 'history';
 export function BottomNavigation({ selected }: { selected: Tab }) {
-  const { profile } = usePreview();
   const tabs: { key: string; label: string; icon: IconName; onPress?: () => void }[] = [
     {
       key: 'home',
@@ -27,7 +25,9 @@ export function BottomNavigation({ selected }: { selected: Tab }) {
       key: 'report',
       label: '신고',
       icon: selected === 'report' ? 'edit-active' : 'edit',
-      onPress: profile ? undefined : () => router.replace('/report'),
+      onPress: () => {
+        if (selected !== 'report') router.replace('/report');
+      },
     },
     {
       key: 'history',

@@ -18,8 +18,14 @@ function getSearchReturnTo(origin: LoginOrigin | null): Href | undefined {
   return undefined;
 }
 
+/** Which mock activity a member session starts with: Figma examples, or nothing (가입 직후). */
+export type ActivityPreset = 'sample' | 'empty';
+
 type PreviewState = {
   profile: Profile | null;
+  /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
+  sessionId: number;
+  activityPreset: ActivityPreset;
   updateProfile: (profile: Profile) => void;
   exitMemberPreview: () => void;
   startLogin: (origin: LoginOrigin) => void;
@@ -37,14 +43,22 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     previewMode === 'member' ? { ...previewProfile } : null,
   );
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
+  const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
+  const [sessionId, setSessionId] = useState(0);
+  const nextSession = () => setSessionId((current) => current + 1);
   return (
     <PreviewContext.Provider
       value={{
         profile,
+        sessionId,
+        activityPreset,
         updateProfile: (next) => {
           if (profile) setProfile(next);
         },
-        exitMemberPreview: () => setProfile(null),
+        exitMemberPreview: () => {
+          nextSession();
+          setProfile(null);
+        },
         startLogin: (origin) => {
           setLoginOrigin(origin);
           router.push('/login');
@@ -53,8 +67,15 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           setLoginOrigin(null);
           router.dismissTo(getSearchReturnTo(loginOrigin) ?? '/home');
         },
-        signIn: (next) => setProfile(next),
+        signIn: (next) => {
+          nextSession();
+          setActivityPreset('sample');
+          setProfile(next);
+        },
         completeSignup: (next) => {
+          // A new account has no activity yet (Figma 01.05-E).
+          nextSession();
+          setActivityPreset('empty');
           setProfile(next);
           if (getSearchReturnTo(loginOrigin)) {
             router.dismissTo('/login');

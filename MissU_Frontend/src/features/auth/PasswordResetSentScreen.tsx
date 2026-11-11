@@ -2,9 +2,9 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { Card } from '@/components/Card';
-import { AuthScreen } from './AuthScreen';
 import { requestPasswordReset } from './mockAuthApi';
 import { requestErrorMessage } from './validation';
 
@@ -33,7 +33,7 @@ export function PasswordResetSentScreen() {
   }
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="비밀번호 재설정"
       onBack={() => router.dismissTo('/password-reset')}
       heading="이메일을 확인해 주세요"
@@ -58,7 +58,7 @@ export function PasswordResetSentScreen() {
       <View style={styles.center}>
         <TextLink label="이메일 주소 수정" onPress={() => router.dismissTo('/password-reset')} />
       </View>
-    </AuthScreen>
+    </FlowScreen>
   );
 }
 

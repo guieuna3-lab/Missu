@@ -1,17 +1,17 @@
 import { Redirect } from 'expo-router';
 import { StyleSheet, Text } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { Card } from '@/components/Card';
 import { colors, typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { AuthScreen } from './AuthScreen';
 
 // Figma 02.05
 export function SignupCompleteScreen() {
   const { profile, continueAfterLogin } = usePreview();
   if (!profile) return <Redirect href="/signup" />;
   return (
-    <AuthScreen
+    <FlowScreen
       title="가입 완료"
       centered
       actions={
@@ -41,7 +41,7 @@ export function SignupCompleteScreen() {
       <Card title="이메일 인증 완료" blue centered accent>
         별도의 승인 없이 바로 시작할 수 있어요.
       </Card>
-    </AuthScreen>
+    </FlowScreen>
   );
 }
 
