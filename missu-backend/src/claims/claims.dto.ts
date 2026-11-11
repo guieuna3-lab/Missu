@@ -2,6 +2,9 @@ import {
   Matches,
   ValidateIf,
   IsDefined,
+  IsArray,
+  ArrayMaxSize,
+  ArrayUnique,
   IsIn,
   IsInt,
   IsObject,
@@ -58,6 +61,13 @@ export class MessagesQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) limit = 50;
 }
 export class ReportDto {
+  @IsOptional() @Trim() @IsString() @Length(0, 1000) description?: string;
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ArrayUnique()
+  @IsUUID('all', { each: true })
+  photoIds?: string[];
   @Trim() @IsString() @Length(1, 200) reason: string;
 }
 export class EmptyDto {}
