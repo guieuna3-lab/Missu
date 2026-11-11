@@ -23,6 +23,7 @@ export type FoundDraft = {
   foundAtText: string;
   place?: Place;
   photos: number;
+  attachments?: { id: string; preview: string }[];
   storage: string;
   pickupGuide: string;
   privateFeature: string;
