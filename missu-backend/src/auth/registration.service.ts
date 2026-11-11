@@ -74,17 +74,37 @@ export class RegistrationService {
       windowMs: 3600000,
       reason: '인증번호 요청이 시간당 한도에 도달했습니다.',
     };
-    await this.rates.consumeAll([
-      { key: 'otp-ip:' + req.ip, ...hourly },
-      { key: 'otp-session:' + session.id, ...hourly },
-      { key: 'otp-target:' + targetDigest, ...hourly },
-      {
-        key: 'otp-cooldown:' + dto.purpose + ':' + targetDigest,
-        maximum: 1,
-        windowMs: 60000,
-        reason: '인증번호 재요청은 60초 간격으로 가능합니다.',
-      },
-    ]);
+    const sms = {
+      maximum: 3,
+      windowMs: 60000,
+      renewOnAccepted: true,
+      reason: '인증 문자를 연속 3회 요청했습니다.',
+    };
+    // 문자와 이메일의 한도를 분리합니다. 문자는 마지막 접수 시각을 기준으로 1분 후 풀립니다.
+    const nextAllowedAt = await this.rates.consumeAll(
+      dto.purpose === 'PHONE'
+        ? [
+            { key: 'sms-user:' + session.userId, ...sms },
+            { key: 'sms-target:' + targetDigest, ...sms },
+            {
+              key: 'sms-ip:' + req.ip,
+              maximum: 5,
+              windowMs: 60000,
+              reason: '이 네트워크의 문자 요청이 분당 한도에 도달했습니다.',
+            },
+          ]
+        : [
+            { key: 'otp-ip:' + req.ip, ...hourly },
+            { key: 'otp-session:' + session.id, ...hourly },
+            { key: 'otp-target:' + targetDigest, ...hourly },
+            {
+              key: 'otp-cooldown:' + dto.purpose + ':' + targetDigest,
+              maximum: 1,
+              windowMs: 60000,
+              reason: '인증번호 재요청은 60초 간격으로 가능합니다.',
+            },
+          ],
+    );
     const id = randomUUID(),
       code = randomInt(0, 1000000).toString().padStart(6, '0');
     const expiresAt = new Date(
@@ -168,7 +188,11 @@ export class RegistrationService {
       });
       fail(503, 'EXTERNAL_UNAVAILABLE', '인증번호 발송을 접수하지 못했습니다.');
     }
-    return { challengeId: id, retryAfter: 60, expiresAt };
+    const retryAfter =
+      dto.purpose === 'PHONE'
+        ? Math.max(0, Math.ceil((nextAllowedAt - Date.now()) / 1000))
+        : 60;
+    return { challengeId: id, retryAfter, expiresAt };
   }
   private async locked(tx: Tx, id: string, sessionId: string) {
     const initial = await tx.authChallenge.findUnique({ where: { id } });

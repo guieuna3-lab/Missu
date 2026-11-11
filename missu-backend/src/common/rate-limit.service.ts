@@ -8,6 +8,7 @@ export type RateLimit = {
   key: string;
   maximum: number;
   windowMs: number;
+  renewOnAccepted?: boolean;
   reason?: string;
 };
 
@@ -21,7 +22,7 @@ export class RateLimitService {
     const rules = limits
       .map(({ key, ...rule }) => ({ id: sign('rate:' + key), ...rule }))
       .sort((a, b) => a.id.localeCompare(b.id));
-    await this.db.$transaction(async (tx) => {
+    return this.db.$transaction(async (tx) => {
       // 같은 번호·세션의 동시 요청도 모든 제한을 같은 순서로 잠그고 함께 판정합니다.
       for (const { id } of rules) {
         await tx.$executeRawUnsafe(
@@ -63,14 +64,23 @@ export class RateLimitService {
         );
       }
       // 하나라도 차단됐으면 어느 횟수도 차감하지 않습니다.
-      for (const { id, windowMs } of rules) {
-        const initial = { count: 1, expiresAt: new Date(+now + windowMs) };
+      let nextAllowedAt = 0;
+      for (const { id, windowMs, maximum, renewOnAccepted } of rules) {
+        const bucket = buckets.get(id);
+        const count = (bucket?.count ?? 0) + 1;
+        const expiresAt =
+          bucket && !renewOnAccepted
+            ? bucket.expiresAt
+            : new Date(+now + windowMs);
         await tx.rateLimitBucket.upsert({
           where: { id },
-          create: { id, ...initial },
-          update: buckets.has(id) ? { count: { increment: 1 } } : initial,
+          create: { id, count, expiresAt },
+          update: { count, expiresAt },
         });
+        if (count >= maximum)
+          nextAllowedAt = Math.max(nextAllowedAt, +expiresAt);
       }
+      return nextAllowedAt;
     });
   }
   async reset(key: string) {

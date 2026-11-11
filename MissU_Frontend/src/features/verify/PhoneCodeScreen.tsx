@@ -9,11 +9,9 @@ import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack, leaveFlowTo } from '@/lib/navigation';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import {
-  CODE_VALID_SECONDS,
   confirmPhoneCode,
-  pendingPhone,
+  pendingPhoneChallenge,
   InvalidCodeError,
-  MAX_RESENDS,
   requestPhoneCode,
 } from './mockPhoneApi';
 import { maskPhone } from './phone';
@@ -30,36 +28,36 @@ function formatSeconds(total: number) {
 // Figma 07.02 (empty), 07.03 (filled) and 07.04 (wrong or expired code).
 export function PhoneCodeScreen() {
   const { itemId } = useLocalSearchParams<{ itemId?: string }>();
-  const [phone] = useState(pendingPhone);
+  const [challenge, setChallenge] = useState(pendingPhoneChallenge);
+  const phone = challenge?.phone ?? '';
   const { verifyPhone, accessToken } = usePreview();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<{ text: string; tone: 'info' | 'error' }>();
   const [submitting, setSubmitting] = useState(false);
   const [resending, setResending] = useState(false);
-  const [resendsLeft, setResendsLeft] = useState(MAX_RESENDS);
-  // The code expires after three minutes; the countdown restarts on every resend.
-  const [issuedAt, setIssuedAt] = useState(() => Date.now());
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-  const remaining = Math.max(0, CODE_VALID_SECONDS - Math.floor((now - issuedAt) / 1000));
+  const remaining = Math.max(0, Math.ceil(((challenge?.expiresAt ?? 0) - now) / 1000));
+  const wait = Math.max(0, Math.ceil(((challenge?.retryAt ?? 0) - now) / 1000));
   const expired = remaining === 0;
 
   async function resend() {
-    if (resending || resendsLeft === 0) return;
+    if (resending || submitting || !challenge || wait > 0) return;
     setResending(true);
     setMessage(undefined);
     try {
-      await requestPhoneCode(phone, accessToken);
-      setResendsLeft((left) => left - 1);
-      setIssuedAt(Date.now());
+      setChallenge(await requestPhoneCode(phone, accessToken));
+      setCode('');
       setNow(Date.now());
       setError(undefined);
-      // Figma shows no result for 재전송; this confirmation is provisional.
-      setMessage({ text: '인증 문자를 다시 보냈어요.', tone: 'info' });
+      setMessage({
+        text: '인증 문자를 다시 보냈어요. 가장 최근에 요청한 인증번호를 입력해 주세요.',
+        tone: 'info',
+      });
     } catch (caught) {
       setMessage({ text: requestErrorMessage(caught), tone: 'error' });
     } finally {
@@ -68,7 +66,7 @@ export function PhoneCodeScreen() {
   }
 
   async function submit() {
-    if (submitting) return;
+    if (submitting || resending) return;
     if (!/^\d{6}$/.test(code)) {
       setError('6자리 인증번호를 입력해 주세요.');
       return;
@@ -102,7 +100,12 @@ export function PhoneCodeScreen() {
       heading="인증번호를 입력해 주세요"
       description={`${maskPhone(phone)}으로 문자를 보냈어요.\n3분 안에 인증번호를 입력해 주세요.`}
       actions={
-        <ActionButton label="인증하고 요청 작성하기" onPress={submit} loading={submitting} />
+        <ActionButton
+          label="인증하고 요청 작성하기"
+          onPress={submit}
+          loading={submitting}
+          disabled={resending}
+        />
       }
     >
       <FormField
@@ -122,18 +125,25 @@ export function PhoneCodeScreen() {
         onSubmitEditing={submit}
       />
       <View style={styles.links}>
-        <TextLink
-          label="인증 문자 재전송"
-          onPress={resend}
-          accessibilityLabel={resendsLeft ? '인증 문자 재전송' : '인증 문자 재전송, 횟수 소진'}
-        />
+        {challenge &&
+          (wait > 0 || resending || submitting ? (
+            <Text style={styles.muted}>
+              {wait > 0
+                ? `${wait}초 후 재전송 가능`
+                : resending
+                  ? '인증 문자 발송 중'
+                  : '인증 확인 중'}
+            </Text>
+          ) : (
+            <TextLink label="인증 문자 재전송" onPress={resend} />
+          ))}
         <TextLink label="휴대전화번호 수정" onPress={() => goBack('/verify-phone')} />
       </View>
       <Text style={[typography.label, expired && styles.expired]}>
         {expired ? '인증 시간이 지났어요' : `남은 시간 ${formatSeconds(remaining)}`}
       </Text>
       <Text style={styles.muted}>
-        {resendsLeft > 0 ? `재전송 ${resendsLeft}회 남음` : '재전송 횟수를 모두 사용했어요'}
+        첫 발송을 포함해 연속 3회 요청하면 1분 후 다시 받을 수 있어요.
       </Text>
       {message && <FormMessage tone={message.tone}>{message.text}</FormMessage>}
     </FlowScreen>
