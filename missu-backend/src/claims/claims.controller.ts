@@ -14,6 +14,8 @@ import type { SessionRequest } from '../auth/session.service';
 import { fail } from '../common/http';
 import { ClaimsService } from './claims.service';
 import {
+  AppointmentDto,
+  ConfirmAppointmentDto,
   CreateClaimDto,
   DecisionDto,
   EmptyDto,
@@ -37,6 +39,62 @@ export class ClaimsController {
         id,
         req.authSession!.userId!,
         dto,
+        key,
+        String(req.headers['x-request-id']),
+      ),
+    };
+  }
+  @Get('me/claims')
+  list(@Req() req: SessionRequest, @Query('cursor') cursor?: string) {
+    return this.claims.list(req.authSession!.userId!, cursor);
+  }
+  @Post('claims/:id/appointment')
+  @HttpCode(200)
+  async propose(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AppointmentDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: SessionRequest,
+  ) {
+    return {
+      data: await this.claims.appointment(
+        id,
+        req.authSession!.userId!,
+        dto,
+        key,
+      ),
+    };
+  }
+  @Post('claims/:id/appointment/confirm')
+  @HttpCode(200)
+  async confirm(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ConfirmAppointmentDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: SessionRequest,
+  ) {
+    return {
+      data: await this.claims.appointment(
+        id,
+        req.authSession!.userId!,
+        dto,
+        key,
+      ),
+    };
+  }
+  @Post('claims/:id/cancel')
+  @HttpCode(200)
+  async cancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EmptyDto,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: SessionRequest,
+  ) {
+    this.empty(dto);
+    return {
+      data: await this.claims.cancel(
+        id,
+        req.authSession!.userId!,
         key,
         String(req.headers['x-request-id']),
       ),
