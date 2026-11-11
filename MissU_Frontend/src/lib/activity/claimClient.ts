@@ -1,7 +1,15 @@
 import { randomUUID } from 'expo-crypto';
 import { api } from '@/lib/backend';
 import { formatDateTimeRange } from '@/lib/dateTime';
-import type { Appointment, ChatMessage, OwnershipRequest, Party, RequestStatus } from './types';
+import {
+  reportReasons,
+  type SuspiciousReport,
+  type Appointment,
+  type ChatMessage,
+  type OwnershipRequest,
+  type Party,
+  type RequestStatus,
+} from './types';
 
 type Claim = {
   id: string;
@@ -149,5 +157,23 @@ export function createClaimClient(token: string) {
     attempts.delete(signature);
     return claim;
   }
-  return { list, messages, mutate };
+  async function report(id: string, input: Omit<SuspiciousReport, 'createdAt'>) {
+    const path = '/claims/' + id + '/reports';
+    const body = JSON.stringify({
+      reason: reportReasons.find((option) => option.value === input.reason)!.label,
+      description: input.description,
+      photoIds: input.photoIds ?? [],
+    });
+    const signature = path + body,
+      key = attempts.get(signature) ?? randomUUID();
+    attempts.set(signature, key);
+    const { data } = await api<{ data: { reportId: string } }>(path, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json', 'Idempotency-Key': key },
+      body,
+    });
+    attempts.delete(signature);
+    return data.reportId;
+  }
+  return { list, messages, mutate, report };
 }

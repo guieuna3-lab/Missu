@@ -36,6 +36,7 @@ export type LostReport = {
 };
 
 export type FoundItem = {
+  attachments?: { id: string; preview: string }[];
   id: string;
   category: ItemCategory;
   name: string;
@@ -70,6 +71,7 @@ export const reportReasons: { value: ReportReason; label: string }[] = [
 ];
 
 export type SuspiciousReport = {
+  photoIds?: string[];
   by: Party;
   reason: ReportReason;
   description: string;

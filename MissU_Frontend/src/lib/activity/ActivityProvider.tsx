@@ -1,3 +1,5 @@
+import { randomUUID } from 'expo-crypto';
+import { lostReportClient } from './lostReports';
 import { usePathname } from 'expo-router';
 import { createClaimClient } from './claimClient';
 import {
@@ -10,7 +12,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, ApiError } from '@/lib/backend';
+import { api, ApiError, apiBase } from '@/lib/backend';
 import type { ServerItem } from '@/lib/items';
 import { respond } from '@/lib/mockRequest';
 import { usePreview } from '@/lib/preview/PreviewProvider';
@@ -47,6 +49,8 @@ import type {
 
 // 로그인한 회원의 반환 내역은 서버에서 읽고, 개발용 예시 세션은 기존 데이터를 사용합니다.
 type ActivityValue = ActivityState & {
+  reportsError?: string;
+  retryReports: () => void;
   /** 'loading' while the activity is being fetched after sign-in (Figma 01.05-L). */
   status: 'loading' | 'ready';
   createLostReport: (input: LostReportInput) => Promise<LostReport>;
@@ -63,7 +67,10 @@ type ActivityValue = ActivityState & {
   confirmAppointment: (id: string, by: Party, proposalId?: string) => Promise<void>;
   markHanded: (id: string) => Promise<void>;
   confirmReceived: (id: string) => Promise<void>;
-  reportSuspicious: (id: string, report: Omit<SuspiciousReport, 'createdAt'>) => Promise<void>;
+  reportSuspicious: (
+    id: string,
+    report: Omit<SuspiciousReport, 'createdAt'>,
+  ) => Promise<string | void>;
 };
 
 const ActivityContext = createContext<ActivityValue | null>(null);
@@ -80,6 +87,16 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     () => (accessToken ? createClaimClient(accessToken) : null),
     [accessToken],
   );
+  const reportsClient = useMemo(
+    () => (accessToken ? lostReportClient(accessToken) : null),
+    [accessToken],
+  );
+  const [reportsLoad, setReportsLoad] = useState<{
+    client: typeof reportsClient;
+    error?: string;
+  }>();
+  const [reloadReports, setReloadReports] = useState(0);
+  const reportsRevision = useRef(0);
   const activeClient = useRef(claimClient);
   const revision = useRef(0);
   useEffect(() => {
@@ -108,6 +125,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     if (!signedIn) return;
     if (accessToken) {
       let active = true;
+      const initialItems = new Map(stateRef.current.foundItems.map((item) => [item.id, item]));
       const headers = { Authorization: 'Bearer ' + accessToken };
       void (async () => {
         const rows: { id: string; createdAt: string }[] = [];
@@ -123,15 +141,20 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         } while (cursor);
         const foundItems = await Promise.all(
           rows.map(async (row) => {
-            const { data } = await api<{ data: ServerItem & { privateFeatures?: string } }>(
-              '/items/' + row.id + '/manage',
-              { headers },
-            );
+            const { data } = await api<{
+              data: ServerItem & { privateFeatures?: string; appCategory?: FoundItem['category'] };
+            }>('/items/' + row.id + '/manage', { headers });
             return {
               id: row.id,
               name: data.name,
               createdAt: row.createdAt,
-              category: data.category === 'WALLET_BAG' ? ('BAG' as const) : data.category,
+              category:
+                data.appCategory ??
+                (data.category === 'WALLET_BAG' ? ('BAG' as const) : data.category),
+              attachments: data.photos.map((photo) => ({
+                id: photo.id,
+                preview: new URL(photo.url, apiBase).href,
+              })),
               foundAt: data.foundAt,
               place: {
                 name: data.foundLocation.label,
@@ -147,7 +170,15 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           }),
         );
         if (active) {
-          const next = { ...stateRef.current, foundItems };
+          // 조회 도중 등록하거나 수정한 물품은 서버의 이전 응답으로 덮지 않습니다.
+          const updated = stateRef.current.foundItems.filter(
+            (item) => initialItems.get(item.id) !== item,
+          );
+          const ids = new Set(updated.map((item) => item.id));
+          const next = {
+            ...stateRef.current,
+            foundItems: [...updated, ...foundItems.filter((item) => !ids.has(item.id))],
+          };
           stateRef.current = next;
           setLoaded({ session: sessionId, state: next });
         }
@@ -167,6 +198,50 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [signedIn, sessionId, activityPreset, accessToken]);
 
+  useEffect(() => {
+    if (!reportsClient) return;
+    let active = true;
+    const version = reportsRevision.current;
+    void reportsClient
+      .list()
+      .then((lostReports) => {
+        if (!active) return;
+        // 조회와 저장이 겹친 경우 최신 목록을 다시 읽어 삭제한 신고가 되살아나지 않게 합니다.
+        if (version !== reportsRevision.current) {
+          setReloadReports((n) => n + 1);
+          return;
+        }
+        const next = { ...stateRef.current, lostReports };
+        stateRef.current = next;
+        setLoaded({ session: sessionId, state: next });
+        setReportsLoad({ client: reportsClient });
+      })
+      .catch(() => {
+        if (active)
+          setReportsLoad({ client: reportsClient, error: '분실 신고 내역을 불러오지 못했어요.' });
+      });
+    return () => {
+      active = false;
+    };
+  }, [reportsClient, sessionId, reloadReports]);
+  const changeReport = useCallback(
+    (id: string, row?: LostReport) => {
+      if (!claimClient || activeClient.current !== claimClient)
+        throw new ApiError(401, '다시 로그인해 주세요.');
+      reportsRevision.current++;
+      const current = stateRef.current,
+        rest = current.lostReports.filter((r) => r.id !== id);
+      const next = {
+        ...current,
+        lostReports: row
+          ? [row, ...rest].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+          : rest,
+      };
+      stateRef.current = next;
+      setLoaded({ session: sessionId, state: next });
+    },
+    [claimClient, sessionId],
+  );
   // 메시지는 현재 열어 둔 요청에서만 읽고 새 메시지부터 이어 받습니다.
   useEffect(() => {
     if (!claimClient) return;
@@ -257,13 +332,27 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const actions = useMemo(
     () => ({
       createLostReport: (input: LostReportInput) =>
-        run((current) => {
-          const { state: next, report } = addLostReport(current, input, clock('lost'));
-          return { state: next, result: report };
-        }),
+        reportsClient
+          ? reportsClient.save(input).then((row) => {
+              changeReport(row.id, row);
+              return row;
+            })
+          : run((current) => {
+              const { state: next, report } = addLostReport(current, input, clock('lost'));
+              return { state: next, result: report };
+            }),
       updateLostReport: (id: string, patch: Partial<LostReportInput>) =>
-        apply((current) => updateLostReport(current, id, patch)),
-      deleteLostReport: (id: string) => apply((current) => deleteLostReport(current, id)),
+        reportsClient
+          ? (async () => {
+              const old = stateRef.current.lostReports.find((r) => r.id === id);
+              if (!old) throw new ApiError(404, '신고를 찾을 수 없어요.');
+              changeReport(id, await reportsClient.save({ ...old, ...patch }, id));
+            })()
+          : apply((current) => updateLostReport(current, id, patch)),
+      deleteLostReport: (id: string) =>
+        reportsClient
+          ? reportsClient.remove(id).then(() => changeReport(id))
+          : apply((current) => deleteLostReport(current, id)),
       registerFoundItem: async (input: FoundItemInput) => {
         if (!accessToken) throw new ApiError(401, '로그인이 필요합니다.');
         if (!input.photoIds?.length || input.place.lat == null || input.place.lng == null)
@@ -277,6 +366,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         const payload = {
           name: input.name,
           category,
+          appCategory: input.category,
           foundAt: input.foundAt,
           foundLocation: { label: input.place.detail, lat: input.place.lat, lng: input.place.lng },
           photoIds: input.photoIds,
@@ -286,7 +376,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         };
         const fingerprint = JSON.stringify(payload);
         if (attempt.current?.form !== fingerprint)
-          attempt.current = { form: fingerprint, key: crypto.randomUUID() };
+          attempt.current = { form: fingerprint, key: randomUUID() };
         const result = await api<{ data: { id: string } }>('/items', {
           method: 'POST',
           headers: {
@@ -296,6 +386,8 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           },
           body: fingerprint,
         });
+        attempt.current = null;
+        if (activeClient.current !== claimClient) throw new ApiError(401, '다시 로그인해 주세요.');
         const { state: next, item } = addFoundItem(stateRef.current, input, {
           id: result.data.id,
           now: new Date().toISOString(),
@@ -308,7 +400,56 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         return item;
       },
       updateFoundItem: (id: string, patch: Partial<FoundItemInput>) =>
-        apply((current) => updateFoundItem(current, id, patch)),
+        accessToken
+          ? (async () => {
+              const prior = stateRef.current.foundItems.find((r) => r.id === id);
+              if (!prior) throw new ApiError(404, '물품을 찾을 수 없어요.');
+              const item = { ...prior, ...patch };
+              const photoIds = patch.photoIds ?? item.attachments?.map((p) => p.id);
+              if (!photoIds?.length || item.place.lat == null || item.place.lng == null)
+                throw new ApiError(400, '사진과 위치를 확인해 주세요.');
+              const category =
+                item.category === 'WALLET' || item.category === 'BAG'
+                  ? 'WALLET_BAG'
+                  : item.category === 'ELECTRONICS'
+                    ? 'ELECTRONICS'
+                    : 'OTHER';
+              const { data } = await api<{ data: ServerItem }>('/items/' + id, {
+                method: 'PUT',
+                headers: {
+                  Authorization: 'Bearer ' + accessToken,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  name: item.name,
+                  category,
+                  appCategory: item.category,
+                  foundAt: item.foundAt,
+                  foundLocation: {
+                    label: item.place.detail,
+                    lat: item.place.lat,
+                    lng: item.place.lng,
+                  },
+                  photoIds,
+                  storagePlace: item.storage,
+                  pickupGuide: item.pickupGuide,
+                  privateFeatures: item.privateFeature,
+                }),
+              });
+              if (activeClient.current !== claimClient)
+                throw new ApiError(401, '다시 로그인해 주세요.');
+              const next = updateFoundItem(stateRef.current, id, {
+                ...patch,
+                photos: data.photos.length,
+                attachments: data.photos.map((p) => ({
+                  id: p.id,
+                  preview: new URL(p.url, apiBase).href,
+                })),
+              });
+              stateRef.current = next;
+              setLoaded({ session: sessionId, state: next });
+            })()
+          : apply((current) => updateFoundItem(current, id, patch)),
       sendRequest: (input: RequestInput) =>
         claimClient
           ? changeClaim('/items/' + input.itemId + '/claims', {
@@ -360,14 +501,36 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           ? changeClaim('/claims/' + id + '/receipt', {}, id).then(() => undefined)
           : apply((current) => confirmReceived(current, id, clock('received'))),
       reportSuspicious: (id: string, report: Omit<SuspiciousReport, 'createdAt'>) =>
-        apply((current) =>
-          reportSuspicious(current, id, { ...report, createdAt: new Date().toISOString() }),
-        ),
+        claimClient
+          ? claimClient.report(id, report)
+          : apply((current) =>
+              reportSuspicious(current, id, { ...report, createdAt: new Date().toISOString() }),
+            ),
     }),
-    [apply, clock, run, accessToken, sessionId, claimClient, changeClaim],
+    [
+      apply,
+      clock,
+      run,
+      accessToken,
+      sessionId,
+      claimClient,
+      changeClaim,
+      reportsClient,
+      changeReport,
+    ],
   );
 
-  const value = useMemo(() => ({ ...state, status, ...actions }), [state, status, actions]);
+  const value = useMemo(
+    () => ({
+      ...state,
+      status:
+        reportsClient && reportsLoad?.client !== reportsClient ? ('loading' as const) : status,
+      reportsError: reportsLoad?.client === reportsClient ? reportsLoad?.error : undefined,
+      retryReports: () => setReloadReports((n) => n + 1),
+      ...actions,
+    }),
+    [state, status, actions, reportsClient, reportsLoad],
+  );
   return <ActivityContext.Provider value={value}>{children}</ActivityContext.Provider>;
 }
 
