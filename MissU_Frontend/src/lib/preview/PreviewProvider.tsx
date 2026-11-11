@@ -74,7 +74,9 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         verifyPhone: (phone) =>
           setProfile((current) => (current ? { ...current, phone, phoneVerified: true } : current)),
         clearPhone: () =>
-          setProfile((current) => (current ? { ...current, phone: undefined } : current)),
+          setProfile((current) =>
+            current ? { ...current, phone: undefined, phoneVerified: false } : current,
+          ),
         exitMemberPreview: () => {
           nextSession();
           if (accessToken) void logout(accessToken).catch(() => undefined);
