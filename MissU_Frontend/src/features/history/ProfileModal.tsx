@@ -20,18 +20,31 @@ export function ProfileModal({
   onClose,
 }: {
   profile: Profile;
-  onSave: (name: string) => void;
+  onSave: (name: string) => Promise<void> | void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(profile.name);
   const [error, setError] = useState<string>();
 
-  function save() {
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    if (saving) return;
     if (!name.trim()) {
       setError('닉네임을 입력해 주세요.');
       return;
     }
-    onSave(name.trim());
+    if (name.trim().length < 2 || name.trim().length > 10) {
+      setError('닉네임은 2~10자로 입력해 주세요.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(name.trim());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '저장하지 못했어요.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -69,7 +82,7 @@ export function ProfileModal({
                 <Text style={typography.body}>{profile.email}</Text>
               </View>
             </View>
-            <ActionButton label="저장" onPress={save} />
+            <ActionButton label="저장" loading={saving} onPress={save} />
             <Text style={styles.note}>이메일은 변경할 수 없어요</Text>
           </View>
         </ScrollView>

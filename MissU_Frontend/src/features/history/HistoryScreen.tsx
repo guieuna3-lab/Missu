@@ -1,3 +1,4 @@
+import { api } from '@/lib/backend';
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -19,7 +20,8 @@ import { ProfileModal } from './ProfileModal';
 // Figma 01.05 with its loading (01.05-L), empty (01.05-E), logout confirmation (01.05-C)
 // and session-expired (01.04-S) states. A card with two or more entries opens the 01.09 list.
 export function HistoryScreen() {
-  const { profile, sessionExpired, updateProfile, exitMemberPreview, startLogin } = usePreview();
+  const { profile, accessToken, sessionExpired, updateProfile, exitMemberPreview, startLogin } =
+    usePreview();
   const activity = useActivity();
   const [editing, setEditing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -43,6 +45,19 @@ export function HistoryScreen() {
     <Screen>
       <Header />
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.profile}>
+          <Text style={typography.label}>나의 프로필</Text>
+          <Text style={typography.body}>
+            {profile.name} · {profile.email}
+          </Text>
+          <TextLink label="정보 수정" onPress={() => setEditing(true)} />
+          <TextLink label="계정 관리" onPress={() => router.push('/account')} />
+        </View>
+        {activity.reportsError && (
+          <Card title={activity.reportsError} onPress={activity.retryReports}>
+            다시 불러오기
+          </Card>
+        )}
         {activity.status === 'loading' ? (
           <>
             <Text accessibilityRole="header" style={typography.heading}>
@@ -72,14 +87,6 @@ export function HistoryScreen() {
           </>
         ) : (
           <>
-            <View style={styles.profile}>
-              <Text style={typography.label}>나의 프로필</Text>
-              <Text style={typography.body}>
-                {profile.name} · {profile.email}
-              </Text>
-              <TextLink label="정보 수정" onPress={() => setEditing(true)} />
-              <TextLink label="계정 관리" onPress={() => router.push('/account')} />
-            </View>
             <Text accessibilityRole="header" style={typography.heading}>
               내 활동
             </Text>
@@ -136,7 +143,16 @@ export function HistoryScreen() {
         <ProfileModal
           profile={profile}
           onClose={() => setEditing(false)}
-          onSave={(name) => {
+          onSave={async (name) => {
+            if (accessToken)
+              await api('/me', {
+                method: 'PATCH',
+                headers: {
+                  Authorization: 'Bearer ' + accessToken,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ nickname: name }),
+              });
             updateProfile({ name, email: profile.email });
             setEditing(false);
           }}
