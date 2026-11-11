@@ -69,14 +69,22 @@ export class RegistrationService {
     } else if (!isEmail(target))
       fail(400, 'VALIDATION_ERROR', '이메일 형식을 확인하세요.');
     const targetDigest = sign('target:' + target);
-    await this.rates.consume('otp-ip:' + req.ip, 5, 3600000);
-    await this.rates.consume('otp-session:' + session.id, 5, 3600000);
-    await this.rates.consume('otp-target:' + targetDigest, 5, 3600000);
-    await this.rates.consume(
-      'otp-cooldown:' + dto.purpose + ':' + targetDigest,
-      1,
-      60000,
-    );
+    const hourly = {
+      maximum: 5,
+      windowMs: 3600000,
+      reason: '인증번호 요청이 시간당 한도에 도달했습니다.',
+    };
+    await this.rates.consumeAll([
+      { key: 'otp-ip:' + req.ip, ...hourly },
+      { key: 'otp-session:' + session.id, ...hourly },
+      { key: 'otp-target:' + targetDigest, ...hourly },
+      {
+        key: 'otp-cooldown:' + dto.purpose + ':' + targetDigest,
+        maximum: 1,
+        windowMs: 60000,
+        reason: '인증번호 재요청은 60초 간격으로 가능합니다.',
+      },
+    ]);
     const id = randomUUID(),
       code = randomInt(0, 1000000).toString().padStart(6, '0');
     const expiresAt = new Date(
