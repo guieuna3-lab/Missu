@@ -1,6 +1,11 @@
 // Figma examples only. These are not API responses or authenticated user data.
-export const previewProfile = { name: '홍길동', email: 'missu@example.com' };
-export type Profile = typeof previewProfile;
+export type Profile = {
+  name: string;
+  email: string;
+  /** Verified mobile number (digits only) once the 07 flow completed. Never shown to others. */
+  phone?: string;
+};
+export const previewProfile: Profile = { name: '홍길동', email: 'missu@example.com' };
 
 export const previewItems = [
   {

@@ -84,9 +84,8 @@ export type OwnershipRequest = {
   storageName: string;
   requesterName: string;
   feature: string;
-  lostFrom: string;
-  lostTo: string;
-  lostPlace: string;
+  /** Free text from 08.01 "분실 날짜·시간 범위 / 장소", e.g. "2026.10.06 14:00~18:00 · 중앙도서관". */
+  lostInfo: string;
   status: RequestStatus;
   createdAt: string;
   messages: ChatMessage[];

@@ -1,7 +1,13 @@
+import type { ItemCategory } from './activity/types';
+
 export type PublicItem = {
   id: string;
   name: string;
   description: string;
+  /** Figma 03.G/03.M "종류 · 전자기기" and the 05 registration tiles. */
+  category: ItemCategory;
+  /** Number of public photos (placeholders only; uploads are not connected). */
+  photos: number;
   foundAt: string;
   location: string;
   storage: string;
@@ -12,6 +18,8 @@ export type SearchFilters = { query: string; period: 'all' | '7' | '30'; place: 
 export const mockItems: PublicItem[] = [
   {
     id: 'buds',
+    category: 'ELECTRONICS',
+    photos: 1,
     name: '갤럭시 버즈2 (검정)',
     description: '검정 무선 이어폰',
     foundAt: '2026-10-06T14:20:00+09:00',
@@ -21,6 +29,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'key',
+    category: 'KEY',
+    photos: 1,
     name: '현대 자동차 키',
     description: '검정 자동차 키',
     foundAt: '2026-10-05T11:30:00+09:00',
@@ -30,6 +40,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'wallet',
+    category: 'WALLET',
+    photos: 1,
     name: '검정 반지갑',
     description: '검정 지갑',
     foundAt: '2026-10-04T16:10:00+09:00',
@@ -39,6 +51,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'student-id',
+    category: 'ID',
+    photos: 1,
     name: '학생증',
     description: '학생 신분증',
     foundAt: '2026-10-03T12:00:00+09:00',
@@ -48,6 +62,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'backpack',
+    category: 'BAG',
+    photos: 1,
     name: '분홍 책가방',
     description: '분홍색 가방',
     foundAt: '2026-10-02T12:00:00+09:00',

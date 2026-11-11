@@ -4,8 +4,10 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-nat
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
+import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
+import { categoryLabel } from '@/lib/activity/types';
 import { formatFoundAt, itemRepository, type PublicItem } from '@/lib/items';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
@@ -75,8 +77,23 @@ function ItemDetail({ id }: { id: string }) {
         {status === 'success' && item && (
           <>
             <View style={[styles.card, styles.photo]}>
-              <Text style={typography.label}>물품 사진</Text>
-              <Text style={typography.body}>등록 사진 미리보기 영역</Text>
+              <Text style={typography.label}>물품 사진 · 1 / {item.photos}</Text>
+              {/* Placeholders only: photo upload and viewing are not connected yet. */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.photoRow}
+              >
+                {Array.from({ length: item.photos }, (_, index) => (
+                  <View
+                    key={index}
+                    accessibilityLabel={`물품 사진 ${index + 1}`}
+                    style={styles.thumbnail}
+                  >
+                    <Icon name="camera" />
+                  </View>
+                ))}
+              </ScrollView>
             </View>
             <Text accessibilityRole="header" style={typography.heading}>
               {item.name}
@@ -84,6 +101,7 @@ function ItemDetail({ id }: { id: string }) {
             <Text style={[typography.label, styles.blue]}>
               보관 중 · {formatFoundAt(item.foundAt)}
             </Text>
+            <Text style={typography.body}>종류 · {categoryLabel(item.category)}</Text>
             <Card title="습득 위치">{item.location}</Card>
             <Card title="보관·수령 안내">
               {item.storage}
@@ -102,7 +120,16 @@ function ItemDetail({ id }: { id: string }) {
         <ActionBar>
           <ActionButton
             label={profile ? '내 물건 확인 요청' : '로그인하고 내 물건 확인'}
-            onPress={profile ? undefined : () => startLogin({ itemId: item.id })}
+            onPress={
+              profile
+                ? // Figma 03.M: a verified phone goes straight to 08.01, otherwise 07.00 first.
+                  () =>
+                    router.push({
+                      pathname: profile.phone ? '/requests/new' : '/verify-phone/consent',
+                      params: { itemId: item.id },
+                    })
+                : () => startLogin({ itemId: item.id })
+            }
           />
         </ActionBar>
       )}
@@ -113,5 +140,16 @@ const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingVertical: 24, gap: 16 },
   card: { backgroundColor: colors.white, padding: 16, borderRadius: 12, gap: 8 },
   photo: { backgroundColor: '#E8F0FE' },
+  photoRow: { gap: 8 },
+  thumbnail: {
+    width: 88,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
   blue: { color: colors.blue },
 });

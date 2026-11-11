@@ -97,9 +97,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(timer);
   }, [signedIn, sessionId, activityPreset]);
 
+  // Ids must not collide with the fixture ids (such as lost-1), so they carry a time part.
   const clock = useCallback((prefix: string) => {
     counter.current += 1;
-    return { id: `${prefix}-${counter.current}`, now: new Date().toISOString() };
+    return {
+      id: `${prefix}-${Date.now().toString(36)}-${counter.current}`,
+      now: new Date().toISOString(),
+    };
   }, []);
 
   const run = useCallback(

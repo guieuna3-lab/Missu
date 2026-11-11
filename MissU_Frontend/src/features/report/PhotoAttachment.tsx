@@ -8,24 +8,19 @@ import { colors, typography } from '@/constants/theme';
 import { requestErrorMessage } from '@/lib/mockRequest';
 import { MAX_PHOTOS, pickPhoto, type PhotoSource } from './mockPhotoPicker';
 
-// Figma 05.01 "물품 사진 *" card (empty and filled), the 05.01-A source sheet, and the
-// "사진 첨부" row of 08-A.01. Photos are counted only; see mockPhotoPicker.ts.
-export function PhotoAttachment({
-  count,
-  onChange,
+// Figma 05.01-A: the camera / album sheet. Shared by the registration form and 08-A.01.
+export function PhotoSourceSheet({
+  onClose,
+  onAdded,
   onDenied,
-  required = true,
 }: {
-  count: number;
-  onChange: (count: number) => void;
+  onClose: () => void;
+  onAdded: () => void;
   /** The OS refused camera or library access (Figma 05.01-P). */
   onDenied: () => void;
-  required?: boolean;
 }) {
-  const [choosing, setChoosing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string>();
-  const title = `물품 사진${required ? ' *' : ''}${count ? ` · 최대 ${MAX_PHOTOS}장` : ''}`;
 
   async function add(source: PhotoSource) {
     if (adding) return;
@@ -33,8 +28,8 @@ export function PhotoAttachment({
     setError(undefined);
     try {
       const result = await pickPhoto(source);
-      setChoosing(false);
-      if (result.status === 'added') onChange(Math.min(MAX_PHOTOS, count + 1));
+      onClose();
+      if (result.status === 'added') onAdded();
       else if (result.status === 'denied') onDenied();
     } catch (requestError) {
       setError(requestErrorMessage(requestError));
@@ -42,6 +37,41 @@ export function PhotoAttachment({
       setAdding(false);
     }
   }
+
+  return (
+    <BottomSheet title="사진 추가" onClose={onClose}>
+      <ChoiceRow
+        icon="camera"
+        title="카메라 촬영"
+        description="카메라로 물품을 촬영합니다."
+        onPress={() => void add('camera')}
+        disabled={adding}
+      />
+      <ChoiceRow
+        icon="search"
+        title="앨범에서 선택"
+        description={`최대 ${MAX_PHOTOS}장까지 선택할 수 있어요.`}
+        onPress={() => void add('library')}
+        disabled={adding}
+      />
+      {error && <FormMessage small>{error}</FormMessage>}
+    </BottomSheet>
+  );
+}
+
+// Figma 05.01 "물품 사진 *" card (empty and filled). Photos are counted only; see
+// mockPhotoPicker.ts.
+export function PhotoAttachment({
+  count,
+  onChange,
+  onDenied,
+}: {
+  count: number;
+  onChange: (count: number) => void;
+  onDenied: () => void;
+}) {
+  const [choosing, setChoosing] = useState(false);
+  const title = `물품 사진 *${count ? ` · 최대 ${MAX_PHOTOS}장` : ''}`;
 
   return (
     <View style={[styles.card, count === 0 && styles.emptyCard]}>
@@ -91,24 +121,12 @@ export function PhotoAttachment({
           )}
         </ScrollView>
       )}
-      {error && <FormMessage small>{error}</FormMessage>}
       {choosing && (
-        <BottomSheet title="사진 추가" onClose={() => setChoosing(false)}>
-          <ChoiceRow
-            icon="camera"
-            title="카메라 촬영"
-            description="카메라로 물품을 촬영합니다."
-            onPress={() => void add('camera')}
-            disabled={adding}
-          />
-          <ChoiceRow
-            icon="search"
-            title="앨범에서 선택"
-            description={`최대 ${MAX_PHOTOS}장까지 선택할 수 있어요.`}
-            onPress={() => void add('library')}
-            disabled={adding}
-          />
-        </BottomSheet>
+        <PhotoSourceSheet
+          onClose={() => setChoosing(false)}
+          onAdded={() => onChange(Math.min(MAX_PHOTOS, count + 1))}
+          onDenied={onDenied}
+        />
       )}
     </View>
   );

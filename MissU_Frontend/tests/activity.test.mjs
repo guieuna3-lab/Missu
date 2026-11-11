@@ -124,9 +124,7 @@ test('a new request starts pending with empty chat and report lists', () => {
       storageName: '학생회관',
       requesterName: '홍길동',
       feature: '키링에 파란 리본',
-      lostFrom: '2026-10-05T10:00:00+09:00',
-      lostTo: '2026-10-05T12:00:00+09:00',
-      lostPlace: '학생식당 앞',
+      lostInfo: '2026.10.05 10:00~12:00 · 학생식당 앞',
     },
     clock,
   );

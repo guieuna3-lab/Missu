@@ -26,7 +26,10 @@ type PreviewState = {
   /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
   sessionId: number;
   activityPreset: ActivityPreset;
-  updateProfile: (profile: Profile) => void;
+  updateProfile: (profile: Pick<Profile, 'name' | 'email'>) => void;
+  /** Records the number confirmed on 07.03; clears it from 계정 관리 (02-A.06-U). */
+  verifyPhone: (phone: string) => void;
+  clearPhone: () => void;
   exitMemberPreview: () => void;
   startLogin: (origin: LoginOrigin) => void;
   cancelLogin: () => void;
@@ -52,9 +55,12 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         profile,
         sessionId,
         activityPreset,
-        updateProfile: (next) => {
-          if (profile) setProfile(next);
-        },
+        updateProfile: (next) =>
+          setProfile((current) => (current ? { ...current, ...next } : current)),
+        verifyPhone: (phone) =>
+          setProfile((current) => (current ? { ...current, phone } : current)),
+        clearPhone: () =>
+          setProfile((current) => (current ? { ...current, phone: undefined } : current)),
         exitMemberPreview: () => {
           nextSession();
           setProfile(null);

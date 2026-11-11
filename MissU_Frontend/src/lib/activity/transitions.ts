@@ -91,14 +91,7 @@ export function foundItemStatus(
 // 08 요청자
 export type RequestInput = Pick<
   OwnershipRequest,
-  | 'itemId'
-  | 'itemName'
-  | 'storageName'
-  | 'requesterName'
-  | 'feature'
-  | 'lostFrom'
-  | 'lostTo'
-  | 'lostPlace'
+  'itemId' | 'itemName' | 'storageName' | 'requesterName' | 'feature' | 'lostInfo'
 >;
 
 export function addRequest(state: ActivityState, input: RequestInput, clock: Clock) {
