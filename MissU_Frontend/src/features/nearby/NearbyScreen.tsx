@@ -1,6 +1,8 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
+import * as Location from 'expo-location';
 import {
+  Alert,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -20,18 +22,24 @@ import { CampusMap } from './CampusMap';
 import { MapIcon, mapArt } from './mapArt';
 import {
   categories,
+  coordinateForPoint,
   defaultFilters,
   mapOrigin,
   places,
+  pointForCoordinate,
   radii,
   searchNearby,
   zeroOffset,
+  type MapCoordinate,
   type MapPoint,
   type NearbyFilters,
   type NearbyItem,
 } from './nearbyItems';
 import { Chips, FilterSheet, LocationDialog } from './NearbyOptions';
 import { NearbySearch } from './NearbySearch';
+
+const hasNativeMap = Platform.OS === 'android' || Platform.OS === 'ios';
+const defaultAreaLabel = hasNativeMap ? '한성대학교' : '삼선동';
 
 function openDetail(id: string) {
   router.push({ pathname: '/items/[id]', params: { id } });
@@ -61,7 +69,7 @@ function ItemRow({ item }: { item: NearbyItem }) {
 
 export function NearbyScreen() {
   const [offset, setOffset] = useState<MapPoint>(zeroOffset);
-  const [searchedArea, setSearchedArea] = useState({ offset: zeroOffset, label: '삼선동' });
+  const [searchedArea, setSearchedArea] = useState({ offset: zeroOffset, label: defaultAreaLabel });
   const [filters, setFilters] = useState(defaultFilters);
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<string[]>([]);
@@ -69,6 +77,8 @@ export function NearbyScreen() {
   const [expanded, setExpanded] = useState(false);
   const [searching, setSearching] = useState(false);
   const [overlay, setOverlay] = useState<'filters' | 'location'>();
+  const [userPosition, setUserPosition] = useState<MapCoordinate>();
+  const locating = useRef(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -81,7 +91,13 @@ export function NearbyScreen() {
     }, [searching]),
   );
 
-  const items = searchNearby(filters, query, searchedArea.offset);
+  const searchCenter = hasNativeMap
+    ? coordinateForPoint({
+        x: mapOrigin.x - searchedArea.offset.x,
+        y: mapOrigin.y - searchedArea.offset.y,
+      })
+    : undefined;
+  const items = searchNearby(filters, query, searchedArea.offset, undefined, searchCenter);
   const selected = items.find(({ id }) => id === selectedId);
   const moved = offset.x !== searchedArea.offset.x || offset.y !== searchedArea.offset.y;
   const hasFilters =
@@ -103,6 +119,39 @@ export function NearbyScreen() {
     setSearchedArea({ offset: next, label });
   }
 
+  async function locate() {
+    if (!hasNativeMap) {
+      setOverlay('location');
+      return;
+    }
+    if (locating.current) return;
+    locating.current = true;
+    try {
+      const { granted } = await Location.requestForegroundPermissionsAsync();
+      if (!granted) {
+        Alert.alert('위치 권한이 필요해요.', '장소를 직접 검색할 수도 있어요.');
+        return;
+      }
+      const { coords } = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.High,
+        mayShowUserSettingsDialog: false,
+      });
+      const point = { latitude: coords.latitude, longitude: coords.longitude };
+      setUserPosition(point);
+      centerMap(pointForCoordinate(point), '내 위치');
+      setQuery('');
+      setSearching(false);
+      setExpanded(false);
+    } catch {
+      Alert.alert(
+        '현재 위치를 가져오지 못했어요.',
+        '기기의 위치 설정을 확인하거나 장소를 검색해 주세요.',
+      );
+    } finally {
+      locating.current = false;
+    }
+  }
+
   function searchVisibleArea() {
     if (moved) setSearchedArea({ offset, label: '선택한 지역' });
   }
@@ -117,7 +166,9 @@ export function NearbyScreen() {
   function submitSearch(input: string) {
     const place = places.find(({ name }) => name === input);
     if (place) {
-      centerMap(place.point, place.name);
+      const point =
+        hasNativeMap && 'coordinate' in place ? pointForCoordinate(place.coordinate) : place.point;
+      centerMap(point, place.name);
       setQuery('');
     } else {
       setQuery(input);
@@ -130,7 +181,7 @@ export function NearbyScreen() {
   }
 
   function showAll() {
-    centerMap(mapOrigin, '삼선동');
+    centerMap(mapOrigin, defaultAreaLabel);
     setFilters(defaultFilters);
     setQuery('');
     setExpanded(true);
@@ -149,7 +200,7 @@ export function NearbyScreen() {
             query={query}
             recent={recent}
             onClose={() => setSearching(false)}
-            onLocate={() => setOverlay('location')}
+            onLocate={locate}
             onSearch={submitSearch}
           />
         ) : (
@@ -166,7 +217,7 @@ export function NearbyScreen() {
                 </Text>
                 <MapIcon source={mapArt.chevron} size={16} />
               </Pressable>
-              <Text style={styles.caption}>예시 지도</Text>
+              <Text style={styles.caption}>{hasNativeMap ? '예시 습득물' : '예시 지도'}</Text>
             </View>
             <View style={[styles.map, expanded && styles.shortMap]}>
               <CampusMap
@@ -174,6 +225,7 @@ export function NearbyScreen() {
                 items={items}
                 selectedId={selectedId}
                 showOrigin={overlay !== 'location'}
+                userPosition={userPosition}
                 onMove={moveMap}
                 onSelect={(id) => {
                   setSelectedId(id);
@@ -233,7 +285,7 @@ export function NearbyScreen() {
                   <Pressable
                     accessibilityRole="button"
                     accessibilityLabel="내 주변"
-                    onPress={() => setOverlay('location')}
+                    onPress={locate}
                     style={[styles.mapButton, styles.locate]}
                   >
                     <MapIcon source={mapArt.locate} size={22} />
@@ -306,7 +358,7 @@ export function NearbyScreen() {
             setSearching(true);
           }}
           onUseExample={() => {
-            centerMap(mapOrigin, '삼선동');
+            centerMap(mapOrigin, defaultAreaLabel);
             setQuery('');
             setExpanded(false);
             setSearching(false);
