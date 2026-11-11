@@ -1,3 +1,5 @@
+import { usePathname } from 'expo-router';
+import { createClaimClient } from './claimClient';
 import {
   createContext,
   useCallback,
@@ -43,9 +45,7 @@ import type {
   SuspiciousReport,
 } from './types';
 
-// In-memory mock of the member's activity (reports, registered items, ownership requests).
-// It loads when a member session starts and is dropped when the session ends. Every action
-// waits like a request so the screens exercise their submitting states; see mockRequest.ts.
+// 로그인한 회원의 반환 내역은 서버에서 읽고, 개발용 예시 세션은 기존 데이터를 사용합니다.
 type ActivityValue = ActivityState & {
   /** 'loading' while the activity is being fetched after sign-in (Figma 01.05-L). */
   status: 'loading' | 'ready';
@@ -75,6 +75,21 @@ type Loaded = { session: number; state: ActivityState };
 export function ActivityProvider({ children }: { children: ReactNode }) {
   const { profile, sessionId, activityPreset, accessToken } = usePreview();
   const signedIn = !!profile;
+  const path = usePathname();
+  const claimClient = useMemo(
+    () => (accessToken ? createClaimClient(accessToken) : null),
+    [accessToken],
+  );
+  const activeClient = useRef(claimClient);
+  const revision = useRef(0);
+  useEffect(() => {
+    activeClient.current = claimClient;
+    return () => {
+      activeClient.current = null;
+    };
+  }, [claimClient]);
+  const claimId = path.match(/\/requests\/([^/]+)/)?.[1];
+  const watching = /^\/(history|my-items|requests)(\/|$)/.test(path);
   // Activity is keyed by the session that loaded it; a new session starts empty and loading.
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const ready = signedIn && loaded?.session === sessionId;
@@ -95,12 +110,19 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       let active = true;
       const headers = { Authorization: 'Bearer ' + accessToken };
       void (async () => {
-        const history = await api<{ data: { id: string; createdAt: string }[] }>(
-          '/me/history?type=MY_ITEMS',
-          { headers },
-        );
+        const rows: { id: string; createdAt: string }[] = [];
+        let cursor: string | null = null;
+        do {
+          const history: { data: typeof rows; meta: { nextCursor: string | null } } = await api(
+            '/me/history?type=MY_ITEMS&limit=50' +
+              (cursor ? '&cursor=' + encodeURIComponent(cursor) : ''),
+            { headers },
+          );
+          rows.push(...history.data);
+          cursor = history.meta.nextCursor;
+        } while (cursor);
         const foundItems = await Promise.all(
-          history.data.map(async (row) => {
+          rows.map(async (row) => {
             const { data } = await api<{ data: ServerItem & { privateFeatures?: string } }>(
               '/items/' + row.id + '/manage',
               { headers },
@@ -124,17 +146,13 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
             };
           }),
         );
-        if (active)
-          setLoaded((current) =>
-            current?.session === sessionId
-              ? current
-              : { session: sessionId, state: { ...emptyActivity, foundItems } },
-          );
+        if (active) {
+          const next = { ...stateRef.current, foundItems };
+          stateRef.current = next;
+          setLoaded({ session: sessionId, state: next });
+        }
       })().catch(() => {
-        if (active)
-          setLoaded((current) =>
-            current?.session === sessionId ? current : { session: sessionId, state: emptyActivity },
-          );
+        /* 반환 요청 동기화는 물품 목록과 독립적으로 진행됩니다. */
       });
       return () => {
         active = false;
@@ -148,6 +166,68 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     }, LOAD_DELAY_MS);
     return () => clearTimeout(timer);
   }, [signedIn, sessionId, activityPreset, accessToken]);
+
+  // 메시지는 현재 열어 둔 요청에서만 읽고 새 메시지부터 이어 받습니다.
+  useEffect(() => {
+    if (!claimClient) return;
+    let active = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    async function refresh() {
+      const version = revision.current;
+      try {
+        const requests = await claimClient!.list();
+        const opened = requests.find((r) => r.id === claimId);
+        if (opened && ['approved', 'scheduled', 'handed', 'completed'].includes(opened.status)) {
+          opened.messages = await claimClient!.messages(opened.id);
+        }
+        if (!active || activeClient.current !== claimClient || version !== revision.current) return;
+        const current = stateRef.current;
+        for (const request of requests) {
+          if (request !== opened)
+            request.messages = current.requests.find((r) => r.id === request.id)?.messages ?? [];
+        }
+        const next = { ...current, requests };
+        stateRef.current = next;
+        setLoaded({ session: sessionId, state: next });
+      } catch {
+        // 일시적인 네트워크 오류가 이미 읽은 대화나 내역을 지우지 않도록 합니다.
+      } finally {
+        if (active && watching) timer = setTimeout(refresh, 4000);
+      }
+    }
+    void refresh();
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [claimClient, sessionId, claimId, watching]);
+
+  const changeClaim = useCallback(
+    async (path: string, body: object, id?: string) => {
+      if (!claimClient) throw new ApiError(401, '로그인이 필요합니다.');
+      const updated = await claimClient.mutate(path, body, id);
+      if (activeClient.current !== claimClient) throw new ApiError(401, '다시 로그인해 주세요.');
+      revision.current++;
+      const current = stateRef.current;
+      const existing = current.requests.find((row) => row.id === updated.id);
+      updated.messages = [
+        ...(existing?.messages ?? []),
+        ...updated.messages.filter((m) => !existing?.messages.some((prior) => prior.id === m.id)),
+      ];
+      const rest = current.requests.filter((row) => row.id !== updated.id);
+      const next = {
+        ...current,
+        requests:
+          updated.closedReason === '요청자 취소'
+            ? rest
+            : [updated, ...rest].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+      };
+      stateRef.current = next;
+      setLoaded({ session: sessionId, state: next });
+      return updated;
+    },
+    [claimClient, sessionId],
+  );
 
   // Ids must not collide with the fixture ids (such as lost-1), so they carry a time part.
   const clock = useCallback((prefix: string) => {
@@ -230,28 +310,63 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       updateFoundItem: (id: string, patch: Partial<FoundItemInput>) =>
         apply((current) => updateFoundItem(current, id, patch)),
       sendRequest: (input: RequestInput) =>
-        run((current) => {
-          const { state: next, request } = addRequest(current, input, clock('request'));
-          return { state: next, result: request };
-        }),
-      cancelRequest: (id: string) => apply((current) => cancelRequest(current, id)),
-      approveRequest: (id: string) => apply((current) => approveRequest(current, id)),
-      rejectRequest: (id: string) => apply((current) => rejectRequest(current, id)),
+        claimClient
+          ? changeClaim('/items/' + input.itemId + '/claims', {
+              features: input.feature,
+              lostInfo: input.lostInfo,
+            })
+          : run((current) => {
+              const { state: next, request } = addRequest(current, input, clock('request'));
+              return { state: next, result: request };
+            }),
+      cancelRequest: (id: string) =>
+        claimClient
+          ? changeClaim('/claims/' + id + '/cancel', {}, id).then(() => undefined)
+          : apply((current) => cancelRequest(current, id)),
+      approveRequest: (id: string) =>
+        claimClient
+          ? changeClaim('/claims/' + id + '/decision', { decision: 'APPROVE' }, id).then(
+              () => undefined,
+            )
+          : apply((current) => approveRequest(current, id)),
+      rejectRequest: (id: string) =>
+        claimClient
+          ? changeClaim(
+              '/claims/' + id + '/decision',
+              { decision: 'REJECT', reason: '정보 불일치' },
+              id,
+            ).then(() => undefined)
+          : apply((current) => rejectRequest(current, id)),
       sendMessage: (id: string, by: Party, text: string) =>
-        apply((current) => sendMessage(current, id, by, text, clock('message'))),
+        claimClient
+          ? changeClaim('/claims/' + id + '/messages', { body: text }, id).then(() => undefined)
+          : apply((current) => sendMessage(current, id, by, text, clock('message'))),
       proposeAppointment: (id: string, by: Party, appointment: Appointment) =>
-        apply((current) => proposeAppointment(current, id, by, appointment)),
+        claimClient
+          ? changeClaim('/claims/' + id + '/appointment', appointment, id).then(() => undefined)
+          : apply((current) => proposeAppointment(current, id, by, appointment)),
       confirmAppointment: (id: string, by: Party) =>
-        apply((current) => confirmAppointment(current, id, by)),
-      markHanded: (id: string) => apply((current) => markHanded(current, id, clock('handed'))),
+        claimClient
+          ? changeClaim(
+              '/claims/' + id + '/appointment/confirm',
+              { proposalId: stateRef.current.requests.find((r) => r.id === id)?.proposal?.id },
+              id,
+            ).then(() => undefined)
+          : apply((current) => confirmAppointment(current, id, by)),
+      markHanded: (id: string) =>
+        claimClient
+          ? changeClaim('/claims/' + id + '/handover', {}, id).then(() => undefined)
+          : apply((current) => markHanded(current, id, clock('handed'))),
       confirmReceived: (id: string) =>
-        apply((current) => confirmReceived(current, id, clock('received'))),
+        claimClient
+          ? changeClaim('/claims/' + id + '/receipt', {}, id).then(() => undefined)
+          : apply((current) => confirmReceived(current, id, clock('received'))),
       reportSuspicious: (id: string, report: Omit<SuspiciousReport, 'createdAt'>) =>
         apply((current) =>
           reportSuspicious(current, id, { ...report, createdAt: new Date().toISOString() }),
         ),
     }),
-    [apply, clock, run, accessToken, sessionId],
+    [apply, clock, run, accessToken, sessionId, claimClient, changeClaim],
   );
 
   const value = useMemo(() => ({ ...state, status, ...actions }), [state, status, actions]);

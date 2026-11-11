@@ -57,7 +57,7 @@ export type RequestStatus =
 export type Party = 'requester' | 'holder';
 
 export type Appointment = { place: string; date: string; time: string };
-export type AppointmentProposal = Appointment & { by: Party };
+export type AppointmentProposal = Appointment & { by: Party; id?: string };
 
 export type ChatMessage = { id: string; by: Party; text: string; sentAt: string };
 
@@ -78,6 +78,8 @@ export type SuspiciousReport = {
 };
 
 export type OwnershipRequest = {
+  viewerRole?: Party;
+  closedReason?: string;
   id: string;
   itemId: string;
   itemName: string;
