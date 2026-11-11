@@ -1,17 +1,20 @@
-import { createContext, useContext, useState, type ReactNode } from 'react';
-import type { SignupRequest } from './mockAuthApi';
+import { createContext, useCallback, useContext, useState, type ReactNode } from 'react';
+import { createSignupFlow, type SignupRequest } from './authApi';
 
 // Carries the account form from 02.03 to the consent and verification steps.
 // The account screen clears it when it unmounts, so the password stays in memory
 // only while the sign-up flow is open.
 type SignupDraftState = {
-  draft: SignupRequest | null;
+  draft: ReturnType<typeof createSignupFlow> | null;
   setDraft: (draft: SignupRequest | null) => void;
 };
 const SignupDraftContext = createContext<SignupDraftState | null>(null);
 
 export function SignupDraftProvider({ children }: { children: ReactNode }) {
-  const [draft, setDraft] = useState<SignupRequest | null>(null);
+  const [draft, setFlow] = useState<ReturnType<typeof createSignupFlow> | null>(null);
+  const setDraft = useCallback((account: SignupRequest | null) => {
+    setFlow(account ? createSignupFlow(account) : null);
+  }, []);
   return (
     <SignupDraftContext.Provider value={{ draft, setDraft }}>
       {children}
