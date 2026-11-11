@@ -1,4 +1,5 @@
 /** 반환 업무 규칙입니다. 모든 변경은 물품→요청 순서로 잠가 동시 승인·반환 충돌을 막습니다. */
+import { randomUUID } from 'node:crypto';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { Prisma } from '../generated/prisma/client';
@@ -8,6 +9,7 @@ import { lostTimes } from '../common/dto';
 import { cursorFor, olderThan, readCursor } from '../common/cursor';
 import { transaction } from '../common/transaction';
 import {
+  AppointmentDto,
   CreateClaimDto,
   DecisionDto,
   MessageDto,
@@ -16,7 +18,15 @@ import {
 } from './claims.dto';
 type Tx = Prisma.TransactionClient;
 const relations = {
-  item: { select: { id: true, keeperId: true, status: true } },
+  item: {
+    select: {
+      id: true,
+      keeperId: true,
+      status: true,
+      name: true,
+      storagePlace: true,
+    },
+  },
   requester: { select: { nickname: true } },
 } satisfies Prisma.ClaimInclude;
 type ClaimRow = Prisma.ClaimGetPayload<{ include: typeof relations }>;
@@ -86,7 +96,17 @@ export class ClaimsService {
     key: string | undefined,
     requestId: string,
   ) {
-    const times = lostTimes(dto.lostTime);
+    if (dto.lostInfo !== undefined && (dto.lostTime || dto.lostLocation))
+      fail(400, 'VALIDATION_ERROR', '분실 정보는 한 가지 형식으로 보내세요.');
+    const loss =
+      dto.lostTime && dto.lostLocation
+        ? {
+            ...lostTimes(dto.lostTime),
+            lostLabel: dto.lostLocation.label,
+            lat: dto.lostLocation.lat,
+            lng: dto.lostLocation.lng,
+          }
+        : { lostInfo: dto.lostInfo };
     return this.idem.run(
       userId,
       'POST /items/' + itemId + '/claims',
@@ -149,10 +169,7 @@ export class ClaimsService {
             itemId,
             requesterId: userId,
             features: dto.features,
-            ...times,
-            lostLabel: dto.lostLocation.label,
-            lat: dto.lostLocation.lat,
-            lng: dto.lostLocation.lng,
+            ...loss,
           },
         });
         await this.audit(tx, userId, claim.id, null, 'PENDING', requestId);
@@ -166,21 +183,35 @@ export class ClaimsService {
       include: relations,
     });
     this.member(row, userId);
+    return this.view(row, userId);
+  }
+  private view(row: ClaimRow, userId: string) {
     return {
       id: row.id,
+      itemName: row.item.name,
+      storageName: row.item.storagePlace,
+      viewerRole: row.requesterId === userId ? 'requester' : 'holder',
+      createdAt: row.createdAt,
+      lostInfo: row.lostInfo,
+      appointment: row.appointment,
       itemId: row.itemId,
       requesterNickname: row.requester.nickname,
       features: row.features,
-      lostTime: {
-        start: row.lostStart,
-        end: row.lostEnd,
-        precision: row.timePrecision,
-      },
-      lostLocation: {
-        label: row.lostLabel,
-        lat: Number(row.lat),
-        lng: Number(row.lng),
-      },
+      lostTime: row.lostStart
+        ? {
+            start: row.lostStart,
+            end: row.lostEnd,
+            precision: row.timePrecision,
+          }
+        : null,
+      lostLocation:
+        row.lostLabel !== null
+          ? {
+              label: row.lostLabel,
+              lat: Number(row.lat),
+              lng: Number(row.lng),
+            }
+          : null,
       status: row.status,
       decisionReason: row.decisionReason,
       approvedAt: row.approvedAt,
@@ -188,6 +219,117 @@ export class ClaimsService {
       receivedAt: row.receivedAt,
       updatedAt: row.updatedAt,
     };
+  }
+  // 한 페이지에서 회원이 보낸 요청과 본인 물품으로 받은 요청을 함께 읽습니다.
+  async list(userId: string, cursorText?: string) {
+    const scope = JSON.stringify(['member-claims', userId]);
+    const rows = await this.db.claim.findMany({
+      where: {
+        OR: [{ requesterId: userId }, { item: { keeperId: userId } }],
+        AND: olderThan(readCursor(cursorText, scope)),
+      },
+      include: relations,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: 51,
+    });
+    const page = rows.slice(0, 50);
+    const last = page.at(-1);
+    return {
+      data: page.map((row) => this.view(row, userId)),
+      meta: {
+        nextCursor:
+          rows.length > 50 && last
+            ? cursorFor(last.id, last.createdAt, scope)
+            : null,
+      },
+    };
+  }
+  appointment(
+    id: string,
+    userId: string,
+    dto: AppointmentDto | { proposalId: string },
+    key: string | undefined,
+  ) {
+    const confirm = 'proposalId' in dto;
+    return this.idem.run(
+      userId,
+      'POST /claims/' + id + '/appointment' + (confirm ? '/confirm' : ''),
+      key,
+      dto,
+      async (tx) => {
+        const row = await this.locked(tx, id, userId);
+        const by = row.requesterId === userId ? 'requester' : 'holder';
+        const existing = row.appointment as {
+          id: string;
+          by: string;
+          confirmed: boolean;
+          place: string;
+          date: string;
+          time: string;
+        } | null;
+        if (row.status !== 'APPROVED' || existing?.confirmed)
+          fail(
+            409,
+            'STATE_CONFLICT',
+            '현재 상태에서 약속을 변경할 수 없습니다.',
+          );
+        let appointment;
+        if ('proposalId' in dto) {
+          if (!existing || existing.id !== dto.proposalId || existing.by === by)
+            fail(
+              409,
+              'STATE_CONFLICT',
+              '상대방의 최신 제안만 확정할 수 있습니다.',
+            );
+          appointment = { ...existing, confirmed: true };
+        } else {
+          const [year, month, day] = dto.date.split('.').map(Number);
+          const date = new Date(Date.UTC(year, month - 1, day));
+          if (
+            date.getUTCFullYear() !== year ||
+            date.getUTCMonth() !== month - 1 ||
+            date.getUTCDate() !== day
+          )
+            fail(400, 'VALIDATION_ERROR', '약속 날짜를 확인하세요.');
+          appointment = {
+            id: randomUUID(),
+            by,
+            confirmed: false,
+            place: dto.place,
+            date: dto.date,
+            time: dto.time,
+          };
+        }
+        await tx.claim.update({ where: { id }, data: { appointment } });
+        return appointment;
+      },
+    );
+  }
+  cancel(
+    id: string,
+    userId: string,
+    key: string | undefined,
+    requestId: string,
+  ) {
+    return this.idem.run(
+      userId,
+      'POST /claims/' + id + '/cancel',
+      key,
+      {},
+      async (tx) => {
+        const row = await this.locked(tx, id, userId);
+        if (row.requesterId !== userId)
+          fail(404, 'RESOURCE_NOT_FOUND', '요청을 찾을 수 없습니다.');
+        if (row.status !== 'PENDING')
+          fail(409, 'STATE_CONFLICT', '대기 중인 요청만 취소할 수 있습니다.');
+        await tx.claim.update({
+          where: { id },
+          data: { status: 'CLOSED', decisionReason: '요청자 취소' },
+        });
+        await this.audit(tx, userId, id, 'PENDING', 'CLOSED', requestId);
+        return { claimId: id, status: 'CLOSED' };
+      },
+    );
   }
   decision(
     id: string,
@@ -345,6 +487,7 @@ export class ClaimsService {
       messages: page.map((x) => ({
         id: x.id,
         senderId: x.senderId,
+        senderRole: x.senderId === row.requesterId ? 'requester' : 'holder',
         body: x.body,
         sentAt: x.createdAt,
       })),

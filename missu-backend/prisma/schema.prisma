@@ -243,12 +243,14 @@ model Claim {
   requesterId    String        @map("requester_id") @db.Uuid
   requester      User          @relation(fields: [requesterId], references: [id], onDelete: Restrict)
   features       String        @db.VarChar(300)
-  lostStart      DateTime      @map("lost_start") @db.Timestamptz
-  lostEnd        DateTime      @map("lost_end") @db.Timestamptz
-  timePrecision  TimePrecision @map("time_precision")
-  lostLabel      String        @map("lost_label") @db.VarChar(200)
-  lat            Decimal       @db.Decimal(9, 6)
-  lng            Decimal       @db.Decimal(9, 6)
+  lostStart      DateTime?      @map("lost_start") @db.Timestamptz
+  lostEnd        DateTime?      @map("lost_end") @db.Timestamptz
+  timePrecision  TimePrecision? @map("time_precision")
+  lostLabel      String?        @map("lost_label") @db.VarChar(200)
+  lat            Decimal?       @db.Decimal(9, 6)
+  lng            Decimal?       @db.Decimal(9, 6)
+  lostInfo       String?       @map("lost_info") @db.VarChar(500)
+  appointment    Json?
   status         ClaimStatus   @default(PENDING)
   decisionReason String?       @map("decision_reason") @db.VarChar(300)
   approvedAt     DateTime?     @map("approved_at") @db.Timestamptz

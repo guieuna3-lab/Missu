@@ -4,11 +4,17 @@ import type { ActivityState, OwnershipRequest, RequestStatus } from '@/lib/activ
 // requests the member sent (requester side) and requests on the member's own items (holder
 // side). In the Figma example both are the same request.
 export function sentRequests(state: Pick<ActivityState, 'requests'>, memberName: string) {
-  return state.requests.filter((r) => r.requesterName === memberName);
+  return state.requests.filter((r) =>
+    r.viewerRole ? r.viewerRole === 'requester' : r.requesterName === memberName,
+  );
 }
 
 export function receivedRequests(state: Pick<ActivityState, 'requests' | 'foundItems'>) {
-  return state.requests.filter((r) => state.foundItems.some((item) => item.id === r.itemId));
+  return state.requests.filter((r) =>
+    r.viewerRole
+      ? r.viewerRole === 'holder'
+      : state.foundItems.some((item) => item.id === r.itemId),
+  );
 }
 
 /** 01.05 / 01.09 wording for the requester side of a request. */

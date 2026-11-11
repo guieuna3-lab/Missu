@@ -1,4 +1,6 @@
 import {
+  Matches,
+  ValidateIf,
   IsDefined,
   IsIn,
   IsInt,
@@ -14,16 +16,33 @@ import {
 import { LocationDto, LostTimeDto, Trim, Type } from '../common/dto';
 export class CreateClaimDto {
   @Trim() @IsString() @Length(1, 300) features: string;
+  @ValidateIf(
+    (dto: CreateClaimDto) =>
+      dto.lostInfo === undefined ||
+      dto.lostTime !== undefined ||
+      dto.lostLocation !== undefined,
+  )
   @IsDefined()
   @IsObject()
   @ValidateNested()
   @Type(() => LostTimeDto)
-  lostTime: LostTimeDto;
+  lostTime?: LostTimeDto;
+  @ValidateIf(
+    (dto: CreateClaimDto) =>
+      dto.lostInfo === undefined ||
+      dto.lostTime !== undefined ||
+      dto.lostLocation !== undefined,
+  )
   @IsDefined()
   @IsObject()
   @ValidateNested()
   @Type(() => LocationDto)
-  lostLocation: LocationDto;
+  lostLocation?: LocationDto;
+  @ValidateIf((dto: CreateClaimDto) => dto.lostInfo !== undefined)
+  @Trim()
+  @IsString()
+  @Length(1, 500)
+  lostInfo?: string;
 }
 export class DecisionDto {
   @IsIn(['APPROVE', 'REJECT']) decision: 'APPROVE' | 'REJECT';
@@ -42,3 +61,12 @@ export class ReportDto {
   @Trim() @IsString() @Length(1, 200) reason: string;
 }
 export class EmptyDto {}
+
+export class AppointmentDto {
+  @Trim() @IsString() @Length(1, 200) place: string;
+  @Matches(/^\d{4}\.\d{1,2}\.\d{1,2}$/) date: string;
+  @Matches(/^(?:[01]\d|2[0-3]):[0-5]\d$/) time: string;
+}
+export class ConfirmAppointmentDto {
+  @IsUUID() proposalId: string;
+}

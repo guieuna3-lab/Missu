@@ -89,13 +89,48 @@ export function completeOpenApi(document: OpenAPIObject) {
       lostLocation: ref('Location'),
       createdAt: date,
     }),
+    Appointment: object({
+      id: uuid,
+      by: { type: 'string', enum: ['holder', 'requester'] },
+      confirmed: bool,
+      place: string,
+      date: string,
+      time: string,
+    }),
     Claim: object({
       id: uuid,
       itemId: uuid,
       requesterNickname: string,
+      itemName: string,
+      storageName: string,
+      viewerRole: { type: 'string', enum: ['holder', 'requester'] },
+      createdAt: date,
       features: string,
-      lostTime: ref('LostTime'),
-      lostLocation: ref('Location'),
+      lostInfo: nullable,
+      lostTime: {
+        ...object({ start: date, end: date, precision: string }),
+        nullable: true,
+      },
+      lostLocation: {
+        ...object({
+          label: string,
+          lat: { type: 'number' },
+          lng: { type: 'number' },
+        }),
+        nullable: true,
+      },
+      appointment: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: uuid,
+          by: string,
+          confirmed: bool,
+          place: string,
+          date: string,
+          time: string,
+        },
+      },
       status: states,
       decisionReason: nullable,
       approvedAt: { ...date, nullable: true },
@@ -236,6 +271,16 @@ export function completeOpenApi(document: OpenAPIObject) {
       ),
     ],
     'get /api/v1/claims/{id}': [200, envelope(ref('Claim'))],
+    'get /api/v1/me/claims': [200, envelope(array(ref('Claim')), cursorMeta)],
+    'post /api/v1/claims/{id}/appointment': [200, envelope(ref('Appointment'))],
+    'post /api/v1/claims/{id}/appointment/confirm': [
+      200,
+      envelope(ref('Appointment')),
+    ],
+    'post /api/v1/claims/{id}/cancel': [
+      200,
+      envelope(object({ claimId: uuid, status: states })),
+    ],
     'post /api/v1/claims/{id}/decision': [
       200,
       envelope(
@@ -304,7 +349,7 @@ export function completeOpenApi(document: OpenAPIObject) {
       method === 'post' &&
       (/^\/api\/v1\/(items|lost-reports)$/.test(path) ||
         /^\/api\/v1\/items\/\{id\}\/claims$/.test(path) ||
-        /^\/api\/v1\/claims\/\{id\}\/(decision|handover|receipt|reports)$/.test(
+        /^\/api\/v1\/claims\/\{id\}\/(decision|handover|receipt|reports|cancel|appointment(?:\/confirm)?)$/.test(
           path,
         ))
     )

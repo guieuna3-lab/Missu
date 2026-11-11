@@ -53,7 +53,7 @@ export function ReturnChatScreen({
     setConfirming(true);
     setError(undefined);
     try {
-      await confirmAppointment(request.id, role);
+      await confirmAppointment(request.id, role, request.proposal?.id);
     } catch (caught) {
       setError(requestErrorMessage(caught));
     } finally {
