@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
@@ -90,7 +90,15 @@ function ItemDetail({ id }: { id: string }) {
                     accessibilityLabel={`물품 사진 ${index + 1}`}
                     style={styles.thumbnail}
                   >
-                    <Icon name="camera" />
+                    {item.photoUrls?.[index] ? (
+                      <Image
+                        source={{ uri: item.photoUrls[index] }}
+                        style={styles.thumbnail}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <Icon name="camera" />
+                    )}
                   </View>
                 ))}
               </ScrollView>
@@ -99,7 +107,7 @@ function ItemDetail({ id }: { id: string }) {
               {item.name}
             </Text>
             <Text style={[typography.label, styles.blue]}>
-              보관 중 · {formatFoundAt(item.foundAt)}
+              {item.statusLabel ?? '보관 중'} · {formatFoundAt(item.foundAt)}
             </Text>
             <Text style={typography.body}>종류 · {categoryLabel(item.category)}</Text>
             <Card title="습득 위치">{item.location}</Card>
@@ -125,7 +133,10 @@ function ItemDetail({ id }: { id: string }) {
                 ? // Figma 03.M: a verified phone goes straight to 08.01, otherwise 07.00 first.
                   () =>
                     router.push({
-                      pathname: profile.phone ? '/requests/new' : '/verify-phone/consent',
+                      pathname:
+                        profile.phoneVerified || profile.phone
+                          ? '/requests/new'
+                          : '/verify-phone/consent',
                       params: { itemId: item.id },
                     })
                 : () => startLogin({ itemId: item.id })
