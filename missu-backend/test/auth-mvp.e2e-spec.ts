@@ -226,7 +226,9 @@ describe('가입·인증·재설정 PostgreSQL 계약', () => {
     };
     const send = () => h.post(actor, '/auth/challenges').send(body);
     const results = await Promise.all([send(), send()]);
-    expect(results.map((r) => r.status).sort()).toEqual([202, 429]);
+    expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+      202, 429,
+    ]);
     for (let i = 0; i < 5; i++) {
       const denied = await send().expect(429);
       expect(denied.body.error.message).toMatch(/재요청.*\d+초 후/);
