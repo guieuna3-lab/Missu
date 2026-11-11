@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
@@ -21,6 +29,7 @@ function ItemDetail({ id }: { id: string }) {
   const [item, setItem] = useState<PublicItem>();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
+  const [photoFailed, setPhotoFailed] = useState(false);
   useEffect(() => {
     let active = true;
     itemRepository
@@ -42,6 +51,11 @@ function ItemDetail({ id }: { id: string }) {
     if (router.canGoBack()) router.back();
     else router.replace('/search');
   }
+  function reloadItem() {
+    setPhotoFailed(false);
+    setStatus('loading');
+    setRetry((v) => v + 1);
+  }
   return (
     <Screen>
       <Header title="습득물 상세" onBack={back} />
@@ -57,14 +71,7 @@ function ItemDetail({ id }: { id: string }) {
             <Text accessibilityRole="alert" style={typography.heading}>
               물품 정보를 불러오지 못했어요
             </Text>
-            <ActionButton
-              label="다시 시도"
-              onPress={() => {
-                setStatus('loading');
-                setItem(undefined);
-                setRetry((v) => v + 1);
-              }}
-            />
+            <ActionButton label="다시 시도" onPress={reloadItem} />
           </>
         )}
         {status === 'success' && !item && (
@@ -90,10 +97,10 @@ function ItemDetail({ id }: { id: string }) {
                     style={styles.thumbnail}
                   >
                     {item.photoUrls?.[index] ? (
-                      <Image
-                        source={{ uri: item.photoUrls[index] }}
-                        style={styles.thumbnail}
-                        resizeMode="cover"
+                      <ItemPhoto
+                        uri={item.photoUrls[index]}
+                        label={`물품 사진 ${index + 1}`}
+                        onError={() => setPhotoFailed(true)}
                       />
                     ) : (
                       <Icon name="camera" />
@@ -101,6 +108,9 @@ function ItemDetail({ id }: { id: string }) {
                   </View>
                 ))}
               </ScrollView>
+              {photoFailed && (
+                <ActionButton label="사진 다시 불러오기" variant="outline" onPress={reloadItem} />
+              )}
             </View>
             <Text accessibilityRole="header" style={typography.heading}>
               {item.name}
@@ -146,6 +156,30 @@ function ItemDetail({ id }: { id: string }) {
     </Screen>
   );
 }
+function ItemPhoto({ uri, label, onError }: { uri: string; label: string; onError: () => void }) {
+  // 웹은 운영 API가 허용한 출처에서 쿠키 없이 서명된 사진을 불러옵니다.
+  if (Platform.OS === 'web')
+    return (
+      <img
+        alt={label}
+        crossOrigin="anonymous"
+        referrerPolicy="no-referrer"
+        src={uri}
+        onError={onError}
+        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }}
+      />
+    );
+  return (
+    <Image
+      accessibilityLabel={label}
+      source={{ uri }}
+      style={styles.thumbnail}
+      resizeMode="cover"
+      onError={onError}
+    />
+  );
+}
+
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingVertical: 24, gap: 16 },
   card: { backgroundColor: colors.white, padding: 16, borderRadius: 12, gap: 8 },
