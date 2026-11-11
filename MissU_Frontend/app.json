@@ -8,7 +8,7 @@
     "userInterfaceStyle": "automatic",
     "plugins": ["expo-router", "expo-image", "expo-font"],
     "web": {
-      "output": "static"
+      "output": "single"
     }
   }
 }
