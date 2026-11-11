@@ -34,6 +34,7 @@ export function FoundConfirmScreen() {
         foundAt,
         place: found.place,
         photos: found.photos,
+        photoIds: found.attachments?.map((p) => p.id),
         storage: found.storage.trim(),
         pickupGuide: found.pickupGuide.trim(),
         privateFeature: found.privateFeature.trim(),
