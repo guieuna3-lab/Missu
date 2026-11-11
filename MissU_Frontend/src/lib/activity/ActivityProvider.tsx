@@ -60,7 +60,7 @@ type ActivityValue = ActivityState & {
   rejectRequest: (id: string) => Promise<void>;
   sendMessage: (id: string, by: Party, text: string) => Promise<void>;
   proposeAppointment: (id: string, by: Party, appointment: Appointment) => Promise<void>;
-  confirmAppointment: (id: string, by: Party) => Promise<void>;
+  confirmAppointment: (id: string, by: Party, proposalId?: string) => Promise<void>;
   markHanded: (id: string) => Promise<void>;
   confirmReceived: (id: string) => Promise<void>;
   reportSuspicious: (id: string, report: Omit<SuspiciousReport, 'createdAt'>) => Promise<void>;
@@ -345,13 +345,11 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         claimClient
           ? changeClaim('/claims/' + id + '/appointment', appointment, id).then(() => undefined)
           : apply((current) => proposeAppointment(current, id, by, appointment)),
-      confirmAppointment: (id: string, by: Party) =>
+      confirmAppointment: (id: string, by: Party, proposalId?: string) =>
         claimClient
-          ? changeClaim(
-              '/claims/' + id + '/appointment/confirm',
-              { proposalId: stateRef.current.requests.find((r) => r.id === id)?.proposal?.id },
-              id,
-            ).then(() => undefined)
+          ? changeClaim('/claims/' + id + '/appointment/confirm', { proposalId }, id).then(
+              () => undefined,
+            )
           : apply((current) => confirmAppointment(current, id, by)),
       markHanded: (id: string) =>
         claimClient
