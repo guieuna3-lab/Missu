@@ -6,7 +6,7 @@ import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { login } from './mockAuthApi';
+import { login } from './authApi';
 import { isEmail, requestErrorMessage } from './validation';
 
 // Figma 02.01 (empty), 02.02 (filled) and 02-A.01 (error) are states of this screen.
