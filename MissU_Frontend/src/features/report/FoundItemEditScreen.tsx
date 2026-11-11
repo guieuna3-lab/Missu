@@ -25,6 +25,7 @@ export function FoundItemEditScreen() {
       foundAtText: `${formatDate(item.foundAt)} ${formatTime(item.foundAt)}`,
       place: item.place,
       photos: item.photos,
+      attachments: item.attachments,
       storage: item.storage,
       pickupGuide: item.pickupGuide,
       privateFeature: item.privateFeature,

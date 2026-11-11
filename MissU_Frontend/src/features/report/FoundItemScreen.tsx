@@ -54,6 +54,7 @@ export function FoundItemScreen() {
         foundAt,
         place: found.place,
         photos: found.photos,
+        photoIds: found.attachments?.map((p) => p.id),
       });
       goBack('/history');
     } catch (requestError) {
