@@ -78,7 +78,9 @@ export function HolderRequestScreen() {
           onBack={backToItem}
           centered
           heading="거절한 요청이에요"
-          description={`${request.requesterName} 님의 요청은 정보 불일치로 거절했어요.`}
+          description={
+            request.closedReason ?? `${request.requesterName} 님의 요청은 정보 불일치로 거절했어요.`
+          }
           actions={<ActionButton label="내 등록 물품 보기" onPress={backToItem} />}
         />
       );
