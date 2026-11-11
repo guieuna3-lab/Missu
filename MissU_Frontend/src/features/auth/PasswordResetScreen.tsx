@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
-import { AuthScreen } from './AuthScreen';
 import { requestPasswordReset } from './mockAuthApi';
 import { isEmail, requestErrorMessage } from './validation';
 
@@ -33,7 +33,7 @@ export function PasswordResetScreen() {
   }
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="비밀번호 재설정"
       onBack={() => router.dismissTo('/login')}
       heading="비밀번호를 잊으셨나요?"
@@ -57,6 +57,6 @@ export function PasswordResetScreen() {
         onSubmitEditing={submit}
       />
       {requestError && <FormMessage>{requestError}</FormMessage>}
-    </AuthScreen>
+    </FlowScreen>
   );
 }

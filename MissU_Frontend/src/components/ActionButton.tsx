@@ -18,6 +18,7 @@ export function ActionButton({
   style,
   large = false,
   loading = false,
+  disabled = false,
 }: {
   label: string;
   onPress?: () => void;
@@ -26,15 +27,17 @@ export function ActionButton({
   large?: boolean;
   /** A request is in progress. Blocks repeated taps until it settles. */
   loading?: boolean;
+  /** The form is incomplete (Figma 05.01). Unlike a missing onPress, this is not "out of scope". */
+  disabled?: boolean;
 }) {
   const unavailable = !onPress;
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ disabled: unavailable || loading, busy: loading }}
+      accessibilityState={{ disabled: unavailable || loading || disabled, busy: loading }}
       accessibilityHint={unavailable ? unavailableHint : undefined}
-      disabled={unavailable || loading}
+      disabled={unavailable || loading || disabled}
       onPress={onPress}
       style={({ pressed }) => [
         styles.button,
@@ -42,6 +45,7 @@ export function ActionButton({
         variant === 'outline' && styles.outline,
         large && styles.largeButton,
         (pressed || loading) && styles.pressed,
+        disabled && styles.disabled,
         style,
       ]}
     >
@@ -53,6 +57,7 @@ export function ActionButton({
             typography.action,
             variant !== 'primary' && { color: variant === 'white' ? colors.blue : colors.ink },
             large && { fontSize: 15, lineHeight: 24 },
+            disabled && styles.disabledText,
           ]}
         >
           {label}
@@ -80,6 +85,8 @@ const styles = StyleSheet.create({
   largeButton: { minHeight: 56, borderRadius: 14 },
   outline: { borderWidth: 1, borderColor: colors.border },
   pressed: { opacity: 0.75 },
+  disabled: { backgroundColor: '#DCE6F7' },
+  disabledText: { color: colors.muted },
   actionBar: {
     paddingHorizontal: 20,
     paddingVertical: 10,

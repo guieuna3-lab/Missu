@@ -1,224 +1,175 @@
-import { useRef, useState } from 'react';
 import { router } from 'expo-router';
-import * as Crypto from 'expo-crypto';
-import * as ImagePicker from 'expo-image-picker';
-import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
-import { Image, Platform, ScrollView, StyleSheet, Text } from 'react-native';
+import { useState } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
-import { Header } from '@/components/Header';
-import { Screen } from '@/components/Screen';
-import { typography } from '@/constants/theme';
-import { api, ApiError } from '@/lib/backend';
+import { colors, typography } from '@/constants/theme';
+import { useActivity } from '@/lib/activity/ActivityProvider';
+import { parseDateTime } from '@/lib/dateTime';
+import { requestErrorMessage } from '@/lib/mockRequest';
+import { goBack } from '@/lib/navigation';
+import { CategoryTiles } from './CategoryTiles';
+import { DATE_TIME_FORMAT_ERROR } from './LostWhenScreen';
 import { usePreview } from '@/lib/preview/PreviewProvider';
+import { choosePhoto } from './choosePhoto';
+import { PhotoAttachment } from './PhotoAttachment';
+import { useReportDraft } from './ReportDraft';
 
-export function FoundItemScreen({ token }: { token: string }) {
-  const { startLogin } = usePreview();
-  const [name, setName] = useState('');
-  const [place, setPlace] = useState('한성대학교 캠퍼스');
-  const [latitude, setLatitude] = useState('37.5824');
-  const [longitude, setLongitude] = useState('127.0102');
-  const [storage, setStorage] = useState('');
-  const [description, setDescription] = useState('');
-  const [uri, setUri] = useState('');
-  const [error, setError] = useState('');
-  const [expired, setExpired] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [savedId, setSavedId] = useState('');
-  const locking = useRef(false);
-  const uploaded = useRef<{ uri: string; id: string } | null>(null);
-  const attempt = useRef<{ form: string; key: string; time: string } | null>(null);
+// Figma 05.01 (empty), 05.02 (filled), 05.01-P (photo permission) and 05.02-A (edit).
+export function FoundItemScreen() {
+  const { found, updateFound } = useReportDraft();
+  const { updateFoundItem } = useActivity();
+  const { accessToken } = usePreview();
+  const editing = !!found.editingId;
+  const [errors, setErrors] = useState<{ name?: string; foundAt?: string }>({});
+  const [denied, setDenied] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string>();
+  const complete =
+    !!found.name.trim() && !!found.foundAtText.trim() && !!found.place && found.photos > 0;
 
-  async function pickPhoto() {
-    if (locking.current) return;
-    locking.current = true;
-    setBusy(true);
-    setError('');
+  function validate() {
+    const next: typeof errors = {};
+    if (!found.name.trim()) next.name = '물품명을 입력해 주세요.';
+    const foundAt = parseDateTime(found.foundAtText);
+    if (!foundAt) next.foundAt = DATE_TIME_FORMAT_ERROR;
+    setErrors(next);
+    return Object.keys(next).length === 0 && found.place ? foundAt : null;
+  }
+
+  function next() {
+    if (validate()) router.push('/report/found/storage');
+  }
+
+  async function save() {
+    const foundAt = validate();
+    if (!foundAt || !found.place || !found.editingId || saving) return;
+    setSaving(true);
+    setSaveError(undefined);
     try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
-        quality: 1,
+      await updateFoundItem(found.editingId, {
+        category: found.category,
+        name: found.name.trim(),
+        foundAt,
+        place: found.place,
+        photos: found.photos,
       });
-      if (result.canceled) return;
-      const asset = result.assets[0];
-      // Android 사진첩의 HEIC·PNG도 서버가 받는 단일 JPEG 사진으로 변환합니다.
-      const ctx = ImageManipulator.manipulate(asset.uri);
-      if (Math.max(asset.width, asset.height) > 1600)
-        ctx.resize(asset.width >= asset.height ? { width: 1600 } : { height: 1600 });
-      const image = await ctx.renderAsync();
-      const photo = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.82 });
-      ctx.release();
-      image.release();
-      setUri(photo.uri);
-      uploaded.current = null;
-    } catch {
-      setError('사진을 열 수 없어요. 사진 접근 권한을 확인하거나 다른 사진을 선택해 주세요.');
-    } finally {
-      locking.current = false;
-      setBusy(false);
+      goBack('/history');
+    } catch (requestError) {
+      setSaveError(requestErrorMessage(requestError));
+      setSaving(false);
     }
   }
 
-  async function submit() {
-    if (locking.current || savedId) return;
-    const lat = Number(latitude.trim()),
-      lng = Number(longitude.trim());
-    if (!uri || !name.trim() || !place.trim() || !storage.trim()) {
-      setError('물품명, 사진, 습득 장소, 보관 장소를 입력해 주세요.');
-      return;
-    }
-    if (
-      !latitude.trim() ||
-      !longitude.trim() ||
-      !Number.isFinite(lat) ||
-      Math.abs(lat) > 90 ||
-      !Number.isFinite(lng) ||
-      Math.abs(lng) > 180
-    ) {
-      setError('습득 장소의 위도와 경도를 확인해 주세요.');
-      return;
-    }
-    locking.current = true;
-    setBusy(true);
-    setError('');
-    try {
-      const authorization = { Authorization: 'Bearer ' + token };
-      if (!uploaded.current || uploaded.current.uri !== uri) {
-        const data = new FormData();
-        if (Platform.OS === 'web') data.append('file', await (await fetch(uri)).blob(), 'item.jpg');
-        else data.append('file', { uri, name: 'item.jpg', type: 'image/jpeg' } as unknown as Blob);
-        const upload = await api<{ data: { photoId: string } }>('/uploads', {
-          method: 'POST',
-          headers: authorization,
-          body: data,
-        });
-        uploaded.current = { uri, id: upload.data.photoId };
-      }
-      const item = {
-        name: name.trim(),
-        publicFeatures: description.trim(),
-        storagePlace: storage.trim(),
-        foundLocation: { label: place.trim(), lat, lng },
-        photoIds: [uploaded.current.id],
-      };
-      const form = JSON.stringify(item);
-      // 등록 응답이 끊겨도 같은 입력으로 재시도하면 서버에서 한 번만 저장합니다.
-      if (attempt.current?.form !== form)
-        attempt.current = { form, key: Crypto.randomUUID(), time: new Date().toISOString() };
-      const response = await api<{ data: { id: string } }>('/items', {
-        method: 'POST',
-        headers: {
-          ...authorization,
-          'Content-Type': 'application/json',
-          'Idempotency-Key': attempt.current.key,
-        },
-        body: JSON.stringify({ ...item, foundAt: attempt.current.time }),
-      });
-      setSavedId(response.data.id);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) setExpired(true);
-      setError(e instanceof Error ? e.message : '등록하지 못했어요. 다시 시도해 주세요.');
-    } finally {
-      locking.current = false;
-      setBusy(false);
-    }
-  }
+  if (denied)
+    return (
+      <FlowScreen
+        title="습득물 등록"
+        onBack={() => goBack('/report')}
+        heading="사진 접근 권한이 필요해요"
+        description="사진을 추가하려면 기기 설정에서 카메라 또는 사진 접근을 허용해 주세요."
+        actions={<ActionButton label="필수 정보와 사진을 입력해 주세요" disabled onPress={next} />}
+      >
+        <ActionButton
+          label="다시 확인하기"
+          variant="outline"
+          onPress={() => setDenied(false)}
+          style={styles.blueOutline}
+        />
+      </FlowScreen>
+    );
+
   return (
-    <Screen>
-      <Header title="습득물 등록" onBack={() => router.replace('/home')} />
-      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.form}>
-        {savedId ? (
-          <>
-            <Text accessibilityRole="header" style={typography.heading}>
-              {name.trim()} 등록 완료
-            </Text>
-            <ActionButton label="습득물 검색하기" onPress={() => router.replace('/search')} />
-            <ActionButton
-              variant="outline"
-              label="등록한 물품 상세"
-              onPress={() => router.replace({ pathname: '/items/[id]', params: { id: savedId } })}
-            />
-          </>
+    <FlowScreen
+      title={editing ? '습득물 등록 정보 수정' : '습득물 등록'}
+      onBack={() => goBack(editing ? '/history' : '/report')}
+      step={editing ? undefined : '1 / 3  물품 정보'}
+      heading="어떤 물건을 주웠나요?"
+      actions={
+        editing ? (
+          <ActionButton label="저장" onPress={save} loading={saving} />
         ) : (
-          <>
-            <FormField
-              required
-              label="물품명"
-              placeholder="예: 파란 우산"
-              value={name}
-              onChangeText={setName}
-              maxLength={20}
-              editable={!busy}
-            />
-            {uri ? (
-              <Image
-                source={{ uri }}
-                accessibilityLabel="선택한 습득물 사진"
-                style={styles.photo}
-                resizeMode="contain"
-              />
-            ) : null}
-            <ActionButton
-              variant="outline"
-              label={uri ? '사진 바꾸기' : '사진 선택'}
-              onPress={busy ? undefined : pickPhoto}
-            />
-            <FormField
-              required
-              label="습득 장소"
-              value={place}
-              onChangeText={setPlace}
-              maxLength={200}
-              editable={!busy}
-            />
-            <Text style={typography.body}>
-              시연 위치는 한성대학교예요. 다른 곳에서 주웠다면 장소와 좌표를 함께 바꿔 주세요.
-            </Text>
-            <FormField
-              label="위도"
-              keyboardType="numbers-and-punctuation"
-              value={latitude}
-              onChangeText={setLatitude}
-              editable={!busy}
-            />
-            <FormField
-              label="경도"
-              keyboardType="numbers-and-punctuation"
-              value={longitude}
-              onChangeText={setLongitude}
-              editable={!busy}
-            />
-            <FormField
-              required
-              label="보관 장소"
-              placeholder="예: 학생회관 안내데스크"
-              value={storage}
-              onChangeText={setStorage}
-              maxLength={200}
-              editable={!busy}
-            />
-            <FormField
-              label="공개 특징"
-              placeholder="예: 손잡이가 검정색이에요"
-              value={description}
-              onChangeText={setDescription}
-              maxLength={100}
-              editable={!busy}
-            />
-            <Text style={typography.body}>습득 시각은 등록 시각으로 기록돼요.</Text>
-            {!!error && <FormMessage>{error}</FormMessage>}
-            {expired ? (
-              <ActionButton label="다시 로그인" onPress={() => startLogin('report')} />
-            ) : (
-              <ActionButton label="습득물 등록하기" onPress={submit} loading={busy} />
-            )}
-          </>
-        )}
-      </ScrollView>
-    </Screen>
+          <ActionButton
+            label={complete ? '다음 · 보관 정보' : '필수 정보와 사진을 입력해 주세요'}
+            onPress={next}
+            disabled={!complete}
+          />
+        )
+      }
+    >
+      <CategoryTiles value={found.category} onChange={(category) => updateFound({ category })} />
+      <FormField
+        label="물품명"
+        required
+        placeholder="물품명을 직접 입력하세요"
+        value={found.name}
+        onChangeText={(name) => {
+          updateFound({ name });
+          setErrors((current) => ({ ...current, name: undefined }));
+        }}
+        error={errors.name}
+        returnKeyType="next"
+      />
+      <FormField
+        label="습득 일시"
+        required
+        placeholder="날짜와 시간을 입력하세요"
+        value={found.foundAtText}
+        onChangeText={(foundAtText) => {
+          updateFound({ foundAtText });
+          setErrors((current) => ({ ...current, foundAt: undefined }));
+        }}
+        error={errors.foundAt}
+        keyboardType="numbers-and-punctuation"
+        autoCorrect={false}
+      />
+      <View style={styles.field}>
+        <Text importantForAccessibility="no" accessibilityElementsHidden style={typography.label}>
+          습득 위치 *
+        </Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={
+            found.place
+              ? `습득 위치, ${found.place.detail}`
+              : '습득 위치, 필수, 지도에서 장소를 선택하세요'
+          }
+          onPress={() => router.push('/report/found/place')}
+          style={({ pressed }) => [styles.select, pressed && styles.pressed]}
+        >
+          <Text style={[typography.body, found.place && styles.ink]} numberOfLines={1}>
+            {found.place?.detail ?? '지도에서 장소를 선택하세요'}
+          </Text>
+        </Pressable>
+      </View>
+      <PhotoAttachment
+        count={found.photos}
+        attachments={found.attachments}
+        chooseAsset={(source) => choosePhoto(source, accessToken)}
+        setAttachments={(attachments) => updateFound({ attachments, photos: attachments.length })}
+        onChange={(photos) => updateFound({ photos })}
+        onDenied={() => setDenied(true)}
+      />
+      <Text style={styles.hint}>신분증·카드 사진은 이름, 번호 등 개인정보를 가려 주세요.</Text>
+      {saveError && <FormMessage>{saveError}</FormMessage>}
+    </FlowScreen>
   );
 }
+
 const styles = StyleSheet.create({
-  form: { padding: 20, gap: 16, paddingBottom: 40 },
-  photo: { width: '100%', height: 160 },
+  field: { gap: 8 },
+  select: {
+    minHeight: 52,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    backgroundColor: colors.white,
+  },
+  pressed: { opacity: 0.75 },
+  ink: { color: colors.ink },
+  hint: { ...typography.body, fontSize: 12, lineHeight: 18, color: colors.muted },
+  blueOutline: { borderColor: colors.blue },
 });

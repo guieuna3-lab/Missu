@@ -1,16 +1,11 @@
-import { Redirect } from 'expo-router';
 import { LoginGateScreen } from '@/features/auth/LoginGateScreen';
-import { usePreview } from '@/lib/preview/PreviewProvider';
+import { ReportTypeScreen } from '@/features/report/ReportTypeScreen';
 import { apiBase } from '@/lib/backend';
-import { FoundItemScreen } from '@/features/report/FoundItemScreen';
+import { usePreview } from '@/lib/preview/PreviewProvider';
 
+// 신고 tab: Figma 04.01 for members, 01.06 for guests.
 export default function Report() {
   const { profile, accessToken } = usePreview();
-  if (apiBase)
-    return accessToken ? (
-      <FoundItemScreen key={accessToken} token={accessToken} />
-    ) : (
-      <LoginGateScreen kind="report" />
-    );
-  return profile ? <Redirect href="/home" /> : <LoginGateScreen kind="report" />;
+  if (!profile || (apiBase && !accessToken)) return <LoginGateScreen kind="report" />;
+  return <ReportTypeScreen />;
 }

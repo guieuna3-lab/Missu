@@ -1,19 +1,29 @@
+import { api, apiBase, ApiError } from './backend.ts';
+import type { ItemCategory } from './activity/types';
+
 export type PublicItem = {
   id: string;
   name: string;
   description: string;
+  /** Figma 03.G/03.M "종류 · 전자기기" and the 05 registration tiles. */
+  category: ItemCategory | 'WALLET_BAG';
+  /** Number of public photos (placeholders only; uploads are not connected). */
+  photos: number;
+  photoUrls?: string[];
+  photoUrl?: string;
+  statusLabel?: string;
   foundAt: string;
   location: string;
   storage: string;
   collectionGuide: string;
-  photoUrl?: string;
-  statusLabel?: string;
 };
 export type SearchFilters = { query: string; period: 'all' | '7' | '30'; place: string };
 // UI fixtures only. No auth state, contact information or private ownership clues.
 export const mockItems: PublicItem[] = [
   {
     id: 'buds',
+    category: 'ELECTRONICS',
+    photos: 1,
     name: '갤럭시 버즈2 (검정)',
     description: '검정 무선 이어폰',
     foundAt: '2026-10-06T14:20:00+09:00',
@@ -23,6 +33,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'key',
+    category: 'KEY',
+    photos: 1,
     name: '현대 자동차 키',
     description: '검정 자동차 키',
     foundAt: '2026-10-05T11:30:00+09:00',
@@ -32,6 +44,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'wallet',
+    category: 'WALLET',
+    photos: 1,
     name: '검정 반지갑',
     description: '검정 지갑',
     foundAt: '2026-10-04T16:10:00+09:00',
@@ -41,6 +55,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'student-id',
+    category: 'ID',
+    photos: 1,
     name: '학생증',
     description: '학생 신분증',
     foundAt: '2026-10-03T12:00:00+09:00',
@@ -50,6 +66,8 @@ export const mockItems: PublicItem[] = [
   },
   {
     id: 'backpack',
+    category: 'BAG',
+    photos: 1,
     name: '분홍 책가방',
     description: '분홍색 가방',
     foundAt: '2026-10-02T12:00:00+09:00',
@@ -73,13 +91,57 @@ export function filterItems(items: PublicItem[], filters: SearchFilters, now = D
     );
   });
 }
-// Replace this adapter when the team agrees the API contract; never silently fall back from API errors.
+export type ServerItem = {
+  id: string;
+  name: string;
+  publicFeatures: string | null;
+  category: 'ELECTRONICS' | 'WALLET_BAG' | 'OTHER';
+  foundAt: string;
+  foundLocation: { label: string; lat: number; lng: number };
+  storagePlace: string;
+  pickupGuide: string | null;
+  photos: { url: string }[];
+  status: string;
+};
+export function fromServer(item: ServerItem): PublicItem {
+  const photoUrls = item.photos.map((p) => new URL(p.url, apiBase).href);
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.publicFeatures ?? '',
+    category: item.category === 'WALLET_BAG' ? 'WALLET_BAG' : item.category,
+    photos: item.photos.length,
+    photoUrls,
+    photoUrl: photoUrls[0],
+    foundAt: item.foundAt,
+    location: item.foundLocation.label,
+    storage: item.storagePlace,
+    collectionGuide: item.pickupGuide ?? '',
+    statusLabel:
+      item.status === 'AVAILABLE'
+        ? '보관 중'
+        : item.status === 'RESERVED'
+          ? '반환 진행 중'
+          : '반환 완료',
+  };
+}
 export const itemRepository = {
   async search(filters: SearchFilters): Promise<PublicItem[]> {
-    return filterItems(mockItems, filters);
+    const q = new URLSearchParams({ limit: '50' });
+    if (filters.query.trim()) q.set('q', filters.query.trim());
+    if (filters.place.trim()) q.set('place', filters.place.trim());
+    if (filters.period !== 'all')
+      q.set('foundFrom', new Date(Date.now() - Number(filters.period) * 86400000).toISOString());
+    const page = await api<{ data: ServerItem[] }>('/items?' + q.toString());
+    return page.data.map(fromServer);
   },
   async find(id: string): Promise<PublicItem | undefined> {
-    return mockItems.find((item) => item.id === id);
+    try {
+      return fromServer((await api<{ data: ServerItem }>('/items/' + encodeURIComponent(id))).data);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return undefined;
+      throw e;
+    }
   },
 };
 export function formatFoundAt(value: string) {

@@ -1,8 +1,8 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField } from '@/components/FormField';
-import { AuthScreen } from './AuthScreen';
 import { useSignupDraft } from './SignupDraft';
 import { isEmail, MIN_PASSWORD_LENGTH } from './validation';
 
@@ -45,7 +45,7 @@ export function SignupAccountScreen() {
   }
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="회원가입"
       onBack={() => router.dismissTo('/login')}
       heading="누구나 MissU와 함께해요"
@@ -99,6 +99,6 @@ export function SignupAccountScreen() {
         autoComplete="new-password"
         textContentType="newPassword"
       />
-    </AuthScreen>
+    </FlowScreen>
   );
 }

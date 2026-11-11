@@ -1,10 +1,10 @@
+import { logout, type AuthSession } from '@/features/auth/authApi';
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { apiBase } from '../backend';
 import { previewProfile, type Profile } from './fixtures';
-import { api, apiBase } from '../backend';
 
-// Opt-in, development-only visual fixtures and the mock sign-in state.
-// Never establishes a real session or stores credentials.
+// 개발용 미리보기는 운영 API를 연결하지 않은 경우에만 활성화합니다.
 const previewMode = __DEV__ && !apiBase ? process.env.EXPO_PUBLIC_MISSU_PREVIEW : undefined;
 export const isPreview = previewMode === 'guest' || previewMode === 'member';
 
@@ -19,16 +19,28 @@ function getSearchReturnTo(origin: LoginOrigin | null): Href | undefined {
   return undefined;
 }
 
+/** Which mock activity a member session starts with: Figma examples, or nothing (가입 직후). */
+export type ActivityPreset = 'sample' | 'empty';
+
 type PreviewState = {
   profile: Profile | null;
-  updateProfile: (profile: Profile) => void;
+  /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
+  sessionId: number;
+  accessToken: string | null;
+  /** The server no longer accepts the session (Figma 01.04-S). Nothing sets it in the mock yet. */
+  sessionExpired: boolean;
+  markSessionExpired: () => void;
+  activityPreset: ActivityPreset;
+  updateProfile: (profile: Pick<Profile, 'name' | 'email'>) => void;
+  /** Records the number confirmed on 07.03; clears it from 계정 관리 (02-A.06-U). */
+  verifyPhone: (phone: string) => void;
+  clearPhone: () => void;
   exitMemberPreview: () => void;
   startLogin: (origin: LoginOrigin) => void;
   cancelLogin: () => void;
   /** Switches to the member state with a mock auth result. */
-  signIn: (profile: Profile, token?: string) => void;
-  accessToken: string | null;
-  completeSignup: (profile: Profile) => void;
+  signIn: (session: AuthSession | Profile, token?: string) => void;
+  completeSignup: (session: AuthSession | Profile) => void;
   /** Clears the login/sign-up screens from history and opens the destination. */
   continueAfterLogin: (destination?: '/search') => void;
 };
@@ -39,22 +51,32 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     previewMode === 'member' ? { ...previewProfile } : null,
   );
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
+  const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [sessionId, setSessionId] = useState(0);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const nextSession = () => {
+    setSessionId((current) => current + 1);
+    setSessionExpired(false);
+  };
   return (
     <PreviewContext.Provider
       value={{
         profile,
+        sessionId,
         accessToken,
-        updateProfile: (next) => {
-          if (profile) setProfile(next);
-        },
+        sessionExpired,
+        markSessionExpired: () => setSessionExpired(true),
+        activityPreset,
+        updateProfile: (next) =>
+          setProfile((current) => (current ? { ...current, ...next } : current)),
+        verifyPhone: (phone) =>
+          setProfile((current) => (current ? { ...current, phone, phoneVerified: true } : current)),
+        clearPhone: () =>
+          setProfile((current) => (current ? { ...current, phone: undefined } : current)),
         exitMemberPreview: () => {
-          if (accessToken) {
-            void api('/auth/logout', {
-              method: 'POST',
-              headers: { Authorization: 'Bearer ' + accessToken },
-            }).catch(() => {});
-          }
+          nextSession();
+          if (accessToken) void logout(accessToken).catch(() => undefined);
           setAccessToken(null);
           setProfile(null);
         },
@@ -67,11 +89,17 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           router.dismissTo(getSearchReturnTo(loginOrigin) ?? '/home');
         },
         signIn: (next, token) => {
-          setAccessToken(token ?? null);
-          setProfile(next);
+          nextSession();
+          setActivityPreset('empty');
+          setAccessToken('accessToken' in next ? next.accessToken : (token ?? null));
+          setProfile('profile' in next ? next.profile : next);
         },
         completeSignup: (next) => {
-          setProfile(next);
+          // A new account has no activity yet (Figma 01.05-E).
+          nextSession();
+          setActivityPreset('empty');
+          setAccessToken('accessToken' in next ? next.accessToken : null);
+          setProfile('profile' in next ? next.profile : next);
           if (getSearchReturnTo(loginOrigin)) {
             router.dismissTo('/login');
           } else if (router.canDismiss()) {
@@ -88,11 +116,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           }
           if (router.canDismiss()) router.dismissAll();
           // Keep the existing 01/02 destinations for report and history.
-          router.replace(
-            loginOrigin === 'report' || (apiBase && loginOrigin === 'home')
-              ? '/report'
-              : '/history',
-          );
+          router.replace(loginOrigin === 'report' ? '/report' : '/history');
         },
       }}
     >

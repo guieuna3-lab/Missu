@@ -2,12 +2,11 @@ import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { AuthScreen } from './AuthScreen';
-import { login } from './mockAuthApi';
-import { apiBase, loginMobile } from '@/lib/backend';
+import { login } from './authApi';
 import { isEmail, requestErrorMessage } from './validation';
 
 // Figma 02.01 (empty), 02.02 (filled) and 02-A.01 (error) are states of this screen.
@@ -31,27 +30,16 @@ export function LoginScreen() {
     }
     setSubmitting(true);
     try {
-      if (apiBase) {
-        const { data } = await loginMobile(email.trim(), password);
-        signIn({ name: data.user.nickname, email: data.user.email }, data.accessToken);
-      } else {
-        signIn(await login({ email: email.trim(), password }));
-      }
+      signIn(await login({ email: email.trim(), password }));
       continueAfterLogin();
     } catch (requestError) {
-      setError({
-        message:
-          apiBase && requestError instanceof Error
-            ? requestError.message
-            : requestErrorMessage(requestError),
-        fields: false,
-      });
+      setError({ message: requestErrorMessage(requestError), fields: false });
       setSubmitting(false);
     }
   }
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="로그인"
       onBack={cancelLogin}
       heading="이메일로 로그인하세요"
@@ -83,16 +71,14 @@ export function LoginScreen() {
       />
       {error && <FormMessage>{error.message}</FormMessage>}
       <ActionButton label="로그인" onPress={submit} loading={submitting} />
-      {!apiBase && (
-        <View style={styles.links}>
-          <TextLink label="회원가입" onPress={() => router.push('/signup')} />
-          <Text importantForAccessibility="no" accessibilityElementsHidden style={styles.separator}>
-            |
-          </Text>
-          <TextLink label="비밀번호 찾기" onPress={() => router.push('/password-reset')} />
-        </View>
-      )}
-    </AuthScreen>
+      <View style={styles.links}>
+        <TextLink label="회원가입" onPress={() => router.push('/signup')} />
+        <Text importantForAccessibility="no" accessibilityElementsHidden style={styles.separator}>
+          |
+        </Text>
+        <TextLink label="비밀번호 찾기" onPress={() => router.push('/password-reset')} />
+      </View>
+    </FlowScreen>
   );
 }
 

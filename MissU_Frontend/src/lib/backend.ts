@@ -10,9 +10,9 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
-  if (!apiBase) throw new Error('시연 서버 주소를 설정해 주세요.');
+  if (!apiBase) throw new Error('미슈 서버 주소를 설정해 주세요.');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 25000);
+  const timer = setTimeout(() => controller.abort(), 75000);
   try {
     const response = await fetch(apiBase + path, {
       ...options,
@@ -26,7 +26,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     return body as T;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new Error('노트북의 미슈 서버에 연결할 수 없어요. 같은 Wi-Fi인지 확인해 주세요.');
+    throw new Error('미슈 서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.');
   } finally {
     clearTimeout(timer);
   }

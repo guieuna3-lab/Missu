@@ -13,17 +13,27 @@ import { ActionButton } from '@/components/ActionButton';
 import { colors, typography } from '@/constants/theme';
 import type { Profile } from '@/lib/preview/fixtures';
 
+// Figma 01.05-A: the nickname can change; the email is the login id and stays read-only.
 export function ProfileModal({
   profile,
   onSave,
   onClose,
 }: {
   profile: Profile;
-  onSave: (profile: Profile) => void;
+  onSave: (name: string) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(profile.name);
-  const [email, setEmail] = useState(profile.email);
+  const [error, setError] = useState<string>();
+
+  function save() {
+    if (!name.trim()) {
+      setError('닉네임을 입력해 주세요.');
+      return;
+    }
+    onSave(name.trim());
+  }
+
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <KeyboardAvoidingView
@@ -36,29 +46,31 @@ export function ProfileModal({
               프로필 정보 수정
             </Text>
             <View style={styles.field}>
-              <Text style={typography.label}>이름</Text>
+              <Text style={typography.label}>닉네임</Text>
               <TextInput
-                accessibilityLabel="이름"
+                accessibilityLabel="닉네임"
                 value={name}
-                onChangeText={setName}
-                style={styles.input}
-                autoComplete="name"
+                onChangeText={(value) => {
+                  setName(value);
+                  setError(undefined);
+                }}
+                style={[styles.input, error && styles.inputError]}
+                autoComplete="nickname"
+                onSubmitEditing={save}
               />
+              {error && <Text style={styles.error}>{error}</Text>}
             </View>
             <View style={styles.field}>
               <Text style={typography.label}>이메일</Text>
-              <TextInput
-                accessibilityLabel="이메일"
-                value={email}
-                onChangeText={setEmail}
-                style={styles.input}
-                autoComplete="email"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
+              <View
+                accessibilityLabel={`이메일, ${profile.email}, 변경 불가`}
+                style={styles.readOnly}
+              >
+                <Text style={typography.body}>{profile.email}</Text>
+              </View>
             </View>
-            <ActionButton label="저장" onPress={() => onSave({ name, email })} />
+            <ActionButton label="저장" onPress={save} />
+            <Text style={styles.note}>이메일은 변경할 수 없어요</Text>
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -87,5 +99,21 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     borderRadius: 6,
     backgroundColor: colors.background,
+  },
+  inputError: { borderColor: colors.dangerBorder, backgroundColor: colors.dangerBg },
+  error: { ...typography.body, fontSize: 12, lineHeight: 18, color: colors.danger },
+  readOnly: {
+    height: 52,
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    backgroundColor: colors.line,
+  },
+  note: {
+    ...typography.body,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    color: colors.muted,
   },
 });

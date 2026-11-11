@@ -2,10 +2,10 @@ import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
-import { AuthScreen } from './AuthScreen';
-import { requestSignupCode } from './mockAuthApi';
+
 import { PrivacySummary } from './PrivacySummary';
 import { useSignupDraft } from './SignupDraft';
 import { requestErrorMessage } from './validation';
@@ -32,7 +32,7 @@ export function SignupConsentScreen() {
     setSubmitting(true);
     setMessage(null);
     try {
-      await requestSignupCode(draft);
+      await draft.requestCode();
       router.push('/signup/verify');
     } catch (requestError) {
       setMessage({ text: requestErrorMessage(requestError), tone: 'error' });
@@ -42,7 +42,7 @@ export function SignupConsentScreen() {
   };
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="회원가입 · 개인정보 동의"
       onBack={() => router.dismissTo('/signup')}
       heading="필요한 정보만 수집합니다"
@@ -77,7 +77,7 @@ export function SignupConsentScreen() {
           {message.text}
         </FormMessage>
       )}
-    </AuthScreen>
+    </FlowScreen>
   );
 }
 

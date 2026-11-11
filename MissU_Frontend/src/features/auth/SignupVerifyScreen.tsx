@@ -2,11 +2,11 @@ import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { Text } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
+import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
 import { typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { AuthScreen } from './AuthScreen';
-import { confirmSignup, resendSignupCode } from './mockAuthApi';
+
 import { useSignupDraft } from './SignupDraft';
 import { isVerificationCode, requestErrorMessage } from './validation';
 
@@ -29,7 +29,7 @@ export function SignupVerifyScreen() {
     setResending(true);
     setMessage(null);
     try {
-      await resendSignupCode(draft.email);
+      await draft.requestCode();
       // Figma has no visible result for 재전송; this confirmation is provisional.
       setMessage({ text: '인증 코드를 다시 보냈습니다.', tone: 'info' });
     } catch (requestError) {
@@ -48,7 +48,8 @@ export function SignupVerifyScreen() {
     setSubmitting(true);
     setMessage(null);
     try {
-      completeSignup(await confirmSignup({ email: draft.email, nickname: draft.nickname, code }));
+      completeSignup(await draft.complete(code));
+      signup.setDraft(null);
     } catch (requestError) {
       setMessage({ text: requestErrorMessage(requestError), tone: 'error' });
       setSubmitting(false);
@@ -56,11 +57,11 @@ export function SignupVerifyScreen() {
   };
 
   return (
-    <AuthScreen
+    <FlowScreen
       title="이메일 인증"
       onBack={() => router.dismissTo('/signup')}
       heading="이메일을 확인할게요"
-      description={`${draft.email}으로 인증 코드를 보냈습니다.\n5분 안에 입력해 주세요.`}
+      description={`${draft.email}으로 인증 코드를 보냈습니다.\n10분 안에 입력해 주세요.`}
       actions={<ActionButton label="인증하고 가입 완료" onPress={submit} loading={submitting} />}
     >
       <FormField
@@ -82,6 +83,6 @@ export function SignupVerifyScreen() {
       />
       <Text style={typography.body}>이메일은 로그인과 비밀번호 찾기에 사용됩니다.</Text>
       {message && <FormMessage tone={message.tone}>{message.text}</FormMessage>}
-    </AuthScreen>
+    </FlowScreen>
   );
 }

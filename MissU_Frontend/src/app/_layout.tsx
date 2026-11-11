@@ -4,6 +4,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { ActivityIndicator, Text, View } from 'react-native';
 import { SignupDraftProvider } from '@/features/auth/SignupDraft';
+import { ReportDraftProvider } from '@/features/report/ReportDraft';
+import { ActivityProvider } from '@/lib/activity/ActivityProvider';
 import { PreviewProvider } from '@/lib/preview/PreviewProvider';
 
 export default function RootLayout() {
@@ -31,11 +33,15 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <PreviewProvider>
-        <SignupDraftProvider>
-          <Stack
-            screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}
-          />
-        </SignupDraftProvider>
+        <ActivityProvider>
+          <SignupDraftProvider>
+            <ReportDraftProvider>
+              <Stack
+                screenOptions={{ headerShown: false, animation: 'fade', animationDuration: 150 }}
+              />
+            </ReportDraftProvider>
+          </SignupDraftProvider>
+        </ActivityProvider>
       </PreviewProvider>
     </SafeAreaProvider>
   );
