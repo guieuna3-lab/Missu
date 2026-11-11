@@ -9,9 +9,10 @@ const previewMode = __DEV__ && !apiBase ? process.env.EXPO_PUBLIC_MISSU_PREVIEW 
 export const isPreview = previewMode === 'guest' || previewMode === 'member';
 
 /** Where the login started (Figma `loginReturnTo`). */
-export type LoginOrigin = 'home' | 'mine' | 'report' | 'search' | { itemId: string };
+export type LoginOrigin = 'home' | 'mine' | 'report' | 'search' | 'routes' | { itemId: string };
 
 function getSearchReturnTo(origin: LoginOrigin | null): Href | undefined {
+  if (origin === 'routes') return '/daily-route';
   if (origin === 'search') return '/search';
   if (origin && typeof origin === 'object') {
     return { pathname: '/items/[id]', params: { id: origin.itemId } };
