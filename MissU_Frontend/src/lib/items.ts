@@ -10,13 +10,12 @@ export type PublicItem = {
   /** Number of public photos (placeholders only; uploads are not connected). */
   photos: number;
   photoUrls?: string[];
+  photoUrl?: string;
   statusLabel?: string;
   foundAt: string;
   location: string;
   storage: string;
   collectionGuide: string;
-  photoUrl?: string;
-  statusLabel?: string;
 };
 export type SearchFilters = { query: string; period: 'all' | '7' | '30'; place: string };
 // UI fixtures only. No auth state, contact information or private ownership clues.
@@ -105,13 +104,15 @@ export type ServerItem = {
   status: string;
 };
 export function fromServer(item: ServerItem): PublicItem {
+  const photoUrls = item.photos.map((p) => new URL(p.url, apiBase).href);
   return {
     id: item.id,
     name: item.name,
     description: item.publicFeatures ?? '',
     category: item.category === 'WALLET_BAG' ? 'WALLET_BAG' : item.category,
     photos: item.photos.length,
-    photoUrls: item.photos.map((p) => new URL(p.url, apiBase).href),
+    photoUrls,
+    photoUrl: photoUrls[0],
     foundAt: item.foundAt,
     location: item.foundLocation.label,
     storage: item.storagePlace,
