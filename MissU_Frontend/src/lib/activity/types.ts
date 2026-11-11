@@ -15,12 +15,13 @@ export const categories: { value: ItemCategory; label: string }[] = [
   { value: 'OTHER', label: '기타' },
 ];
 
-export function categoryLabel(category: ItemCategory) {
+export function categoryLabel(category: ItemCategory | 'WALLET_BAG') {
+  if (category === 'WALLET_BAG') return '지갑/가방';
   return categories.find((c) => c.value === category)?.label ?? '기타';
 }
 
 /** A place picked on the 09 screens: the place name plus the free-text detail line. */
-export type Place = { name: string; detail: string };
+export type Place = { name: string; detail: string; lat?: number; lng?: number };
 
 export type LostReport = {
   id: string;
