@@ -1,4 +1,5 @@
-import { mockItems } from '@/lib/items';
+import { mockItems, fromServer, type PublicItem, type ServerItem } from '@/lib/items';
+import { api } from '@/lib/backend';
 
 export type MapPoint = { x: number; y: number };
 export const mapOrigin: MapPoint = { x: 220, y: 364 };
@@ -137,4 +138,47 @@ export function searchNearby(
     .sort((a, b) => a.distanceM - b.distanceM);
 }
 
-export type NearbyItem = ReturnType<typeof searchNearby>[number];
+export type NearbyItem = PublicItem & {
+  distanceM: number;
+  marker: {
+    id: string;
+    category: string;
+    icon: (typeof markers)[number]['icon'];
+    x: number;
+    y: number;
+    distance: number;
+  };
+};
+export async function nearbyFromServer(
+  filters: NearbyFilters,
+  query: string,
+  latitude: number,
+  longitude: number,
+): Promise<NearbyItem[]> {
+  const params = new URLSearchParams({
+    lat: String(latitude),
+    lng: String(longitude),
+    radiusM: String(filters.radiusM),
+    category: filters.category,
+    registeredDays: filters.registeredDays,
+    q: query,
+  });
+  const { data } = await api<{ data: (ServerItem & { distanceM: number })[] }>(
+    '/items/nearby?' + params,
+  );
+  return data.map((item) => ({
+    ...fromServer(item),
+    distanceM: item.distanceM,
+    marker: {
+      id: item.id,
+      category: item.category,
+      icon:
+        item.category === 'ELECTRONICS' ? 'buds' : item.category === 'WALLET_BAG' ? 'bag' : 'key',
+      distance: item.distanceM,
+      ...pointForCoordinate({
+        latitude: item.foundLocation.lat,
+        longitude: item.foundLocation.lng,
+      }),
+    },
+  }));
+}
