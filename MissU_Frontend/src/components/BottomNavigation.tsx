@@ -5,7 +5,13 @@ import { colors } from '@/constants/theme';
 import { Icon, type IconName } from './Icon';
 
 type Tab = 'home' | 'nearby' | 'report' | 'history';
-export function BottomNavigation({ selected }: { selected: Tab }) {
+export function BottomNavigation({
+  selected,
+  onNearbyReselect,
+}: {
+  selected: Tab;
+  onNearbyReselect?: () => void;
+}) {
   const tabs: { key: string; label: string; icon: IconName; onPress?: () => void }[] = [
     {
       key: 'home',
@@ -19,6 +25,7 @@ export function BottomNavigation({ selected }: { selected: Tab }) {
       icon: selected === 'nearby' ? 'map-active' : 'map',
       onPress: () => {
         if (selected !== 'nearby') router.replace('/nearby');
+        else onNearbyReselect?.();
       },
     },
     {
