@@ -1,3 +1,4 @@
+import { api, apiBase, ApiError } from './backend.ts';
 import type { ItemCategory } from './activity/types';
 
 export type PublicItem = {
@@ -5,9 +6,11 @@ export type PublicItem = {
   name: string;
   description: string;
   /** Figma 03.G/03.M "종류 · 전자기기" and the 05 registration tiles. */
-  category: ItemCategory;
+  category: ItemCategory | 'WALLET_BAG';
   /** Number of public photos (placeholders only; uploads are not connected). */
   photos: number;
+  photoUrls?: string[];
+  statusLabel?: string;
   foundAt: string;
   location: string;
   storage: string;
@@ -87,13 +90,55 @@ export function filterItems(items: PublicItem[], filters: SearchFilters, now = D
     );
   });
 }
-// Replace this adapter when the team agrees the API contract; never silently fall back from API errors.
+export type ServerItem = {
+  id: string;
+  name: string;
+  publicFeatures: string | null;
+  category: 'ELECTRONICS' | 'WALLET_BAG' | 'OTHER';
+  foundAt: string;
+  foundLocation: { label: string; lat: number; lng: number };
+  storagePlace: string;
+  pickupGuide: string | null;
+  photos: { url: string }[];
+  status: string;
+};
+export function fromServer(item: ServerItem): PublicItem {
+  return {
+    id: item.id,
+    name: item.name,
+    description: item.publicFeatures ?? '',
+    category: item.category === 'WALLET_BAG' ? 'WALLET_BAG' : item.category,
+    photos: item.photos.length,
+    photoUrls: item.photos.map((p) => new URL(p.url, apiBase).href),
+    foundAt: item.foundAt,
+    location: item.foundLocation.label,
+    storage: item.storagePlace,
+    collectionGuide: item.pickupGuide ?? '',
+    statusLabel:
+      item.status === 'AVAILABLE'
+        ? '보관 중'
+        : item.status === 'RESERVED'
+          ? '반환 진행 중'
+          : '반환 완료',
+  };
+}
 export const itemRepository = {
   async search(filters: SearchFilters): Promise<PublicItem[]> {
-    return filterItems(mockItems, filters);
+    const q = new URLSearchParams({ limit: '50' });
+    if (filters.query.trim()) q.set('q', filters.query.trim());
+    if (filters.place.trim()) q.set('place', filters.place.trim());
+    if (filters.period !== 'all')
+      q.set('foundFrom', new Date(Date.now() - Number(filters.period) * 86400000).toISOString());
+    const page = await api<{ data: ServerItem[] }>('/items?' + q.toString());
+    return page.data.map(fromServer);
   },
   async find(id: string): Promise<PublicItem | undefined> {
-    return mockItems.find((item) => item.id === id);
+    try {
+      return fromServer((await api<{ data: ServerItem }>('/items/' + encodeURIComponent(id))).data);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return undefined;
+      throw e;
+    }
   },
 };
 export function formatFoundAt(value: string) {
