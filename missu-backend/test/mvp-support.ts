@@ -8,7 +8,10 @@ import { resolve } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { setupApp } from '../src/setup-app';
 import { DatabaseService } from '../src/database/database.service';
-import { RateLimitService } from '../src/common/rate-limit.service';
+import {
+  RateLimitService,
+  type RateLimit,
+} from '../src/common/rate-limit.service';
 import { digest, sign } from '../src/common/crypto';
 
 export const testPassword = 'Missu-test-password-2026!';
@@ -44,6 +47,10 @@ export async function harness() {
         return {
           consume: (value: string, maximum: number, ms: number) =>
             rates.consume(key(value), maximum, ms),
+          consumeAll: (rules: RateLimit[]) =>
+            rates.consumeAll(
+              rules.map((rule) => ({ ...rule, key: key(rule.key) })),
+            ),
           reset: (value: string) => rates.reset(key(value)),
         };
       },
