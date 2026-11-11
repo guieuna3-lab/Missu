@@ -57,6 +57,8 @@ export function HomeScreen() {
           최근 등록된 습득물
         </Text>
         <View style={styles.items}>
+          {/* Figma 01.03-E: no recent items yet. */}
+          {!isPreview && <Text style={styles.secondary}>최근 등록된 습득물이 없어요</Text>}
           {isPreview &&
             previewItems.map((item) => (
               <Pressable

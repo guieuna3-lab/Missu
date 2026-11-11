@@ -25,6 +25,9 @@ type PreviewState = {
   profile: Profile | null;
   /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
   sessionId: number;
+  /** The server no longer accepts the session (Figma 01.04-S). Nothing sets it in the mock yet. */
+  sessionExpired: boolean;
+  markSessionExpired: () => void;
   activityPreset: ActivityPreset;
   updateProfile: (profile: Pick<Profile, 'name' | 'email'>) => void;
   /** Records the number confirmed on 07.03; clears it from 계정 관리 (02-A.06-U). */
@@ -48,12 +51,18 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
   const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
   const [sessionId, setSessionId] = useState(0);
-  const nextSession = () => setSessionId((current) => current + 1);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const nextSession = () => {
+    setSessionId((current) => current + 1);
+    setSessionExpired(false);
+  };
   return (
     <PreviewContext.Provider
       value={{
         profile,
         sessionId,
+        sessionExpired,
+        markSessionExpired: () => setSessionExpired(true),
         activityPreset,
         updateProfile: (next) =>
           setProfile((current) => (current ? { ...current, ...next } : current)),

@@ -41,3 +41,9 @@ export function confirmSignup(input: {
 export function requestPasswordReset(email: string): Promise<void> {
   return respond(undefined);
 }
+
+/** Figma 02-A.05 from 계정 관리. The mock stores nothing. */
+export function changePassword(input: { password: string }): Promise<void> {
+  void input;
+  return respond(undefined);
+}

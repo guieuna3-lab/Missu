@@ -1,10 +1,11 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { Card } from '@/components/Card';
 import { ConfirmDialog } from '@/components/Dialog';
+import { TextLink } from '@/components/FormField';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
@@ -15,10 +16,10 @@ import { receivedRequests, sentRequests } from './activitySummary';
 import type { HistoryTab } from './HistoryListScreen';
 import { ProfileModal } from './ProfileModal';
 
-// Figma 01.05 with its loading (01.05-L), empty (01.05-E) and logout confirmation (01.05-C)
-// states. A card with two or more entries opens the 01.09 list.
+// Figma 01.05 with its loading (01.05-L), empty (01.05-E), logout confirmation (01.05-C)
+// and session-expired (01.04-S) states. A card with two or more entries opens the 01.09 list.
 export function HistoryScreen() {
-  const { profile, updateProfile, exitMemberPreview } = usePreview();
+  const { profile, sessionExpired, updateProfile, exitMemberPreview, startLogin } = usePreview();
   const activity = useActivity();
   const [editing, setEditing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -76,14 +77,8 @@ export function HistoryScreen() {
               <Text style={typography.body}>
                 {profile.name} · {profile.email}
               </Text>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="정보 수정"
-                onPress={() => setEditing(true)}
-                hitSlop={8}
-              >
-                <Text style={[typography.label, { color: colors.blue }]}>정보 수정</Text>
-              </Pressable>
+              <TextLink label="정보 수정" onPress={() => setEditing(true)} />
+              <TextLink label="계정 관리" onPress={() => router.push('/account')} />
             </View>
             <Text accessibilityRole="header" style={typography.heading}>
               내 활동
@@ -141,8 +136,8 @@ export function HistoryScreen() {
         <ProfileModal
           profile={profile}
           onClose={() => setEditing(false)}
-          onSave={(next) => {
-            updateProfile(next);
+          onSave={(name) => {
+            updateProfile({ name, email: profile.email });
             setEditing(false);
           }}
         />
@@ -153,6 +148,17 @@ export function HistoryScreen() {
           message="다시 로그인하면 내 활동을 확인할 수 있어요."
           onCancel={() => setLoggingOut(false)}
           onConfirm={logout}
+        />
+      )}
+      {sessionExpired && (
+        <ConfirmDialog
+          title="로그인이 만료되었어요"
+          message="다시 로그인하면 이용하던 화면으로 돌아갈 수 있어요."
+          confirmLabel="다시 로그인"
+          onConfirm={() => {
+            exitMemberPreview();
+            startLogin('mine');
+          }}
         />
       )}
     </Screen>
