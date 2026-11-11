@@ -6,11 +6,13 @@ import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
 import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack } from '@/lib/navigation';
+import { usePreview } from '@/lib/preview/PreviewProvider';
 import { requestPhoneCode } from './mockPhoneApi';
 import { isPhoneNumber, normalizePhone } from './phone';
 
 // Figma 07.01 and 07.01-E (format error).
 export function PhoneNumberScreen() {
+  const { accessToken } = usePreview();
   const { itemId } = useLocalSearchParams<{ itemId?: string }>();
   const [phone, setPhone] = useState('');
   const [error, setError] = useState<string>();
@@ -27,8 +29,8 @@ export function PhoneNumberScreen() {
     setRequestError(undefined);
     const normalized = normalizePhone(phone);
     try {
-      await requestPhoneCode(normalized);
-      router.push({ pathname: '/verify-phone/code', params: { phone: normalized, itemId } });
+      await requestPhoneCode(normalized, accessToken);
+      router.push({ pathname: '/verify-phone/code', params: { itemId } });
     } catch (caught) {
       setRequestError(requestErrorMessage(caught));
     } finally {
