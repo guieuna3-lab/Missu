@@ -60,7 +60,7 @@ export function deleteLostReport(state: ActivityState, id: string) {
 }
 
 // 05 습득물 등록
-export type FoundItemInput = Omit<FoundItem, 'id' | 'createdAt'>;
+export type FoundItemInput = Omit<FoundItem, 'id' | 'createdAt'> & { photoIds?: string[] };
 
 export function addFoundItem(state: ActivityState, input: FoundItemInput, clock: Clock) {
   const item: FoundItem = { ...input, id: clock.id, createdAt: clock.now };
