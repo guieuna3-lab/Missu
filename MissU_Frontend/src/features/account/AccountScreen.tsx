@@ -13,16 +13,18 @@ import { usePreview } from '@/lib/preview/PreviewProvider';
 
 // Figma 02-A.06 with 02-A.06-U (phone verification removed) and 02-A.06-C (leave account).
 export function AccountScreen() {
-  const { profile, clearPhone, exitMemberPreview } = usePreview();
+  const { profile, clearPhone, exitMemberPreview, accessToken } = usePreview();
   const [leaving, setLeaving] = useState(false);
   const [cleared, setCleared] = useState(false);
   if (!profile) return <LoginGateScreen kind="history" />;
 
   const phoneDescription = profile.phone
     ? `현재 인증됨 · ${maskPhone(profile.phone)}`
-    : cleared
-      ? '연락처 인증이 해제되었어요.'
-      : '아직 인증한 연락처가 없어요.';
+    : profile.phoneVerified
+      ? '현재 인증됨'
+      : cleared
+        ? '연락처 인증이 해제되었어요.'
+        : '아직 인증한 연락처가 없어요.';
 
   return (
     <FlowScreen
@@ -56,12 +58,13 @@ export function AccountScreen() {
               }
             : undefined
         }
-        disabled={!profile.phone}
+        disabled={!!accessToken || !profile.phone}
       />
       <ChoiceRow
         icon="search"
         title="회원 탈퇴"
-        description="계정 탈퇴 안내 확인"
+        description={accessToken ? '회원 탈퇴는 아직 지원하지 않아요.' : '계정 탈퇴 안내 확인'}
+        disabled={!!accessToken}
         onPress={() => setLeaving(true)}
       />
       {leaving && (
