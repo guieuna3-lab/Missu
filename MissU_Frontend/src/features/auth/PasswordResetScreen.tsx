@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
-import { requestPasswordReset } from './mockAuthApi';
+import { requestPasswordReset } from './passwordResetApi';
 import { isEmail, requestErrorMessage } from './validation';
 
 // Figma 02-A.02
@@ -24,7 +24,7 @@ export function PasswordResetScreen() {
     setRequestError(null);
     try {
       await requestPasswordReset(sentTo);
-      router.push({ pathname: '/password-reset/sent', params: { email: sentTo } });
+      router.push('/password-reset/sent');
     } catch (error) {
       setRequestError(requestErrorMessage(error));
     } finally {
