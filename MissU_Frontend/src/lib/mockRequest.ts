@@ -1,3 +1,4 @@
+import { ApiError } from './backend';
 import { ActivityError } from './activity/transitions';
 
 // Development-only stand-in for server calls made by the report, verification and return
@@ -16,6 +17,6 @@ export function respond<T>(value: T): Promise<T> {
 
 export function requestErrorMessage(error: unknown) {
   if (error instanceof RequestUnavailableError) return '서버 연결 전이라 아직 이용할 수 없어요.';
-  if (error instanceof ActivityError) return error.message;
+  if (error instanceof ApiError || error instanceof ActivityError) return error.message;
   return '요청을 처리하지 못했어요. 잠시 후 다시 시도해 주세요.';
 }
