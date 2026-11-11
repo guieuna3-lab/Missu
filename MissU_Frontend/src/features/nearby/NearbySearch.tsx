@@ -1,13 +1,12 @@
-import { useState } from 'react';
-import { Image } from 'expo-image';
+import { useEffect, useState } from 'react';
 import { Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { TextLink } from '@/components/FormField';
 import { Header } from '@/components/Header';
 import { colors, typography } from '@/constants/theme';
 import { MapIcon, mapArt } from './mapArt';
-import { places } from './nearbyItems';
+import { mapApi, type Coordinates, type MapItem } from './mapData';
 
-const suggested = ['중앙도서관', '학생식당', '갤럭시 버즈'];
+const suggested = ['한성대학교', '이어폰', '지갑'];
 
 export function NearbySearch({
   query,
@@ -15,16 +14,48 @@ export function NearbySearch({
   onClose,
   onLocate,
   onSearch,
+  onPlace,
 }: {
   query: string;
   recent: string[];
   onClose: () => void;
   onLocate: () => void;
   onSearch: (query: string) => void;
+  onPlace: (point: Coordinates, label: string) => void;
 }) {
   const [input, setInput] = useState(query);
   const term = input.trim();
-  const matchingPlaces = places.filter(({ name }) => name.includes(term)).map(({ name }) => name);
+  const [placeResult, setPlaceResult] = useState<{
+    term: string;
+    places: MapItem['foundLocation'][];
+  }>();
+  const foundPlaces = placeResult?.term === term ? placeResult.places : [];
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!term) return;
+    const timer = setTimeout(() => {
+      mapApi<MapItem[]>('/items?place=' + encodeURIComponent(term) + '&limit=30', {
+        signal: controller.signal,
+      })
+        .then((rows) => {
+          if (!controller.signal.aborted)
+            setPlaceResult({
+              term,
+              places: [
+                ...new Map(
+                  rows.map((row) => [row.foundLocation.label, row.foundLocation]),
+                ).values(),
+              ],
+            });
+        })
+        .catch(() => {});
+    }, 300);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [term]);
+  const matchingPlaces = ['한성대학교'].filter((name) => name.includes(term));
   const choices = term ? matchingPlaces : recent.length ? recent : suggested;
 
   function submit(value: string) {
@@ -41,13 +72,6 @@ export function NearbySearch({
         </View>
       </View>
       <View style={styles.searchBackdrop}>
-        <Image
-          accessible={false}
-          source={mapArt.campus}
-          contentFit="cover"
-          contentPosition="top"
-          style={StyleSheet.absoluteFill}
-        />
         <View style={styles.searchBox}>
           <MapIcon source={mapArt.search} size={20} />
           <TextInput
@@ -87,6 +111,17 @@ export function NearbySearch({
         <Text style={typography.body}>
           {term ? '장소' : recent.length ? '최근 검색' : '추천 검색'}
         </Text>
+        {foundPlaces.map((place) => (
+          <Pressable
+            accessibilityRole="button"
+            key={place.label}
+            style={styles.choice}
+            onPress={() => onPlace(place, place.label)}
+          >
+            <MapIcon source={mapArt.place} size={20} />
+            <Text style={typography.label}>{place.label}</Text>
+          </Pressable>
+        ))}
         {choices.map((choice) => (
           <Pressable
             key={choice}
@@ -94,10 +129,7 @@ export function NearbySearch({
             onPress={() => submit(choice)}
             style={styles.choice}
           >
-            <MapIcon
-              source={places.some(({ name }) => name === choice) ? mapArt.place : mapArt.search}
-              size={20}
-            />
+            <MapIcon source={choice === '한성대학교' ? mapArt.place : mapArt.search} size={20} />
             <Text style={typography.label}>{choice}</Text>
           </Pressable>
         ))}
