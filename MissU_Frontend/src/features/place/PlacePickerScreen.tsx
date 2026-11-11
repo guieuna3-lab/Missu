@@ -1,3 +1,5 @@
+import * as Location from 'expo-location';
+import { api, ApiError } from '@/lib/backend';
 import { useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
@@ -6,7 +8,7 @@ import { FormField, FormMessage } from '@/components/FormField';
 import { Icon } from '@/components/Icon';
 import { colors, typography } from '@/constants/theme';
 import type { Place } from '@/lib/activity/types';
-import { placeOptions, searchPlaces, type PlaceOption } from './places';
+import { type PlaceOption } from './places';
 import { PlaceMap } from './PlaceMap';
 
 // Figma 09.01–09.04 and 09.02-E, also used as 04.04. The caller decides what happens with
@@ -27,6 +29,30 @@ export function PlacePickerScreen({
   onSelect: (place: Place) => void;
   onBack: () => void;
 }) {
+  // 좌표는 선택한 장소 또는 사용자가 허용한 기기 위치에서만 가져옵니다.
+  const [placeOptions, setPlaceOptions] = useState<PlaceOption[]>(() => [
+    {
+      id: 'current',
+      name: '현재 위치',
+      description: '기기 위치를 사용하고 상세 장소를 입력하세요.',
+      icon: 'book',
+      pin: { x: 207, y: 96 },
+    },
+    ...(initialPlace?.lat != null && initialPlace?.lng != null
+      ? [
+          {
+            id: 'previous',
+            name: initialPlace.name,
+            description: initialPlace.detail,
+            icon: 'book' as const,
+            pin: { x: 110, y: 140 },
+            lat: initialPlace.lat,
+            lng: initialPlace.lng,
+          },
+        ]
+      : []),
+  ]);
+  const [looking, setLooking] = useState(false);
   const [query, setQuery] = useState('');
   // null until a search ran; then the result list (possibly empty, Figma 09.02-E).
   const [results, setResults] = useState<PlaceOption[] | null>(null);
@@ -38,10 +64,46 @@ export function PlacePickerScreen({
   const selected = placeOptions.find((p) => p.id === selectedId);
   const noResults = results !== null && results.length === 0;
 
-  function search() {
+  async function search() {
     Keyboard.dismiss();
-    setResults(searchPlaces(query));
     setSelectedId(undefined);
+    setDetailError(undefined);
+    if (!query.trim()) {
+      setResults(null);
+      return;
+    }
+    setLooking(true);
+    try {
+      const response = await api<{
+        data: {
+          providerPlaceId: string;
+          name: string;
+          address: string;
+          lat: number;
+          lng: number;
+        }[];
+      }>('/places?q=' + encodeURIComponent(query.trim()));
+      const matches = response.data.map((p, i) => ({
+        id: p.providerPlaceId,
+        name: p.name,
+        description: p.address,
+        lat: p.lat,
+        lng: p.lng,
+        icon: 'book' as const,
+        pin: { x: 110 + 70 * (i % 3), y: 70 + 20 * (i % 4) },
+      }));
+      setPlaceOptions((old) => [old[0], ...matches]);
+      setResults(matches);
+    } catch (e) {
+      setResults(null);
+      setDetailError(
+        e instanceof ApiError && e.status === 503
+          ? '주소 검색은 현재 사용할 수 없어요. 습득 장소에 있다면 현재 위치를 선택해 주세요.'
+          : '장소를 불러오지 못했어요.',
+      );
+    } finally {
+      setLooking(false);
+    }
   }
 
   function choose(id: string) {
@@ -52,7 +114,7 @@ export function PlacePickerScreen({
     setDetailError(undefined);
   }
 
-  function confirm() {
+  async function confirm() {
     if (!selected || submitting) return;
     const text = detail.trim();
     if (!text) {
@@ -60,7 +122,29 @@ export function PlacePickerScreen({
       return;
     }
     Keyboard.dismiss();
-    onSelect({ name: selected.name, detail: text });
+    if (selected.lat != null && selected.lng != null) {
+      onSelect({ name: selected.name, detail: text, lat: selected.lat, lng: selected.lng });
+      return;
+    }
+    setLooking(true);
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (!permission.granted) {
+        setDetailError('위치 사용을 허용한 뒤 다시 선택해 주세요.');
+        return;
+      }
+      const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      onSelect({
+        name: selected.name,
+        detail: text,
+        lat: point.coords.latitude,
+        lng: point.coords.longitude,
+      });
+    } catch {
+      setDetailError('현재 위치를 확인할 수 없어요. 위치 설정을 확인해 주세요.');
+    } finally {
+      setLooking(false);
+    }
   }
 
   const listTitle = selected
@@ -123,7 +207,7 @@ export function PlacePickerScreen({
           <ActionButton
             label={selected ? '이 장소로 선택' : '장소 검색하기'}
             onPress={selected ? confirm : search}
-            loading={submitting}
+            loading={submitting || looking}
           />
           {previousStep}
         </>
@@ -142,6 +226,7 @@ export function PlacePickerScreen({
           style={styles.input}
         />
       </View>
+      {!selected && detailError && <FormMessage>{detailError}</FormMessage>}
       <View style={styles.mapBleed}>
         <PlaceMap places={placeOptions} selectedId={selectedId} onSelect={choose} />
       </View>
