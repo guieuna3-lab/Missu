@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import * as Location from 'expo-location';
 import {
@@ -28,7 +28,7 @@ import {
   places,
   pointForCoordinate,
   radii,
-  searchNearby,
+  nearbyFromServer,
   zeroOffset,
   type MapCoordinate,
   type MapPoint,
@@ -91,13 +91,32 @@ export function NearbyScreen() {
     }, [searching]),
   );
 
-  const searchCenter = hasNativeMap
-    ? coordinateForPoint({
-        x: mapOrigin.x - searchedArea.offset.x,
-        y: mapOrigin.y - searchedArea.offset.y,
+  const searchCenter = coordinateForPoint({
+    x: mapOrigin.x - searchedArea.offset.x,
+    y: mapOrigin.y - searchedArea.offset.y,
+  });
+  const { latitude, longitude } = searchCenter;
+  const queryKey = JSON.stringify([filters, query, latitude, longitude]);
+  const [result, setResult] = useState<{
+    key: string;
+    rows: NearbyItem[];
+    state: 'ready' | 'error';
+  }>();
+  const items = result?.key === queryKey ? result.rows : [];
+  const nearbyState = result?.key === queryKey ? result.state : 'loading';
+  useEffect(() => {
+    let active = true;
+    nearbyFromServer(filters, query, latitude, longitude)
+      .then((rows) => {
+        if (active) setResult({ key: queryKey, rows, state: 'ready' });
       })
-    : undefined;
-  const items = searchNearby(filters, query, searchedArea.offset, undefined, searchCenter);
+      .catch(() => {
+        if (active) setResult({ key: queryKey, rows: [], state: 'error' });
+      });
+    return () => {
+      active = false;
+    };
+  }, [filters, query, latitude, longitude, queryKey]);
   const selected = items.find(({ id }) => id === selectedId);
   const moved = offset.x !== searchedArea.offset.x || offset.y !== searchedArea.offset.y;
   const hasFilters =
@@ -120,10 +139,6 @@ export function NearbyScreen() {
   }
 
   async function locate() {
-    if (!hasNativeMap) {
-      setOverlay('location');
-      return;
-    }
     if (locating.current) return;
     locating.current = true;
     try {
@@ -217,7 +232,7 @@ export function NearbyScreen() {
                 </Text>
                 <MapIcon source={mapArt.chevron} size={16} />
               </Pressable>
-              <Text style={styles.caption}>{hasNativeMap ? '예시 습득물' : '예시 지도'}</Text>
+              <Text style={styles.caption}>{hasNativeMap ? '주변 습득물' : '위치 안내도'}</Text>
             </View>
             <View style={[styles.map, expanded && styles.shortMap]}>
               <CampusMap
@@ -301,7 +316,13 @@ export function NearbyScreen() {
                   accessibilityLiveRegion="polite"
                   style={styles.sheetTitle}
                 >
-                  {selected ? '선택한 습득물' : `${resultLabel} ${items.length}개`}
+                  {nearbyState === 'loading'
+                    ? '불러오는 중…'
+                    : nearbyState === 'error'
+                      ? '주변 습득물을 불러오지 못했어요.'
+                      : selected
+                        ? '선택한 습득물'
+                        : `${resultLabel} ${items.length}개`}
                 </Text>
                 {selected ? (
                   <TextLink label="닫기" onPress={() => setSelectedId(undefined)} />
