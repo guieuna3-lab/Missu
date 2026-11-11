@@ -6,6 +6,12 @@ import { config } from '../config';
 import { ExternalHttpService } from './external-http.service';
 import { fail } from '../common/http';
 
+function storageHeaders(key: string): Record<string, string> {
+  // 새 서버 키는 apikey 헤더로 전달하고, 기존 service_role JWT도 계속 지원합니다.
+  if (key.startsWith('sb_secret_')) return { apikey: key };
+  return { apikey: key, Authorization: 'Bearer ' + key };
+}
+
 @Injectable()
 export class StorageService implements OnModuleInit {
   constructor(private readonly http: ExternalHttpService) {}
@@ -16,12 +22,7 @@ export class StorageService implements OnModuleInit {
       settings.supabaseUrl +
         '/storage/v1/bucket/' +
         encodeURIComponent(settings.supabaseBucket!),
-      {
-        headers: {
-          Authorization: 'Bearer ' + settings.supabaseKey,
-          apikey: settings.supabaseKey!,
-        },
-      },
+      { headers: storageHeaders(settings.supabaseKey!) },
     );
     const bucket = (await response.json()) as { id?: string; public?: boolean };
     if (bucket.id !== settings.supabaseBucket || bucket.public !== false)
@@ -38,10 +39,7 @@ export class StorageService implements OnModuleInit {
         encodeURIComponent(settings.supabaseBucket!) +
         '/' +
         key,
-      headers: {
-        Authorization: 'Bearer ' + settings.supabaseKey,
-        apikey: settings.supabaseKey!,
-      },
+      headers: storageHeaders(settings.supabaseKey!),
     };
   }
   async put(key: string, data: Buffer) {
