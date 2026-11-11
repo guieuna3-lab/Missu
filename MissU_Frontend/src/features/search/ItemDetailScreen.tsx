@@ -78,7 +78,6 @@ function ItemDetail({ id }: { id: string }) {
           <>
             <View style={[styles.card, styles.photo]}>
               <Text style={typography.label}>물품 사진 · 1 / {item.photos}</Text>
-              {/* Placeholders only: photo upload and viewing are not connected yet. */}
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}

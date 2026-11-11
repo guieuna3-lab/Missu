@@ -2,7 +2,7 @@ services:
   - type: web
     name: missu-web
     runtime: static
-    branch: release/mobile-web
+    branch: main
     autoDeployTrigger: commit
     buildFilter:
       paths:

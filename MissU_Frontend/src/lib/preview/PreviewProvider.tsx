@@ -1,11 +1,11 @@
 import { logout, type AuthSession } from '@/features/auth/authApi';
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
+import { apiBase } from '../backend';
 import { previewProfile, type Profile } from './fixtures';
 
-// Opt-in, development-only visual fixtures and the mock sign-in state.
-// Never establishes a real session or stores credentials.
-const previewMode = __DEV__ ? process.env.EXPO_PUBLIC_MISSU_PREVIEW : undefined;
+// 개발용 미리보기는 운영 API를 연결하지 않은 경우에만 활성화합니다.
+const previewMode = __DEV__ && !apiBase ? process.env.EXPO_PUBLIC_MISSU_PREVIEW : undefined;
 export const isPreview = previewMode === 'guest' || previewMode === 'member';
 
 /** Where the login started (Figma `loginReturnTo`). */
@@ -39,8 +39,8 @@ type PreviewState = {
   startLogin: (origin: LoginOrigin) => void;
   cancelLogin: () => void;
   /** Switches to the member state with a mock auth result. */
-  signIn: (session: AuthSession) => void;
-  completeSignup: (session: AuthSession) => void;
+  signIn: (session: AuthSession | Profile, token?: string) => void;
+  completeSignup: (session: AuthSession | Profile) => void;
   /** Clears the login/sign-up screens from history and opens the destination. */
   continueAfterLogin: (destination?: '/search') => void;
 };
@@ -88,18 +88,18 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           setLoginOrigin(null);
           router.dismissTo(getSearchReturnTo(loginOrigin) ?? '/home');
         },
-        signIn: (next) => {
+        signIn: (next, token) => {
           nextSession();
           setActivityPreset('empty');
-          setAccessToken(next.accessToken);
-          setProfile(next.profile);
+          setAccessToken('accessToken' in next ? next.accessToken : (token ?? null));
+          setProfile('profile' in next ? next.profile : next);
         },
         completeSignup: (next) => {
           // A new account has no activity yet (Figma 01.05-E).
           nextSession();
           setActivityPreset('empty');
-          setAccessToken(next.accessToken);
-          setProfile(next.profile);
+          setAccessToken('accessToken' in next ? next.accessToken : null);
+          setProfile('profile' in next ? next.profile : next);
           if (getSearchReturnTo(loginOrigin)) {
             router.dismissTo('/login');
           } else if (router.canDismiss()) {

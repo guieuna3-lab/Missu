@@ -31,3 +31,14 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     clearTimeout(timer);
   }
 }
+
+export function loginMobile(email: string, password: string) {
+  return api<{ data: { user: { nickname: string; email: string }; accessToken: string } }>(
+    '/auth/mobile/login',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    },
+  );
+}
