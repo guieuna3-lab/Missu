@@ -5,7 +5,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormMessage, TextLink } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
-import { requestSignupCode } from './mockAuthApi';
+
 import { PrivacySummary } from './PrivacySummary';
 import { useSignupDraft } from './SignupDraft';
 import { requestErrorMessage } from './validation';
@@ -32,7 +32,7 @@ export function SignupConsentScreen() {
     setSubmitting(true);
     setMessage(null);
     try {
-      await requestSignupCode(draft);
+      await draft.requestCode();
       router.push('/signup/verify');
     } catch (requestError) {
       setMessage({ text: requestErrorMessage(requestError), tone: 'error' });
