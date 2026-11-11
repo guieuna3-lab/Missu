@@ -139,6 +139,103 @@ describe('주인 확인·대화·반환 PostgreSQL 계약', () => {
       }),
     ).rejects.toMatchObject({ code: 'P2002' });
   });
+  it('팀 앱의 자유 입력, 두 계정의 내역과 대화, 약속 확정, 전달과 수령을 연결한다', async () => {
+    const item = await h.item(keeper);
+    const body = { features: '파란 라벨', lostInfo: '어제 오후 도서관 2층' };
+    const createPath = '/items/' + item.id + '/claims';
+    await h
+      .post(requester, createPath)
+      .send({ ...claimBody(), ...body })
+      .expect(400);
+    const { claimId: id } = (
+      await h.post(requester, createPath).send(body).expect(201)
+    ).body.data;
+    const route = '/claims/' + id;
+    const post = (actor: Actor, endpoint: string) =>
+      h.post(actor, route + endpoint);
+    for (const [actor, role] of [
+      [requester, 'requester'],
+      [keeper, 'holder'],
+    ] as const) {
+      const list = await actor.agent.get('/api/v1/me/claims').expect(200);
+      expect(
+        list.body.data.find((r: { id: string }) => r.id === id),
+      ).toMatchObject({
+        viewerRole: role,
+        itemName: item.name,
+        lostInfo: body.lostInfo,
+        lostTime: null,
+        lostLocation: null,
+        status: 'PENDING',
+      });
+    }
+    const unrelated = await stranger.agent.get('/api/v1/me/claims').expect(200);
+    expect(unrelated.body.data.some((r: { id: string }) => r.id === id)).toBe(
+      false,
+    );
+    const plan = { place: '도서관', date: '2026.11.13', time: '12:30' };
+    await post(keeper, '/appointment').send(plan).expect(409);
+    await post(keeper, '/decision').send({ decision: 'APPROVE' }).expect(200);
+    await post(stranger, '/appointment').send(plan).expect(404);
+    await post(keeper, '/appointment')
+      .send({ ...plan, date: '2026.02.30' })
+      .expect(400);
+    for (const actor of [keeper, requester])
+      await post(actor, '/messages')
+        .send({ body: '도서관에서 만나요', clientMessageId: randomUUID() })
+        .expect(201);
+    const chat = await requester.agent
+      .get('/api/v1' + route + '/messages')
+      .expect(200);
+    expect(
+      chat.body.data.messages.map((m: { senderRole: string }) => m.senderRole),
+    ).toEqual(['holder', 'requester']);
+    const stale = (await post(requester, '/appointment').send(plan).expect(200))
+      .body.data.id;
+    const current = (
+      await post(keeper, '/appointment')
+        .send({ ...plan, time: '13:00' })
+        .expect(200)
+    ).body.data.id;
+    await post(keeper, '/appointment/confirm')
+      .send({ proposalId: current })
+      .expect(409);
+    await post(requester, '/appointment/confirm')
+      .send({ proposalId: stale })
+      .expect(409);
+    await post(requester, '/appointment/confirm')
+      .send({ proposalId: current })
+      .expect(200);
+    await post(requester, '/receipt').send({}).expect(409);
+    await post(keeper, '/handover').send({}).expect(200);
+    await post(requester, '/receipt').send({}).expect(200);
+    const final = await keeper.agent.get('/api/v1' + route).expect(200);
+    expect(final.body.data).toMatchObject({
+      status: 'RETURNED',
+      appointment: { confirmed: true, time: '13:00' },
+    });
+  });
+  it('대기 요청을 취소하거나 거절하면 같은 물품에 다시 요청할 수 있다', async () => {
+    const item = await h.item(keeper);
+    let id = await create(requester, item.id);
+    await h
+      .post(keeper, '/claims/' + id + '/cancel')
+      .send({})
+      .expect(404);
+    await h
+      .post(requester, '/claims/' + id + '/cancel')
+      .send({})
+      .expect(200);
+    id = await create(requester, item.id);
+    await h
+      .post(keeper, '/claims/' + id + '/decision')
+      .send({ decision: 'REJECT', reason: '정보 불일치' })
+      .expect(200);
+    expect(
+      (await requester.agent.get('/api/v1/claims/' + id).expect(200)).body.data
+        .status,
+    ).toBe('REJECTED');
+  });
   it('DB에도 거절 사유 필수 규칙을 적용한다', async () => {
     const item = await h.item(keeper),
       id = await create(second, item.id);
