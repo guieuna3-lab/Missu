@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: missu-web
+    runtime: static
+    branch: release/mobile-web
+    autoDeployTrigger: commit
+    buildFilter:
+      paths:
+        - MissU_Frontend/**
+    rootDir: MissU_Frontend
+    buildCommand: npm ci --include=dev && EXPO_NO_DOTENV=1 CI=1 npx --no-install expo export --platform web
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: EXPO_PUBLIC_API_URL
+        value: https://missu-api-wkdu.onrender.com/api/v1
+      - key: EXPO_PUBLIC_POLICY_VERSION
+        value: "v1.0"
