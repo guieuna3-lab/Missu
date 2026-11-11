@@ -1,0 +1,41 @@
+{
+  "date": "2026-11-03",
+  "businessApis": 28,
+  "httpOperations": 32,
+  "unitTestsPassed": 6,
+  "integrationTestsPassed": 42,
+  "buildPassed": true,
+  "lintPassed": true,
+  "deployment": {
+    "startedAt": "2026-11-03T05:55:03.110Z",
+    "project": "C:/Users/audwn/missu-backend",
+    "existingDatabase": true,
+    "existingServer": true,
+    "beforeBackup": "C:\\Users\\audwn\\missu-backend\\.local\\backups\\2026-11-03T05-55-03-776Z-7f1997b5",
+    "demoBaseUrl": "http://127.0.0.1:3001",
+    "originalServerNeedsRestart": false,
+    "liveOpenApiVersion": "0.2.0",
+    "liveOperations": 32,
+    "demoPassed": true,
+    "afterBackup": "C:\\Users\\audwn\\missu-backend\\.local\\backups\\2026-11-03T05-56-41-359Z-46470cd4",
+    "privateSettingsPreserved": true,
+    "completedAt": "2026-11-03T05:56:46.582Z",
+    "existingDatabaseLeftRunning": true,
+    "originalServerRecoveredAt": "2026-11-03T06:02:41.497Z",
+    "originalLiveApiVerified": true
+  },
+  "localDemo": {
+    "itemId": "a2597e21-595f-417f-913d-c63ce0585964",
+    "claimId": "96e84dc9-5b9f-47a9-80a0-13b7537cd0eb",
+    "reportId": "f6a4f9be-566d-48ba-90fa-ea4b8ae447f6",
+    "detailUrl": "http://127.0.0.1:3000/api/v1/items/a2597e21-595f-417f-913d-c63ce0585964",
+    "status": "RETURNED",
+    "verifiedAt": "2026-11-03T05:56:40.959Z",
+    "testedBaseUrl": "http://127.0.0.1:3001"
+  },
+  "limitations": [
+    "External providers tested with mocked transport; live credentials unconfigured.",
+    "Frontend and production deployment are separate.",
+    "Load test excludes photo downloads, external providers and frontend."
+  ]
+}
