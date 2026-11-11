@@ -83,6 +83,8 @@ export function completeOpenApi(document: OpenAPIObject) {
     }),
     LostReport: object({
       id: uuid,
+      placeName: string,
+      category: string,
       name: string,
       features: nullable,
       lostTime: ref('LostTime'),
@@ -208,6 +210,9 @@ export function completeOpenApi(document: OpenAPIObject) {
     ],
     'post /api/v1/auth/logout': [204, null],
     'post /api/v1/auth/password-reset': [204, null],
+    'patch /api/v1/me/password': [204, null],
+    'delete /api/v1/me/phone': [204, null],
+    'delete /api/v1/me': [204, null],
     'get /api/v1/me': [200, envelope(ref('Profile'))],
     'patch /api/v1/me': [200, envelope(ref('Profile'))],
     'get /api/v1/items': [200, envelope(array(ref('PublicItem')), cursorMeta)],
@@ -252,6 +257,21 @@ export function completeOpenApi(document: OpenAPIObject) {
       envelope(
         object({ id: uuid, status: { type: 'string', enum: ['AVAILABLE'] } }),
       ),
+    ],
+    'get /api/v1/lost-reports': [
+      200,
+      envelope(array(ref('LostReport')), cursorMeta),
+    ],
+    'put /api/v1/lost-reports/{id}': [200, envelope(ref('LostReport'))],
+    'delete /api/v1/lost-reports/{id}': [204, null],
+    'put /api/v1/items/{id}': [
+      200,
+      envelope({
+        allOf: [
+          ref('PublicItem'),
+          object({ privateFeatures: nullable, appCategory: nullable }),
+        ],
+      }),
     ],
     'post /api/v1/lost-reports': [201, envelope(object({ id: uuid }))],
     'get /api/v1/lost-reports/{id}': [200, envelope(ref('LostReport'))],
@@ -310,7 +330,12 @@ export function completeOpenApi(document: OpenAPIObject) {
       200,
       envelope({
         ...receipt,
-        properties: { ...receipt.properties, reason: string },
+        properties: {
+          ...receipt.properties,
+          reason: string,
+          description: nullable,
+          photoCount: { type: 'integer' },
+        },
         required: [...receipt.required!, 'reason'],
       }),
     ],
@@ -325,7 +350,9 @@ export function completeOpenApi(document: OpenAPIObject) {
   for (const [key, [status, body]] of Object.entries(contracts)) {
     const [method, path] = key.split(' ');
     const operation =
-      document.paths[path]?.[method as 'get' | 'post' | 'patch'];
+      document.paths[path]?.[
+        method as 'get' | 'post' | 'patch' | 'put' | 'delete'
+      ];
     if (!operation) throw new Error('API contract missing route: ' + key);
     const mobileEntry = path.startsWith('/api/v1/auth/mobile/');
     const webLogin = path === '/api/v1/auth/login';
