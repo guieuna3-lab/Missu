@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ChoiceRow } from '@/components/ChoiceRow';
 import { BottomSheet } from '@/components/Dialog';
 import { FormMessage } from '@/components/FormField';
@@ -12,10 +12,12 @@ import { MAX_PHOTOS, pickPhoto, type PhotoSource } from './mockPhotoPicker';
 export function PhotoSourceSheet({
   onClose,
   onAdded,
+  chooseAsset,
   onDenied,
 }: {
   onClose: () => void;
-  onAdded: () => void;
+  onAdded: (asset?: { id: string; preview: string }) => void;
+  chooseAsset?: (source: PhotoSource) => Promise<{ id: string; preview: string } | undefined>;
   /** The OS refused camera or library access (Figma 05.01-P). */
   onDenied: () => void;
 }) {
@@ -27,6 +29,12 @@ export function PhotoSourceSheet({
     setAdding(true);
     setError(undefined);
     try {
+      if (chooseAsset) {
+        const asset = await chooseAsset(source);
+        onClose();
+        if (asset) onAdded(asset);
+        return;
+      }
       const result = await pickPhoto(source);
       onClose();
       if (result.status === 'added') onAdded();
@@ -63,10 +71,16 @@ export function PhotoSourceSheet({
 // mockPhotoPicker.ts.
 export function PhotoAttachment({
   count,
+  attachments,
+  chooseAsset,
+  setAttachments,
   onChange,
   onDenied,
 }: {
   count: number;
+  attachments?: { id: string; preview: string }[];
+  chooseAsset?: (source: PhotoSource) => Promise<{ id: string; preview: string } | undefined>;
+  setAttachments?: (assets: { id: string; preview: string }[]) => void;
   onChange: (count: number) => void;
   onDenied: () => void;
 }) {
@@ -96,12 +110,20 @@ export function PhotoAttachment({
         >
           {Array.from({ length: count }, (_, index) => (
             <View key={index} style={styles.thumbnail}>
-              <Icon name="camera" />
+              {attachments?.[index] ? (
+                <Image source={{ uri: attachments[index].preview }} style={styles.thumbnail} />
+              ) : (
+                <Icon name="camera" />
+              )}
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`사진 ${index + 1} 삭제`}
                 hitSlop={8}
-                onPress={() => onChange(count - 1)}
+                onPress={() =>
+                  setAttachments && attachments
+                    ? setAttachments(attachments.filter((_, i) => i !== index))
+                    : onChange(count - 1)
+                }
                 style={styles.remove}
               >
                 <Text style={styles.removeText}>×</Text>
@@ -124,7 +146,11 @@ export function PhotoAttachment({
       {choosing && (
         <PhotoSourceSheet
           onClose={() => setChoosing(false)}
-          onAdded={() => onChange(Math.min(MAX_PHOTOS, count + 1))}
+          chooseAsset={chooseAsset}
+          onAdded={(asset) => {
+            if (asset && setAttachments) setAttachments([...(attachments ?? []), asset]);
+            else onChange(Math.min(MAX_PHOTOS, count + 1));
+          }}
           onDenied={onDenied}
         />
       )}
