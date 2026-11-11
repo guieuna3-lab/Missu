@@ -217,6 +217,41 @@ describe('가입·인증·재설정 PostgreSQL 계약', () => {
       sender.mockRestore();
     }
   });
+  it('동시 문자 요청은 한 건만 발송하고, 재발송 대기 중 눌러도 시간당 횟수를 소모하지 않는다', async () => {
+    const actor = await h.user('phone-retry', false);
+    const body = {
+      purpose: 'PHONE',
+      target: '01012345678',
+      consent: { kind: 'PHONE', agreed: true, policyVersion: 'dev-v1' },
+    };
+    const send = () => h.post(actor, '/auth/challenges').send(body);
+    const results = await Promise.all([send(), send()]);
+    expect(results.map((r) => r.status).sort((a, b) => a - b)).toEqual([
+      202, 429,
+    ]);
+    for (let i = 0; i < 5; i++) {
+      const denied = await send().expect(429);
+      expect(denied.body.error.message).toMatch(/재요청.*\d+초 후/);
+    }
+    for (let i = 1; i < 5; i++) {
+      // 이번 시험의 60초 대기만 만료시켜 시간당 한도를 그대로 검증합니다.
+      await h.db.rateLimitBucket.updateMany({
+        where: {
+          id: { in: [...h.rateIds] },
+          expiresAt: { lte: new Date(Date.now() + 60000) },
+        },
+        data: { expiresAt: new Date(Date.now() - 1) },
+      });
+      await send().expect(202);
+    }
+    const blocked = await send().expect(429);
+    expect(blocked.body.error.message).toMatch(/시간당 한도.*\d+분 후/);
+    expect(
+      await h.db.authChallenge.count({
+        where: { userId: actor.id, purpose: 'PHONE' },
+      }),
+    ).toBe(5);
+  });
   it('비밀번호 재설정 후 모든 기존 로그인과 인증 세션을 무효화한다', async () => {
     const user = await h.user('reset'),
       otherLogin = await h.anonymous();
