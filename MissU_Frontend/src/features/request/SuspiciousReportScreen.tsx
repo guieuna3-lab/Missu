@@ -1,3 +1,5 @@
+import { usePreview } from '@/lib/preview/PreviewProvider';
+import { choosePhoto } from '@/features/report/choosePhoto';
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
@@ -25,12 +27,14 @@ export function SuspiciousReportScreen({
   requestId: string;
   role: Party;
   onBack: () => void;
-  onSubmitted: () => void;
+  onSubmitted: (receiptId?: string) => void;
 }) {
   const { reportSuspicious } = useActivity();
   const [reason, setReason] = useState<ReportReason>();
   const [reasonError, setReasonError] = useState<string>();
   const [description, setDescription] = useState('');
+  const { accessToken } = usePreview();
+  const [photoIds, setPhotoIds] = useState<string[]>([]);
   const [photos, setPhotos] = useState(0);
   const [choosingPhoto, setChoosingPhoto] = useState(false);
   const [confirming, setConfirming] = useState(false);
@@ -50,14 +54,15 @@ export function SuspiciousReportScreen({
     setSubmitting(true);
     setError(undefined);
     try {
-      await reportSuspicious(requestId, {
+      const receipt = await reportSuspicious(requestId, {
         by: role,
         reason,
         description: description.trim(),
         photos,
+        photoIds,
       });
       setConfirming(false);
-      onSubmitted();
+      onSubmitted(receipt || undefined);
     } catch (caught) {
       setConfirming(false);
       setError(requestErrorMessage(caught));
@@ -103,6 +108,7 @@ export function SuspiciousReportScreen({
         label="상황 설명"
         placeholder="요청 내용을 입력해 주세요"
         value={description}
+        maxLength={1000}
         onChangeText={setDescription}
       />
       <Card title="첨부 시 주의" blue accent>
@@ -116,13 +122,18 @@ export function SuspiciousReportScreen({
             ? `사진 ${photos}장 첨부됨 · 최대 ${MAX_PHOTOS}장`
             : '개인정보를 가린 사진을 첨부해 주세요.'
         }
+        disabled={photos >= MAX_PHOTOS}
         onPress={() => setChoosingPhoto(true)}
       />
       {error && <FormMessage>{error}</FormMessage>}
       {choosingPhoto && (
         <PhotoSourceSheet
           onClose={() => setChoosingPhoto(false)}
-          onAdded={() => setPhotos((count) => Math.min(MAX_PHOTOS, count + 1))}
+          chooseAsset={accessToken ? (source) => choosePhoto(source, accessToken) : undefined}
+          onAdded={(asset) => {
+            if (asset) setPhotoIds((ids) => [...ids, asset.id]);
+            setPhotos((n) => Math.min(MAX_PHOTOS, n + 1));
+          }}
           onDenied={() =>
             setError('사진을 첨부하려면 기기 설정에서 카메라 또는 사진 접근을 허용해 주세요.')
           }

@@ -17,3 +17,8 @@ export class HistoryDto {
   @IsOptional() @IsString() @Length(1, 1000) cursor?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(50) limit = 20;
 }
+
+export class ChangePasswordDto {
+  @IsString() @Length(12, 128) currentPassword: string;
+  @IsString() @Length(12, 128) newPassword: string;
+}

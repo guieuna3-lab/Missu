@@ -46,6 +46,7 @@ enum ChallengePurpose {
 
 // 계정 정보입니다. 비밀번호 원문을 저장하지 않고 해시만 보관합니다.
 model User {
+  withdrawnAt DateTime? @map("withdrawn_at") @db.Timestamptz
   id                 String              @id @default(uuid()) @db.Uuid
   email              String              @unique @db.VarChar(254)
   nickname           String              @db.VarChar(20)
@@ -89,6 +90,8 @@ model Session {
 
 // 비회원에게 공개할 수 있는 습득물 정보입니다. 비공개 특징은 아래 별도 테이블을 사용합니다.
 model FoundItem {
+  appCategory String? @map("app_category") @db.VarChar(16)
+  archived Boolean @default(false)
   id             String           @id @default(uuid()) @db.Uuid
   keeperId       String           @map("keeper_id") @db.Uuid
   keeper         User             @relation(fields: [keeperId], references: [id], onDelete: Restrict)
@@ -125,6 +128,8 @@ model FoundItemSecret {
 
 // 처음 올린 사진은 READY, 물품에 연결된 사진은 ATTACHED입니다.
 model ItemPhoto {
+  reportId String? @map("report_id") @db.Uuid
+  report AbuseReport? @relation(fields: [reportId], references: [id], onDelete: Restrict)
   id         String     @id @default(uuid()) @db.Uuid
   uploaderId String     @map("uploader_id") @db.Uuid
   uploader   User       @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
@@ -139,6 +144,7 @@ model ItemPhoto {
   sortOrder  Int?       @map("sort_order")
   createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz
 
+  @@index([reportId], map: "item_photos_report_idx")
   @@unique([itemId, sortOrder])
   @@index([uploaderId, state, createdAt])
   @@map("item_photos")
@@ -146,6 +152,8 @@ model ItemPhoto {
 
 // 분실 신고는 공개 목록과 분리하며, 대략적인 시간 범위를 그대로 보존합니다.
 model LostReport {
+  category      String        @default("OTHER") @db.VarChar(16)
+  placeName     String?       @map("place_name") @db.VarChar(200)
   id            String        @id @default(uuid()) @db.Uuid
   userId        String        @map("user_id") @db.Uuid
   user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
@@ -283,6 +291,8 @@ model Message {
 
 // 신고는 접수만 기록합니다. 자동 거절이나 계정 차단은 하지 않습니다.
 model AbuseReport {
+  photos ItemPhoto[]
+  description String? @db.VarChar(1000)
   id         String   @id @default(uuid()) @db.Uuid
   claimId    String   @map("claim_id") @db.Uuid
   claim      Claim    @relation(fields: [claimId], references: [id], onDelete: Restrict)

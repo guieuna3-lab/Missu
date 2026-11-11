@@ -1,3 +1,5 @@
+import { ConfirmDialog } from '@/components/Dialog';
+import { formatDateTime } from '@/lib/dateTime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
@@ -9,7 +11,7 @@ import { Screen } from '@/components/Screen';
 import { typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { StreetMap } from './StreetMap';
-import { campus, mapApi, type Coordinates, type RoutePoint } from './mapData';
+import { campus, mapApi, type MapItem, type Coordinates, type RoutePoint } from './mapData';
 import { readDeviceLocation, watchDeviceLocation } from './deviceLocation';
 import { usableLocation } from './locationFix';
 
@@ -50,12 +52,45 @@ export function DailyRouteScreen() {
     () => (liveDay ? points.filter((p) => p.recordingId === activeId) : points),
     [activeId, liveDay, points],
   );
+  const [selectedPoint, setSelectedPoint] = useState<string>();
+  const selectedIndex = path.findIndex((p) => p.id === selectedPoint);
+  const point = path[selectedIndex];
+  const [nearby, setNearby] = useState<{ id: string; items?: MapItem[]; error?: string }>();
+  const [deleteScope, setDeleteScope] = useState<'day' | 'all'>();
+  const stride = Math.max(1, Math.ceil(path.length / 40));
+  const pins = useMemo(
+    () =>
+      path.flatMap((p, i) =>
+        i % stride === 0 || i === path.length - 1 || p.id === selectedPoint
+          ? [{ ...p, title: formatDateTime(p.recordedAt) }]
+          : [],
+      ),
+    [path, selectedPoint, stride],
+  );
+  const nearbyPointId = point?.id;
+  useEffect(() => {
+    if (!nearbyPointId || !accessToken) return;
+    const abort = new AbortController();
+    const id = nearbyPointId;
+    void mapApi<MapItem[]>('/me/routes/points/' + id + '/nearby', {
+      token: accessToken,
+      signal: abort.signal,
+    })
+      .then((items) => {
+        if (!abort.signal.aborted) setNearby({ id, items });
+      })
+      .catch(() => {
+        if (!abort.signal.aborted) setNearby({ id, error: '주변 습득물을 불러오지 못했어요.' });
+      });
+    return () => abort.abort();
+  }, [nearbyPointId, accessToken]);
   const startPoint = path[0] ?? (liveDay && origin?.id === activeId ? origin?.point : undefined);
   const current = today && device?.token === accessToken ? device?.point : undefined;
   const deviceError = today && device?.token === accessToken ? device?.error : undefined;
   const useCampus = !!deviceError && !current;
   // 오늘은 휴대폰 위치를 중심으로 열고, 지난 날짜는 그날 저장된 경로를 보여 줍니다.
-  const center = today ? (current ?? (useCampus ? campus : undefined)) : startPoint;
+  const deviceCenter = today ? (current ?? (useCampus ? campus : undefined)) : startPoint;
+  const center = point ?? deviceCenter;
   const [confirmed, setConfirmed] = useState(false);
   const watch = useRef<LocationSubscription | null>(null);
   const recording = useRef<string | null>(null);
@@ -145,6 +180,31 @@ export function DailyRouteScreen() {
         });
     return () => abort.abort();
   }, [accessToken, day, refresh]);
+  async function removeRoute() {
+    if (!deleteScope || !accessToken || lock.current) return;
+    const scope = deleteScope;
+    lock.current = true;
+    setBusy(true);
+    try {
+      await stop();
+      await mapApi('/me/routes?' + (scope === 'all' ? 'all=true' : 'date=' + day), {
+        token: accessToken,
+        method: 'DELETE',
+      });
+      setOrigin(undefined);
+      setResult(undefined);
+      setNearby(undefined);
+      setSelectedPoint(undefined);
+      setMessage('이동 경로를 삭제했어요.');
+      setRefresh((n) => n + 1);
+    } catch (e) {
+      setMessage(e instanceof Error ? e.message : '경로를 삭제하지 못했어요.');
+    } finally {
+      lock.current = false;
+      setBusy(false);
+      setDeleteScope(undefined);
+    }
+  }
   async function start() {
     if (!accessToken || lock.current || watch.current) return;
     lock.current = true;
@@ -278,12 +338,15 @@ export function DailyRouteScreen() {
           <View style={{ flex: 1, minHeight: 185 }}>
             {center ? (
               <StreetMap
+                pins={pins}
+                selectedId={point?.id}
+                onSelect={setSelectedPoint}
                 key={day}
                 center={center}
                 position={current}
                 startPoint={startPoint}
                 path={path}
-                fitPath={!today}
+                fitPath={!today && !point}
               />
             ) : (
               <View style={styles.panel}>
@@ -312,6 +375,8 @@ export function DailyRouteScreen() {
                   accessibilityRole="button"
                   accessibilityState={{ selected: day === seoulDay(i) }}
                   onPress={() => {
+                    setSelectedPoint(undefined);
+                    setNearby(undefined);
                     setDay(seoulDay(i));
                     setRefresh((n) => n + 1);
                   }}
@@ -321,6 +386,55 @@ export function DailyRouteScreen() {
                 </Text>
               ))}
             </View>
+            {path.length > 0 && (
+              <View style={styles.panel}>
+                <ActionButton
+                  variant="outline"
+                  label={
+                    point
+                      ? formatDateTime(point.recordedAt) + ' · 주변 500m'
+                      : '경로 지점 주변 습득물 보기'
+                  }
+                  onPress={() => setSelectedPoint(path[Math.max(0, selectedIndex)].id)}
+                />
+                {point && (
+                  <>
+                    <View style={styles.days}>
+                      <ActionButton
+                        variant="outline"
+                        label="이전 지점"
+                        disabled={selectedIndex === 0}
+                        onPress={() => setSelectedPoint(path[selectedIndex - 1].id)}
+                      />
+                      <ActionButton
+                        variant="outline"
+                        label="다음 지점"
+                        disabled={selectedIndex === path.length - 1}
+                        onPress={() => setSelectedPoint(path[selectedIndex + 1].id)}
+                      />
+                    </View>
+                    {nearby?.id !== point.id ? (
+                      <Text>주변 습득물을 찾고 있어요.</Text>
+                    ) : nearby.error ? (
+                      <Text>{nearby.error}</Text>
+                    ) : nearby.items?.length ? (
+                      nearby.items.map((item) => (
+                        <ActionButton
+                          key={item.id}
+                          variant="outline"
+                          label={item.name + ' · ' + item.distanceM + 'm'}
+                          onPress={() =>
+                            router.push({ pathname: '/items/[id]', params: { id: item.id } })
+                          }
+                        />
+                      ))
+                    ) : (
+                      <Text>이 지점 500m 안에 등록된 습득물이 없어요.</Text>
+                    )}
+                  </>
+                )}
+              </View>
+            )}
             {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
             {!loading && !points.length && <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>}
             <Text>
@@ -341,7 +455,30 @@ export function DailyRouteScreen() {
             ) : (
               <ActionButton label="위치 기록 시작" onPress={() => setConfirmed(true)} />
             )}
+            <ActionButton
+              variant="outline"
+              label="선택한 날짜 기록 삭제"
+              disabled={busy || !points.length}
+              onPress={() => setDeleteScope('day')}
+            />
+            <ActionButton
+              variant="outline"
+              label="전체 기록 삭제"
+              disabled={busy}
+              onPress={() => setDeleteScope('all')}
+            />
           </ScrollView>
+          {deleteScope && (
+            <ConfirmDialog
+              title={
+                deleteScope === 'day' ? day + ' 경로를 삭제할까요?' : '모든 이동 경로를 삭제할까요?'
+              }
+              message="기록 중인 경로도 중지되며 삭제한 위치는 복원할 수 없어요."
+              onCancel={() => setDeleteScope(undefined)}
+              onConfirm={removeRoute}
+              loading={busy}
+            />
+          )}
         </>
       ) : (
         <View style={styles.panel}>

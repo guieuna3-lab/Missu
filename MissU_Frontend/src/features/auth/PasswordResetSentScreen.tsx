@@ -1,28 +1,44 @@
-import { Redirect, router, useLocalSearchParams } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage, TextLink } from '@/components/FormField';
 import { Card } from '@/components/Card';
-import { requestPasswordReset } from './mockAuthApi';
+import { requestPasswordReset, resetEmail, verifyResetCode } from './passwordResetApi';
 import { requestErrorMessage } from './validation';
 
 type Message = { text: string; tone: 'info' | 'error' };
 
 // Figma 02-A.03
 export function PasswordResetSentScreen() {
-  const params = useLocalSearchParams<{ email?: string }>();
-  const email = typeof params.email === 'string' ? params.email : '';
+  const email = resetEmail();
+  const [code, setCode] = useState(''),
+    [verifying, setVerifying] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const [resending, setResending] = useState(false);
   if (!email) return <Redirect href="/password-reset" />;
 
+  async function verify() {
+    if (verifying || resending) return;
+    setVerifying(true);
+    setMessage(null);
+    try {
+      await verifyResetCode(code);
+      router.push({ pathname: '/account/password', params: { mode: 'reset' } });
+    } catch (e) {
+      setMessage({ text: requestErrorMessage(e), tone: 'error' });
+    } finally {
+      setVerifying(false);
+    }
+  }
   async function resend() {
+    if (!email || verifying || resending) return;
     setResending(true);
     setMessage(null);
     try {
       await requestPasswordReset(email);
+      setCode('');
       // Figma shows a message here but its text is not exported; this wording is provisional.
       setMessage({ text: '재설정 안내를 다시 보냈습니다.', tone: 'info' });
     } catch (error) {
@@ -39,7 +55,12 @@ export function PasswordResetSentScreen() {
       heading="이메일을 확인해 주세요"
       description="입력한 이메일로 비밀번호 재설정 안내를 보냈습니다."
       actions={
-        <ActionButton label="로그인으로 돌아가기" onPress={() => router.dismissTo('/login')} />
+        <ActionButton
+          label="인증하고 새 비밀번호 입력"
+          onPress={verify}
+          loading={verifying}
+          disabled={resending || code.length !== 6}
+        />
       }
     >
       <FormField
@@ -47,6 +68,15 @@ export function PasswordResetSentScreen() {
         value={email}
         editable={false}
         action={{ label: '재전송', onPress: resend, disabled: resending }}
+      />
+      <FormField
+        label="6자리 인증 코드"
+        value={code}
+        onChangeText={(v) => setCode(v.replace(/[^0-9]/g, '').slice(0, 6))}
+        keyboardType="number-pad"
+        autoComplete="one-time-code"
+        maxLength={6}
+        onSubmitEditing={verify}
       />
       <Card title="메일이 오지 않았나요?">
         스팸함을 확인하거나 이메일 주소를 다시 확인해 주세요.

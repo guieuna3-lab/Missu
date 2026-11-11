@@ -7,19 +7,10 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
+            "description": ""
           }
         },
-        "tags": [
-          "App"
-        ]
+        "tags": ["App"]
       }
     },
     "/api/v1/auth/csrf": {
@@ -41,14 +32,10 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "csrfToken"
-                      ]
+                      "required": ["csrfToken"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -124,9 +111,7 @@
             }
           }
         },
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "security": []
       }
     },
@@ -172,15 +157,10 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "user",
-                        "csrfToken"
-                      ]
+                      "required": ["user", "csrfToken"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -256,9 +236,7 @@
             }
           }
         },
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "security": [
           {
             "sessionCookie": []
@@ -302,16 +280,10 @@
                           "format": "date-time"
                         }
                       },
-                      "required": [
-                        "user",
-                        "accessToken",
-                        "expiresAt"
-                      ]
+                      "required": ["user", "accessToken", "expiresAt"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -387,9 +359,7 @@
             }
           }
         },
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "security": []
       }
     },
@@ -416,15 +386,10 @@
                           "format": "date-time"
                         }
                       },
-                      "required": [
-                        "accessToken",
-                        "expiresAt"
-                      ]
+                      "required": ["accessToken", "expiresAt"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -500,9 +465,7 @@
             }
           }
         },
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "security": []
       }
     },
@@ -595,9 +558,7 @@
             }
           }
         },
-        "tags": [
-          "Auth"
-        ],
+        "tags": ["Auth"],
         "security": [
           {
             "sessionCookie": []
@@ -618,8 +579,6 @@
             "in": "query",
             "description": "공백으로 구분한 모든 단어가 물품명 또는 공개 특징에 포함되어야 합니다.",
             "schema": {
-              "minLength": 0,
-              "maxLength": 80,
               "type": "string"
             }
           },
@@ -632,42 +591,6 @@
               "maximum": 50,
               "default": 20,
               "type": "integer"
-            }
-          },
-          {
-            "name": "place",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 0,
-              "maxLength": 200,
-              "type": "string"
-            }
-          },
-          {
-            "name": "foundFrom",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "foundTo",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 1000,
-              "type": "string"
             }
           }
         ],
@@ -693,15 +616,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "nextCursor"
-                      ]
+                      "required": ["nextCursor"]
                     }
                   },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
+                  "required": ["data", "meta"]
                 }
               }
             }
@@ -777,9 +695,7 @@
             }
           }
         },
-        "tags": [
-          "Items"
-        ],
+        "tags": ["Items"],
         "security": []
       },
       "post": {
@@ -831,20 +747,13 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": [
-                            "AVAILABLE"
-                          ]
+                          "enum": ["AVAILABLE"]
                         }
                       },
-                      "required": [
-                        "id",
-                        "status"
-                      ]
+                      "required": ["id", "status"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -920,9 +829,7 @@
             }
           }
         },
-        "tags": [
-          "Items"
-        ],
+        "tags": ["Items"],
         "security": [
           {
             "sessionCookie": []
@@ -936,103 +843,7 @@
     "/api/v1/items/nearby": {
       "get": {
         "operationId": "ItemsController_nearbySearch",
-        "parameters": [
-          {
-            "name": "lat",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": -90,
-              "maximum": 90,
-              "type": "number"
-            }
-          },
-          {
-            "name": "lng",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": -180,
-              "maximum": 180,
-              "type": "number"
-            }
-          },
-          {
-            "name": "radiusM",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "default": 1000,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          },
-          {
-            "name": "category",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "default": "ALL",
-              "type": "string",
-              "enum": [
-                "ALL",
-                "ELECTRONICS",
-                "WALLET_BAG"
-              ]
-            }
-          },
-          {
-            "name": "registeredDays",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "default": "ALL",
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          },
-          {
-            "name": "q",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 0,
-              "maxLength": 80,
-              "type": "string"
-            }
-          },
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 1000,
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 100,
-              "default": 100,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "성공",
@@ -1055,9 +866,7 @@
                                 "type": "integer"
                               }
                             },
-                            "required": [
-                              "distanceM"
-                            ]
+                            "required": ["distanceM"]
                           }
                         ]
                       }
@@ -1076,16 +885,10 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "nextCursor",
-                        "truncated"
-                      ]
+                      "required": ["nextCursor", "truncated"]
                     }
                   },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
+                  "required": ["data", "meta"]
                 }
               }
             }
@@ -1161,9 +964,7 @@
             }
           }
         },
-        "tags": [
-          "Items"
-        ],
+        "tags": ["Items"],
         "security": []
       }
     },
@@ -1192,9 +993,7 @@
                       "$ref": "#/components/schemas/MissuPublicItem"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1270,10 +1069,155 @@
             }
           }
         },
-        "tags": [
-          "Items"
-        ],
+        "tags": ["Items"],
         "security": []
+      },
+      "put": {
+        "operationId": "ItemsController_edit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateItemDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/MissuPublicItem"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "privateFeatures": {
+                              "type": "string",
+                              "nullable": true
+                            },
+                            "appCategory": {
+                              "type": "string",
+                              "nullable": true
+                            }
+                          },
+                          "required": ["privateFeatures", "appCategory"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Items"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
       }
     },
     "/api/v1/items/{id}/manage": {
@@ -1310,16 +1254,12 @@
                               "nullable": true
                             }
                           },
-                          "required": [
-                            "privateFeatures"
-                          ]
+                          "required": ["privateFeatures"]
                         }
                       ]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1395,9 +1335,7 @@
             }
           }
         },
-        "tags": [
-          "Items"
-        ],
+        "tags": ["Items"],
         "security": [
           {
             "sessionCookie": []
@@ -1428,9 +1366,7 @@
             "multipart/form-data": {
               "schema": {
                 "type": "object",
-                "required": [
-                  "file"
-                ],
+                "required": ["file"],
                 "properties": {
                   "file": {
                     "type": "string",
@@ -1458,20 +1394,13 @@
                         },
                         "state": {
                           "type": "string",
-                          "enum": [
-                            "READY"
-                          ]
+                          "enum": ["READY"]
                         }
                       },
-                      "required": [
-                        "photoId",
-                        "state"
-                      ]
+                      "required": ["photoId", "state"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1547,9 +1476,7 @@
             }
           }
         },
-        "tags": [
-          "Uploads"
-        ],
+        "tags": ["Uploads"],
         "security": [
           {
             "sessionCookie": []
@@ -1594,9 +1521,7 @@
             "description": ""
           }
         },
-        "tags": [
-          "Uploads"
-        ]
+        "tags": ["Uploads"]
       }
     },
     "/api/v1/lost-reports": {
@@ -1649,14 +1574,10 @@
                           "format": "uuid"
                         }
                       },
-                      "required": [
-                        "id"
-                      ]
+                      "required": ["id"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1732,9 +1653,130 @@
             }
           }
         },
-        "tags": [
-          "LostReports"
+        "tags": ["LostReports"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      },
+      "get": {
+        "operationId": "LostReportsController_list",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MissuLostReport"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": ["nextCursor"]
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["LostReports"],
         "security": [
           {
             "sessionCookie": []
@@ -1770,9 +1812,7 @@
                       "$ref": "#/components/schemas/MissuLostReport"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1848,9 +1888,242 @@
             }
           }
         },
-        "tags": [
-          "LostReports"
+        "tags": ["LostReports"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      },
+      "put": {
+        "operationId": "LostReportsController_edit",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateLostReportDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MissuLostReport"
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["LostReports"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "LostReportsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "성공, 응답 본문 없음"
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["LostReports"],
         "security": [
           {
             "sessionCookie": []
@@ -1877,9 +2150,7 @@
                       "$ref": "#/components/schemas/MissuProfile"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -1955,9 +2226,7 @@
             }
           }
         },
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "security": [
           {
             "sessionCookie": []
@@ -2002,9 +2271,7 @@
                       "$ref": "#/components/schemas/MissuProfile"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -2080,9 +2347,315 @@
             }
           }
         },
-        "tags": [
-          "Users"
+        "tags": ["Users"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      },
+      "delete": {
+        "operationId": "UsersController_withdraw",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
         ],
+        "responses": {
+          "204": {
+            "description": "성공, 응답 본문 없음"
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Users"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/password": {
+      "patch": {
+        "operationId": "UsersController_password",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangePasswordDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "성공, 응답 본문 없음"
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Users"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/phone": {
+      "delete": {
+        "operationId": "UsersController_clearPhone",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "성공, 응답 본문 없음"
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Users"],
         "security": [
           {
             "sessionCookie": []
@@ -2096,47 +2669,7 @@
     "/api/v1/me/history": {
       "get": {
         "operationId": "UsersController_history",
-        "parameters": [
-          {
-            "name": "type",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "MY_ITEMS",
-                "LOST_REPORTS",
-                "MY_CLAIMS",
-                "RECEIVED_CLAIMS"
-              ]
-            }
-          },
-          {
-            "name": "cursor",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 1000,
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 20,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "성공",
@@ -2159,15 +2692,10 @@
                           "nullable": true
                         }
                       },
-                      "required": [
-                        "nextCursor"
-                      ]
+                      "required": ["nextCursor"]
                     }
                   },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
+                  "required": ["data", "meta"]
                 }
               }
             }
@@ -2243,9 +2771,7 @@
             }
           }
         },
-        "tags": [
-          "Users"
-        ],
+        "tags": ["Users"],
         "security": [
           {
             "sessionCookie": []
@@ -2265,9 +2791,7 @@
             "description": ""
           }
         },
-        "tags": [
-          "Health"
-        ]
+        "tags": ["Health"]
       }
     },
     "/health/ready": {
@@ -2279,9 +2803,7 @@
             "description": ""
           }
         },
-        "tags": [
-          "Health"
-        ]
+        "tags": ["Health"]
       }
     },
     "/api/v1/auth/challenges": {
@@ -2331,16 +2853,10 @@
                           "format": "date-time"
                         }
                       },
-                      "required": [
-                        "challengeId",
-                        "retryAfter",
-                        "expiresAt"
-                      ]
+                      "required": ["challengeId", "retryAfter", "expiresAt"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -2416,9 +2932,7 @@
             }
           }
         },
-        "tags": [
-          "Registration"
-        ],
+        "tags": ["Registration"],
         "security": [
           {
             "sessionCookie": []
@@ -2479,14 +2993,10 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "verified"
-                      ]
+                      "required": ["verified"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -2562,9 +3072,7 @@
             }
           }
         },
-        "tags": [
-          "Registration"
-        ],
+        "tags": ["Registration"],
         "security": [
           {
             "sessionCookie": []
@@ -2615,14 +3123,10 @@
                           "format": "uuid"
                         }
                       },
-                      "required": [
-                        "id"
-                      ]
+                      "required": ["id"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -2698,9 +3202,7 @@
             }
           }
         },
-        "tags": [
-          "Registration"
-        ],
+        "tags": ["Registration"],
         "security": [
           {
             "sessionCookie": []
@@ -2810,9 +3312,7 @@
             }
           }
         },
-        "tags": [
-          "Registration"
-        ],
+        "tags": ["Registration"],
         "security": [
           {
             "sessionCookie": []
@@ -2882,20 +3382,13 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": [
-                            "PENDING"
-                          ]
+                          "enum": ["PENDING"]
                         }
                       },
-                      "required": [
-                        "claimId",
-                        "status"
-                      ]
+                      "required": ["claimId", "status"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -2971,9 +3464,573 @@
             }
           }
         },
-        "tags": [
-          "Claims"
+        "tags": ["Claims"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/me/claims": {
+      "get": {
+        "operationId": "ClaimsController_list",
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MissuClaim"
+                      }
+                    },
+                    "meta": {
+                      "type": "object",
+                      "properties": {
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": ["nextCursor"]
+                    }
+                  },
+                  "required": ["data", "meta"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Claims"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/claims/{id}/appointment": {
+      "post": {
+        "operationId": "ClaimsController_propose",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "같은 작업의 재시도에는 같은 UUID 사용"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AppointmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MissuAppointment"
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Claims"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/claims/{id}/appointment/confirm": {
+      "post": {
+        "operationId": "ClaimsController_confirm",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "같은 작업의 재시도에는 같은 UUID 사용"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfirmAppointmentDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/MissuAppointment"
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Claims"],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/claims/{id}/cancel": {
+      "post": {
+        "operationId": "ClaimsController_cancel",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "같은 작업의 재시도에는 같은 UUID 사용"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "claimId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "PENDING",
+                            "REJECTED",
+                            "APPROVED",
+                            "HANDED_OVER",
+                            "RETURNED",
+                            "CLOSED"
+                          ]
+                        }
+                      },
+                      "required": ["claimId", "status"]
+                    }
+                  },
+                  "required": ["data"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3009,9 +4066,7 @@
                       "$ref": "#/components/schemas/MissuClaim"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3087,9 +4142,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3170,23 +4223,13 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": [
-                            "AVAILABLE",
-                            "RESERVED",
-                            "RETURNED"
-                          ]
+                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
                         }
                       },
-                      "required": [
-                        "claimId",
-                        "status",
-                        "itemStatus"
-                      ]
+                      "required": ["claimId", "status", "itemStatus"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3262,9 +4305,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3285,41 +4326,6 @@
             "in": "path",
             "schema": {
               "type": "string"
-            }
-          },
-          {
-            "name": "after",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 1000,
-              "type": "string"
-            }
-          },
-          {
-            "name": "before",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 1000,
-              "type": "string"
-            }
-          },
-          {
-            "name": "limit",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minimum": 1,
-              "maximum": 50,
-              "default": 50,
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Object"
-                }
-              ]
             }
           }
         ],
@@ -3360,9 +4366,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3438,9 +4442,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3493,9 +4495,7 @@
                       "$ref": "#/components/schemas/MissuMessage"
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3571,9 +4571,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3654,11 +4652,7 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": [
-                            "AVAILABLE",
-                            "RESERVED",
-                            "RETURNED"
-                          ]
+                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
                         },
                         "updatedAt": {
                           "type": "string",
@@ -3673,9 +4667,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3751,9 +4743,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -3834,11 +4824,7 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": [
-                            "AVAILABLE",
-                            "RESERVED",
-                            "RETURNED"
-                          ]
+                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
                         },
                         "updatedAt": {
                           "type": "string",
@@ -3853,9 +4839,7 @@
                       ]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -3931,9 +4915,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -4003,25 +4985,17 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": [
-                            "RECEIVED"
-                          ]
+                          "enum": ["RECEIVED"]
                         },
                         "receivedAt": {
                           "type": "string",
                           "format": "date-time"
                         }
                       },
-                      "required": [
-                        "reportId",
-                        "status",
-                        "receivedAt"
-                      ]
+                      "required": ["reportId", "status", "receivedAt"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -4097,9 +5071,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -4140,9 +5112,7 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": [
-                            "RECEIVED"
-                          ]
+                          "enum": ["RECEIVED"]
                         },
                         "receivedAt": {
                           "type": "string",
@@ -4150,19 +5120,19 @@
                         },
                         "reason": {
                           "type": "string"
+                        },
+                        "description": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "photoCount": {
+                          "type": "integer"
                         }
                       },
-                      "required": [
-                        "reportId",
-                        "status",
-                        "receivedAt",
-                        "reason"
-                      ]
+                      "required": ["reportId", "status", "receivedAt", "reason"]
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -4238,9 +5208,7 @@
             }
           }
         },
-        "tags": [
-          "Claims"
-        ],
+        "tags": ["Claims"],
         "security": [
           {
             "sessionCookie": []
@@ -4254,38 +5222,7 @@
     "/api/v1/places": {
       "get": {
         "operationId": "PlacesController_search",
-        "parameters": [
-          {
-            "name": "q",
-            "required": true,
-            "in": "query",
-            "schema": {
-              "minLength": 1,
-              "maxLength": 80,
-              "type": "string"
-            }
-          },
-          {
-            "name": "lat",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": -90,
-              "maximum": 90,
-              "type": "number"
-            }
-          },
-          {
-            "name": "lng",
-            "required": false,
-            "in": "query",
-            "schema": {
-              "minimum": -180,
-              "maximum": 180,
-              "type": "number"
-            }
-          }
-        ],
+        "parameters": [],
         "responses": {
           "200": {
             "description": "성공",
@@ -4325,9 +5262,7 @@
                       }
                     }
                   },
-                  "required": [
-                    "data"
-                  ]
+                  "required": ["data"]
                 }
               }
             }
@@ -4403,9 +5338,7 @@
             }
           }
         },
-        "tags": [
-          "Places"
-        ],
+        "tags": ["Places"],
         "security": []
       }
     },
@@ -4433,10 +5366,7 @@
                             },
                             "source": {
                               "type": "string",
-                              "enum": [
-                                "DEVICE",
-                                "DEMO"
-                              ]
+                              "enum": ["DEVICE", "DEMO"]
                             },
                             "startedAt": {
                               "type": "string",
@@ -4485,9 +5415,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -4512,9 +5440,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -4553,22 +5479,15 @@
                   },
                   "agreed": {
                     "type": "boolean",
-                    "enum": [
-                      true
-                    ]
+                    "enum": [true]
                   },
                   "policyVersion": {
                     "type": "string",
-                    "enum": [
-                      "route-48h-v1"
-                    ]
+                    "enum": ["route-48h-v1"]
                   },
                   "source": {
                     "type": "string",
-                    "enum": [
-                      "DEVICE",
-                      "DEMO"
-                    ]
+                    "enum": ["DEVICE", "DEMO"]
                   }
                 },
                 "required": [
@@ -4599,10 +5518,7 @@
                         },
                         "source": {
                           "type": "string",
-                          "enum": [
-                            "DEVICE",
-                            "DEMO"
-                          ]
+                          "enum": ["DEVICE", "DEMO"]
                         },
                         "startedAt": {
                           "type": "string",
@@ -4628,9 +5544,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -4655,9 +5569,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -4740,9 +5652,7 @@
                     "maxItems": 100
                   }
                 },
-                "required": [
-                  "points"
-                ],
+                "required": ["points"],
                 "additionalProperties": false
               }
             }
@@ -4769,17 +5679,11 @@
                           "type": "integer"
                         }
                       },
-                      "required": [
-                        "accepted",
-                        "duplicates",
-                        "retentionHours"
-                      ],
+                      "required": ["accepted", "duplicates", "retentionHours"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -4804,9 +5708,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -4870,10 +5772,7 @@
                         },
                         "source": {
                           "type": "string",
-                          "enum": [
-                            "DEVICE",
-                            "DEMO"
-                          ]
+                          "enum": ["DEVICE", "DEMO"]
                         },
                         "startedAt": {
                           "type": "string",
@@ -4899,9 +5798,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -4926,9 +5823,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -4976,9 +5871,7 @@
                                 "minimum": 0
                               }
                             },
-                            "required": [
-                              "distanceM"
-                            ]
+                            "required": ["distanceM"]
                           }
                         ]
                       }
@@ -4997,17 +5890,11 @@
                           "type": "string"
                         }
                       },
-                      "required": [
-                        "nextCursor",
-                        "truncated"
-                      ],
+                      "required": ["nextCursor", "truncated"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data",
-                    "meta"
-                  ],
+                  "required": ["data", "meta"],
                   "additionalProperties": false
                 }
               }
@@ -5032,9 +5919,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -5138,9 +6023,7 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -5165,9 +6048,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -5206,9 +6087,7 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": [
-                "true"
-              ]
+              "enum": ["true"]
             },
             "description": "date 또는 all=true 중 하나만 지정. 삭제 시 진행 중 기록도 중지."
           }
@@ -5231,16 +6110,11 @@
                           "type": "boolean"
                         }
                       },
-                      "required": [
-                        "deletedPoints",
-                        "recordingStopped"
-                      ],
+                      "required": ["deletedPoints", "recordingStopped"],
                       "additionalProperties": false
                     }
                   },
-                  "required": [
-                    "data"
-                  ],
+                  "required": ["data"],
                   "additionalProperties": false
                 }
               }
@@ -5265,9 +6139,7 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": [
-          "본인 이동 경로 · 48시간"
-        ],
+        "tags": ["본인 이동 경로 · 48시간"],
         "security": [
           {
             "sessionCookie": []
@@ -5304,420 +6176,75 @@
     "schemas": {
       "LoginDto": {
         "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "maxLength": 254,
-            "format": "email"
-          },
-          "password": {
-            "type": "string",
-            "minLength": 12,
-            "maxLength": 128
-          }
-        },
-        "required": [
-          "email",
-          "password"
-        ]
-      },
-      "Object": {
-        "type": "object",
-        "properties": {}
-      },
-      "LocationDto": {
-        "type": "object",
         "properties": {}
       },
       "CreateItemDto": {
-        "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 20
-          },
-          "category": {
-            "type": "string",
-            "enum": [
-              "OTHER",
-              "ELECTRONICS",
-              "WALLET_BAG"
-            ]
-          },
-          "publicFeatures": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 100
-          },
-          "foundAt": {
-            "type": "string"
-          },
-          "foundLocation": {
-            "$ref": "#/components/schemas/LocationDto"
-          },
-          "photoIds": {
-            "uniqueItems": true,
-            "minItems": 1,
-            "maxItems": 5,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "storagePlace": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "pickupGuide": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 100
-          },
-          "privateFeatures": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 300
-          }
-        },
-        "required": [
-          "name",
-          "foundAt",
-          "foundLocation",
-          "photoIds",
-          "storagePlace"
-        ]
-      },
-      "LostTimeDto": {
         "type": "object",
         "properties": {}
       },
       "CreateLostReportDto": {
         "type": "object",
-        "properties": {
-          "name": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 20
-          },
-          "features": {
-            "type": "string",
-            "minLength": 0,
-            "maxLength": 100
-          },
-          "lostTime": {
-            "$ref": "#/components/schemas/LostTimeDto"
-          },
-          "lostLocation": {
-            "$ref": "#/components/schemas/LocationDto"
-          }
-        },
-        "required": [
-          "name",
-          "lostTime",
-          "lostLocation"
-        ]
+        "properties": {}
       },
       "ProfileDto": {
         "type": "object",
-        "properties": {
-          "nickname": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 10
-          }
-        },
-        "required": [
-          "nickname"
-        ]
+        "properties": {}
       },
-      "ConsentDto": {
+      "ChangePasswordDto": {
         "type": "object",
-        "properties": {
-          "kind": {
-            "type": "string",
-            "enum": [
-              "TERMS",
-              "PRIVACY",
-              "PHONE"
-            ]
-          },
-          "policyVersion": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 80
-          },
-          "agreed": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "kind",
-          "policyVersion",
-          "agreed"
-        ]
+        "properties": {}
       },
       "ChallengeDto": {
         "type": "object",
-        "properties": {
-          "purpose": {
-            "type": "string",
-            "enum": [
-              "SIGNUP",
-              "RESET",
-              "PHONE"
-            ]
-          },
-          "target": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 254
-          },
-          "consent": {
-            "$ref": "#/components/schemas/ConsentDto"
-          }
-        },
-        "required": [
-          "purpose",
-          "target"
-        ]
+        "properties": {}
       },
       "VerifyDto": {
         "type": "object",
-        "properties": {
-          "code": {
-            "type": "string",
-            "pattern": "^\\d{6}$"
-          }
-        },
-        "required": [
-          "code"
-        ]
+        "properties": {}
       },
       "SignupDto": {
         "type": "object",
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "minLength": 3,
-            "maxLength": 254
-          },
-          "nickname": {
-            "type": "string",
-            "minLength": 2,
-            "maxLength": 10
-          },
-          "password": {
-            "type": "string",
-            "minLength": 12,
-            "maxLength": 128
-          },
-          "consents": {
-            "minItems": 2,
-            "maxItems": 2,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ConsentDto"
-            }
-          },
-          "challengeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "proof": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
-        },
-        "required": [
-          "email",
-          "nickname",
-          "password",
-          "consents",
-          "challengeId",
-          "proof"
-        ]
+        "properties": {}
       },
       "ResetPasswordDto": {
         "type": "object",
-        "properties": {
-          "newPassword": {
-            "type": "string",
-            "minLength": 12,
-            "maxLength": 128
-          },
-          "challengeId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "proof": {
-            "type": "string",
-            "pattern": "^[a-f0-9]{64}$"
-          }
-        },
-        "required": [
-          "newPassword",
-          "challengeId",
-          "proof"
-        ]
+        "properties": {}
       },
       "CreateClaimDto": {
         "type": "object",
-        "properties": {
-          "features": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          },
-          "lostTime": {
-            "$ref": "#/components/schemas/LostTimeDto"
-          },
-          "lostLocation": {
-            "$ref": "#/components/schemas/LocationDto"
-          }
-        },
-        "required": [
-          "features",
-          "lostTime",
-          "lostLocation"
-        ]
+        "properties": {}
       },
-      "DecisionDto": {
+      "AppointmentDto": {
         "type": "object",
-        "properties": {
-          "decision": {
-            "type": "string",
-            "enum": [
-              "APPROVE",
-              "REJECT"
-            ]
-          },
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 300
-          }
-        },
-        "required": [
-          "decision"
-        ]
+        "properties": {}
       },
-      "MessageDto": {
+      "ConfirmAppointmentDto": {
         "type": "object",
-        "properties": {
-          "body": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          },
-          "clientMessageId": {
-            "type": "string",
-            "format": "uuid"
-          }
-        },
-        "required": [
-          "body",
-          "clientMessageId"
-        ]
+        "properties": {}
       },
       "EmptyDto": {
         "type": "object",
         "properties": {}
       },
+      "DecisionDto": {
+        "type": "object",
+        "properties": {}
+      },
+      "MessageDto": {
+        "type": "object",
+        "properties": {}
+      },
       "ReportDto": {
         "type": "object",
-        "properties": {
-          "reason": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 200
-          }
-        },
-        "required": [
-          "reason"
-        ]
+        "properties": {}
       },
       "StartRouteDto": {
         "type": "object",
-        "properties": {
-          "clientRecordingId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "agreed": {
-            "type": "boolean"
-          },
-          "policyVersion": {
-            "type": "string"
-          },
-          "source": {
-            "type": "string",
-            "enum": [
-              "DEVICE",
-              "DEMO"
-            ]
-          }
-        },
-        "required": [
-          "clientRecordingId",
-          "agreed",
-          "policyVersion",
-          "source"
-        ]
-      },
-      "RoutePointDto": {
-        "type": "object",
-        "properties": {
-          "clientPointId": {
-            "type": "string",
-            "format": "uuid"
-          },
-          "recordedAt": {
-            "type": "string"
-          },
-          "lat": {
-            "type": "number",
-            "minimum": -90,
-            "maximum": 90
-          },
-          "lng": {
-            "type": "number",
-            "minimum": -180,
-            "maximum": 180
-          },
-          "accuracyM": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 5000
-          }
-        },
-        "required": [
-          "clientPointId",
-          "recordedAt",
-          "lat",
-          "lng",
-          "accuracyM"
-        ]
+        "properties": {}
       },
       "AppendRouteDto": {
         "type": "object",
-        "properties": {
-          "points": {
-            "uniqueItems": true,
-            "minItems": 1,
-            "maxItems": 100,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoutePointDto"
-            }
-          }
-        },
-        "required": [
-          "points"
-        ]
+        "properties": {}
       },
       "StopRouteDto": {
         "type": "object",
@@ -5736,11 +6263,7 @@
             "type": "number"
           }
         },
-        "required": [
-          "label",
-          "lat",
-          "lng"
-        ]
+        "required": ["label", "lat", "lng"]
       },
       "MissuLostTime": {
         "type": "object",
@@ -5755,18 +6278,10 @@
           },
           "precision": {
             "type": "string",
-            "enum": [
-              "EXACT",
-              "APPROX",
-              "DATE"
-            ]
+            "enum": ["EXACT", "APPROX", "DATE"]
           }
         },
-        "required": [
-          "start",
-          "end",
-          "precision"
-        ]
+        "required": ["start", "end", "precision"]
       },
       "MissuProfile": {
         "type": "object",
@@ -5786,12 +6301,7 @@
             "type": "boolean"
           }
         },
-        "required": [
-          "id",
-          "email",
-          "nickname",
-          "phoneVerified"
-        ]
+        "required": ["id", "email", "nickname", "phoneVerified"]
       },
       "MissuPublicItem": {
         "type": "object",
@@ -5805,11 +6315,7 @@
           },
           "category": {
             "type": "string",
-            "enum": [
-              "OTHER",
-              "ELECTRONICS",
-              "WALLET_BAG"
-            ]
+            "enum": ["OTHER", "ELECTRONICS", "WALLET_BAG"]
           },
           "publicFeatures": {
             "type": "string",
@@ -5835,10 +6341,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "id",
-                "url"
-              ]
+              "required": ["id", "url"]
             }
           },
           "storagePlace": {
@@ -5850,11 +6353,7 @@
           },
           "status": {
             "type": "string",
-            "enum": [
-              "AVAILABLE",
-              "RESERVED",
-              "RETURNED"
-            ]
+            "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
           },
           "createdAt": {
             "type": "string",
@@ -5882,6 +6381,12 @@
             "type": "string",
             "format": "uuid"
           },
+          "placeName": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -5902,12 +6407,40 @@
         },
         "required": [
           "id",
+          "placeName",
+          "category",
           "name",
           "features",
           "lostTime",
           "lostLocation",
           "createdAt"
         ]
+      },
+      "MissuAppointment": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "by": {
+            "type": "string",
+            "enum": ["holder", "requester"]
+          },
+          "confirmed": {
+            "type": "boolean"
+          },
+          "place": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        },
+        "required": ["id", "by", "confirmed", "place", "date", "time"]
       },
       "MissuClaim": {
         "type": "object",
@@ -5923,14 +6456,85 @@
           "requesterNickname": {
             "type": "string"
           },
+          "itemName": {
+            "type": "string"
+          },
+          "storageName": {
+            "type": "string"
+          },
+          "viewerRole": {
+            "type": "string",
+            "enum": ["holder", "requester"]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
           "features": {
             "type": "string"
           },
+          "lostInfo": {
+            "type": "string",
+            "nullable": true
+          },
           "lostTime": {
-            "$ref": "#/components/schemas/MissuLostTime"
+            "type": "object",
+            "properties": {
+              "start": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "end": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "precision": {
+                "type": "string"
+              }
+            },
+            "required": ["start", "end", "precision"],
+            "nullable": true
           },
           "lostLocation": {
-            "$ref": "#/components/schemas/MissuLocation"
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "lat": {
+                "type": "number"
+              },
+              "lng": {
+                "type": "number"
+              }
+            },
+            "required": ["label", "lat", "lng"],
+            "nullable": true
+          },
+          "appointment": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "by": {
+                "type": "string"
+              },
+              "confirmed": {
+                "type": "boolean"
+              },
+              "place": {
+                "type": "string"
+              },
+              "date": {
+                "type": "string"
+              },
+              "time": {
+                "type": "string"
+              }
+            }
           },
           "status": {
             "type": "string",
@@ -5971,9 +6575,15 @@
           "id",
           "itemId",
           "requesterNickname",
+          "itemName",
+          "storageName",
+          "viewerRole",
+          "createdAt",
           "features",
+          "lostInfo",
           "lostTime",
           "lostLocation",
+          "appointment",
           "status",
           "decisionReason",
           "approvedAt",
@@ -6001,12 +6611,7 @@
             "format": "date-time"
           }
         },
-        "required": [
-          "id",
-          "senderId",
-          "body",
-          "sentAt"
-        ]
+        "required": ["id", "senderId", "body", "sentAt"]
       },
       "MissuHistory": {
         "type": "object",
@@ -6034,12 +6639,7 @@
             "format": "date-time"
           }
         },
-        "required": [
-          "id",
-          "name",
-          "createdAt",
-          "updatedAt"
-        ]
+        "required": ["id", "name", "createdAt", "updatedAt"]
       },
       "MissuError": {
         "type": "object",
@@ -6077,16 +6677,10 @@
                 }
               }
             },
-            "required": [
-              "code",
-              "message",
-              "requestId"
-            ]
+            "required": ["code", "message", "requestId"]
           }
         },
-        "required": [
-          "error"
-        ]
+        "required": ["error"]
       }
     }
   }

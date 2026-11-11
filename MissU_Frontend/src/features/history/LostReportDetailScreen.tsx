@@ -17,7 +17,7 @@ import { useReportDraft } from '@/features/report/ReportDraft';
 // Figma 01.08 and the 01.08-C delete confirmation.
 export function LostReportDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { lostReports, deleteLostReport } = useActivity();
+  const { lostReports, deleteLostReport, status, reportsError, retryReports } = useActivity();
   const { resetLost } = useReportDraft();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -25,6 +25,15 @@ export function LostReportDetailScreen() {
   const report = lostReports.find((r) => r.id === id);
   const back = () => goBack('/history');
 
+  if (!report && (status === 'loading' || reportsError))
+    return (
+      <FlowScreen
+        title="내 분실 신고"
+        onBack={back}
+        heading={reportsError || '신고를 불러오고 있어요'}
+        actions={reportsError && <ActionButton label="다시 불러오기" onPress={retryReports} />}
+      />
+    );
   if (!report)
     return (
       <FlowScreen

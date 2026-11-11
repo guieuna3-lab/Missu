@@ -122,7 +122,8 @@ export class ClaimsService {
           itemId,
         );
         const item = await tx.foundItem.findUnique({ where: { id: itemId } });
-        if (!item) fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
+        if (!item || item.archived)
+          fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
         const user = await tx.user.findUniqueOrThrow({ where: { id: userId } });
         if (!user.phoneVerifiedAt)
           fail(
@@ -562,12 +563,53 @@ export class ClaimsService {
       dto,
       async (tx) => {
         const row = await this.locked(tx, id, userId);
-        this.keeper(row, userId);
+        // 요청자는 승인 후 대화·수령 화면에서, 보관자는 요청 확인 단계부터 신고할 수 있습니다.
+        if (
+          row.requesterId === userId &&
+          !['APPROVED', 'HANDED_OVER', 'RETURNED'].includes(row.status)
+        )
+          fail(
+            404,
+            'RESOURCE_NOT_FOUND',
+            '신고할 수 있는 요청을 찾지 못했습니다.',
+          );
+        const prior = await tx.abuseReport.findUnique({
+          where: { claimId_reporterId: { claimId: id, reporterId: userId } },
+        });
+        if (prior)
+          return {
+            reportId: prior.id,
+            status: prior.status,
+            receivedAt: prior.createdAt.toISOString(),
+          };
         const report = await tx.abuseReport.upsert({
           where: { claimId_reporterId: { claimId: id, reporterId: userId } },
-          create: { claimId: id, reporterId: userId, reason: dto.reason },
+          create: {
+            claimId: id,
+            reporterId: userId,
+            reason: dto.reason,
+            description: dto.description,
+          },
           update: {},
         });
+        for (const photoId of [...(dto.photoIds ?? [])].sort()) {
+          const { count } = await tx.itemPhoto.updateMany({
+            where: {
+              id: photoId,
+              uploaderId: userId,
+              itemId: null,
+              state: 'READY',
+              createdAt: { gte: new Date(Date.now() - 86400000) },
+            },
+            data: { reportId: report.id, state: 'EVIDENCE' },
+          });
+          if (count !== 1)
+            fail(
+              409,
+              'PHOTO_UNAVAILABLE',
+              '본인이 올린 미사용 첨부 사진을 선택하세요.',
+            );
+        }
         await tx.auditEvent.create({
           data: {
             actorId: userId,
@@ -588,6 +630,7 @@ export class ClaimsService {
   async reportDetail(id: string, userId: string) {
     const row = await this.db.abuseReport.findFirst({
       where: { id, reporterId: userId },
+      include: { _count: { select: { photos: true } } },
     });
     if (!row) fail(404, 'RESOURCE_NOT_FOUND', '접수 정보를 찾을 수 없습니다.');
     return {
@@ -595,6 +638,8 @@ export class ClaimsService {
       status: row.status,
       receivedAt: row.createdAt,
       reason: row.reason,
+      description: row.description,
+      photoCount: row._count.photos,
     };
   }
 }

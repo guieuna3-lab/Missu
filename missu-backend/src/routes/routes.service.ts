@@ -310,6 +310,7 @@ export class RoutesService implements OnModuleInit, OnModuleDestroy {
     query.lat = position.lat;
     query.lng = position.lng;
     query.radiusM = 500;
+    query.limit = 100;
     return this.nearby.search(query);
   }
   async remove(userId: string, date?: string) {

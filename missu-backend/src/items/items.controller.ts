@@ -10,6 +10,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
 } from '@nestjs/common';
@@ -48,6 +49,21 @@ export class ItemsController {
     @Req() req: SessionRequest,
   ) {
     return { data: await this.items.manage(id, req.authSession!.userId!) };
+  }
+  @Put(':id')
+  async edit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: SessionRequest,
+    @Body() dto: CreateItemDto,
+  ) {
+    return {
+      data: await this.items.edit(
+        id,
+        req.authSession!.userId!,
+        dto,
+        String(req.headers['x-request-id']),
+      ),
+    };
   }
   @Post()
   @ApiHeader({

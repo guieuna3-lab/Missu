@@ -57,7 +57,7 @@ export function PlacePickerScreen({
   // null until a search ran; then the result list (possibly empty, Figma 09.02-E).
   const [results, setResults] = useState<PlaceOption[] | null>(null);
   const [selectedId, setSelectedId] = useState<string | undefined>(
-    () => placeOptions.find((p) => p.name === initialPlace?.name)?.id,
+    () => placeOptions.find((p) => p.id === 'previous')?.id,
   );
   const [detail, setDetail] = useState(initialPlace?.detail ?? '');
   const [detailError, setDetailError] = useState<string>();

@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { TextLink } from '@/components/FormField';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ChoiceRow } from '@/components/ChoiceRow';
 import { Header } from '@/components/Header';
@@ -91,7 +92,14 @@ export function HistoryListScreen() {
             );
           })}
         </View>
-        {rows.length === 0 ? (
+        {tab === 'lost' && activity.reportsError ? (
+          <>
+            <Text style={typography.body}>{activity.reportsError}</Text>
+            <TextLink label="다시 불러오기" onPress={activity.retryReports} />
+          </>
+        ) : tab === 'lost' && activity.status === 'loading' ? (
+          <Text style={typography.body}>분실 신고를 불러오고 있어요.</Text>
+        ) : rows.length === 0 ? (
           <Text style={typography.body}>아직 표시할 항목이 없어요.</Text>
         ) : (
           rows.map((row) => (

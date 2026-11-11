@@ -156,6 +156,7 @@ export async function harness() {
       select: { id: true },
     });
     const ids = claims.map((x) => x.id);
+    await db.itemPhoto.deleteMany({ where: { uploaderId: { in: userIds } } });
     await db.abuseReport.deleteMany({ where: { claimId: { in: ids } } });
     await db.message.deleteMany({ where: { claimId: { in: ids } } });
     await db.claim.deleteMany({ where: { id: { in: ids } } });
@@ -163,7 +164,6 @@ export async function harness() {
     await db.idempotencyRecord.deleteMany({
       where: { userId: { in: userIds } },
     });
-    await db.itemPhoto.deleteMany({ where: { uploaderId: { in: userIds } } });
     await db.foundItemSecret.deleteMany({
       where: { item: { keeperId: { in: userIds } } },
     });

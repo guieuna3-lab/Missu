@@ -26,7 +26,12 @@ export function RequestReportRoute() {
       requestId={id}
       role={role}
       onBack={() => goBack({ pathname: '/requests/[id]', params: { id } })}
-      onSubmitted={() => router.replace({ pathname: '/requests/[id]/reported', params: { id } })}
+      onSubmitted={(receiptId) =>
+        router.replace({
+          pathname: '/requests/[id]/reported',
+          params: receiptId ? { id, receiptId } : { id },
+        })
+      }
     />
   );
 }

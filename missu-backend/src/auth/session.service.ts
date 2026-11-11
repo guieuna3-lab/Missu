@@ -36,6 +36,7 @@ export class SessionService {
     });
     if (
       !session ||
+      session.user?.withdrawnAt ||
       session.expiresAt <= new Date() ||
       session.lastSeenAt.getTime() < Date.now() - 30 * 60 * 1000
     )
