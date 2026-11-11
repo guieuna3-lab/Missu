@@ -346,16 +346,19 @@ export class RegistrationService {
       const user = await tx.user.findUnique({
         where: { email: decrypt(challenge.targetCiphertext) },
       });
-      if (!user) fail(400, 'PROOF_INVALID', '인증 증명이 올바르지 않습니다.');
+      if (!user || user.withdrawnAt || user.id !== challenge.userId)
+        fail(400, 'PROOF_INVALID', '인증 증명이 올바르지 않습니다.');
       await tx.$queryRawUnsafe(
         'SELECT id FROM users WHERE id=$1::uuid FOR UPDATE',
         user.id,
       );
       const password = await passwordHash(dto.newPassword);
-      await tx.user.update({
-        where: { id: user.id },
+      const changed = await tx.user.updateMany({
+        where: { id: user.id, email: user.email, withdrawnAt: null },
         data: { passwordHash: password },
       });
+      if (!changed.count)
+        fail(400, 'PROOF_INVALID', '인증 증명이 올바르지 않습니다.');
       await tx.authChallenge.updateMany({
         where: {
           targetDigest: challenge.targetDigest,

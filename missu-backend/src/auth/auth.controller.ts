@@ -111,7 +111,7 @@ export class AuthController {
       user?.passwordHash ?? (await this.dummyHash),
       dto.password,
     );
-    if (!user || !valid)
+    if (!user || user.withdrawnAt || !valid)
       fail(401, 'LOGIN_FAILED', '이메일 또는 비밀번호가 올바르지 않습니다.');
     const issued = await this.db.$transaction(async (tx) => {
       // 재설정과 로그인이 겹치면 이전 비밀번호로 새 세션이 생기지 않도록 다시 확인합니다.
