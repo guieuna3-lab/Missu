@@ -20,7 +20,7 @@ import { ReturnChatScreen } from './ReturnChatScreen';
 export function RequestStatusScreen() {
   const { id = '' } = useLocalSearchParams<{ id: string }>();
   const { requests } = useActivity();
-  const request = requests.find((r) => r.id === id);
+  const request = requests.find((r) => r.id === id && r.viewerRole !== 'holder');
   const back = () => goBack('/history');
 
   if (!request)
@@ -120,13 +120,12 @@ function WaitingScreen({ request }: { request: OwnershipRequest }) {
 
 // Figma 08-A.00
 function RejectedScreen({ request }: { request: OwnershipRequest }) {
-  void request;
   return (
     <FlowScreen
       title="주인 확인 결과"
       onBack={() => goBack('/history')}
       centered
-      heading="확인 정보가 일치하지 않아요"
+      heading={request.closedReason ?? '확인 정보가 일치하지 않아요'}
       actions={<ActionButton label="내 요청 보기" onPress={() => leaveFlowTo('/history')} />}
     >
       <Card title="요청이 승인되지 않았어요" centered>
@@ -172,7 +171,11 @@ function ReceiveScreen({ request }: { request: OwnershipRequest }) {
       onBack={() => goBack('/history')}
       heading="물품을 받은 뒤 확인해 주세요"
       actions={
-        <ActionButton label="물품을 받았어요 · 수령 완료" onPress={() => setConfirming(true)} />
+        <ActionButton
+          label="물품을 받았어요 · 수령 완료"
+          disabled={request.status !== 'handed'}
+          onPress={() => setConfirming(true)}
+        />
       }
     >
       <Card title="약속 장소">{appointment?.place ?? '미정'}</Card>
