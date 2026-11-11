@@ -6,6 +6,8 @@ export type PublicItem = {
   location: string;
   storage: string;
   collectionGuide: string;
+  photoUrl?: string;
+  statusLabel?: string;
 };
 export type SearchFilters = { query: string; period: 'all' | '7' | '30'; place: string };
 // UI fixtures only. No auth state, contact information or private ownership clues.

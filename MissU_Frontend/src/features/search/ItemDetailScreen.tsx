@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { formatFoundAt, itemRepository, type PublicItem } from '@/lib/items';
+import { formatFoundAt, type PublicItem } from '@/lib/items';
+import { itemRepository } from '@/lib/publicItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 export default function ItemDetailScreen() {
@@ -76,15 +77,25 @@ function ItemDetail({ id }: { id: string }) {
           <>
             <View style={[styles.card, styles.photo]}>
               <Text style={typography.label}>물품 사진</Text>
-              <Text style={typography.body}>등록 사진 미리보기 영역</Text>
+              {item.photoUrl ? (
+                <Image
+                  accessibilityLabel={item.name + ' 사진'}
+                  source={{ uri: item.photoUrl }}
+                  resizeMode="contain"
+                  style={{ height: 200, width: '100%' }}
+                />
+              ) : (
+                <Text style={typography.body}>등록 사진 미리보기 영역</Text>
+              )}
             </View>
             <Text accessibilityRole="header" style={typography.heading}>
               {item.name}
             </Text>
             <Text style={[typography.label, styles.blue]}>
-              보관 중 · {formatFoundAt(item.foundAt)}
+              {item.statusLabel ?? '보관 중'} · {formatFoundAt(item.foundAt)}
             </Text>
             <Card title="습득 위치">{item.location}</Card>
+            {!!item.description && <Card title="공개 특징">{item.description}</Card>}
             <Card title="보관·수령 안내">
               {item.storage}
               {'\n'}
