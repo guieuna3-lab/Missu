@@ -9,6 +9,7 @@ import { UploadsService } from '../uploads/uploads.service';
 import { IdempotencyService } from '../common/idempotency.service';
 import { decrypt, encrypt } from '../common/crypto';
 import { fail } from '../common/http';
+import { transaction } from '../common/transaction';
 import { validTime } from '../common/dto';
 import { cursorFor, olderThan, readCursor } from '../common/cursor';
 import { CreateItemDto, SearchItemsDto } from './items.dto';
@@ -29,6 +30,13 @@ export const publicSelect = {
   photos: { select: { id: true }, orderBy: { sortOrder: 'asc' } },
 } satisfies Prisma.FoundItemSelect;
 type PublicRow = Prisma.FoundItemGetPayload<{ select: typeof publicSelect }>;
+// 앱의 상세 분류가 공개 검색의 분류와 일치하도록 등록과 수정에서 함께 변환합니다.
+function publicCategory(dto: CreateItemDto) {
+  if (!dto.appCategory) return dto.category;
+  if (dto.appCategory === 'WALLET' || dto.appCategory === 'BAG')
+    return 'WALLET_BAG';
+  return dto.appCategory === 'ELECTRONICS' ? 'ELECTRONICS' : 'OTHER';
+}
 const literal = (text: string) => text.replace(/[\\%_]/g, '\\$&');
 
 @Injectable()
@@ -84,6 +92,7 @@ export class ItemsService {
       return { OR: [{ name: match }, { publicFeatures: match }] };
     });
     const where: Prisma.FoundItemWhereInput = {
+      archived: false,
       status: { in: ['AVAILABLE', 'RESERVED'] },
       ...(query.place
         ? {
@@ -112,7 +121,7 @@ export class ItemsService {
   }
   async detail(id: string) {
     const item = await this.db.foundItem.findUnique({
-      where: { id },
+      where: { id, archived: false },
       select: publicSelect,
     });
     if (!item) fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
@@ -120,19 +129,105 @@ export class ItemsService {
   }
   async manage(id: string, userId: string) {
     const item = await this.db.foundItem.findFirst({
-      where: { id, keeperId: userId },
+      where: { id, keeperId: userId, archived: false },
       select: {
         ...publicSelect,
+        appCategory: true,
         secret: { select: { featuresCiphertext: true } },
       },
     });
     if (!item) fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
     return {
       ...this.publicDto(item),
+      appCategory: item.appCategory,
       privateFeatures: item.secret
         ? decrypt(item.secret.featuresCiphertext)
         : null,
     };
+  }
+  async edit(
+    id: string,
+    userId: string,
+    dto: CreateItemDto,
+    requestId: string,
+  ) {
+    const foundAt = validTime(dto.foundAt);
+    await transaction(this.db, async (tx) => {
+      const locks = await tx.$queryRaw<
+        { id: string }[]
+      >`SELECT id FROM found_items WHERE id=${id}::uuid AND keeper_id=${userId}::uuid AND NOT archived FOR UPDATE`;
+      if (!locks.length)
+        fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
+      const existing = await tx.itemPhoto.findMany({
+        where: { itemId: id },
+        select: { id: true },
+      });
+      const attached = new Set(existing.map((p) => p.id));
+      // 순서를 재배치할 때 잠시 연결을 해제합니다. 오류가 발생하면 사진과 물품이 함께 롤백됩니다.
+      await tx.itemPhoto.updateMany({
+        where: { itemId: id },
+        data: { state: 'READY', itemId: null, sortOrder: null },
+      });
+      for (const photoId of [...dto.photoIds].sort()) {
+        const { count } = await tx.itemPhoto.updateMany({
+          where: {
+            id: photoId,
+            uploaderId: userId,
+            state: 'READY',
+            itemId: null,
+            ...(attached.has(photoId)
+              ? {}
+              : { createdAt: { gte: new Date(Date.now() - 86400000) } }),
+          },
+          data: {
+            state: 'ATTACHED',
+            itemId: id,
+            sortOrder: dto.photoIds.indexOf(photoId),
+          },
+        });
+        if (count !== 1)
+          fail(
+            409,
+            'PHOTO_UNAVAILABLE',
+            '본인 물품의 사진이나 새로 올린 사진을 선택하세요.',
+          );
+      }
+      await tx.foundItem.update({
+        where: { id },
+        data: {
+          name: dto.name,
+          category: publicCategory(dto),
+          appCategory: dto.appCategory,
+          foundAt,
+          foundLabel: dto.foundLocation.label,
+          lat: dto.foundLocation.lat,
+          lng: dto.foundLocation.lng,
+          storagePlace: dto.storagePlace,
+          pickupGuide: dto.pickupGuide,
+          publicFeatures: dto.publicFeatures,
+        },
+      });
+      if (dto.privateFeatures !== undefined) {
+        if (dto.privateFeatures) {
+          const value = { featuresCiphertext: encrypt(dto.privateFeatures) };
+          await tx.foundItemSecret.upsert({
+            where: { itemId: id },
+            create: { itemId: id, ...value },
+            update: value,
+          });
+        } else await tx.foundItemSecret.deleteMany({ where: { itemId: id } });
+      }
+      await tx.auditEvent.create({
+        data: {
+          actorId: userId,
+          entityType: 'found_items',
+          entityId: id,
+          action: 'ITEM_UPDATED',
+          requestId,
+        },
+      });
+    });
+    return this.manage(id, userId);
   }
   create(
     dto: CreateItemDto,
@@ -146,7 +241,8 @@ export class ItemsService {
         data: {
           keeperId: userId,
           name: dto.name,
-          category: dto.category ?? undefined,
+          category: publicCategory(dto),
+          appCategory: dto.appCategory,
           publicFeatures: dto.publicFeatures,
           foundAt,
           foundLabel: dto.foundLocation.label,

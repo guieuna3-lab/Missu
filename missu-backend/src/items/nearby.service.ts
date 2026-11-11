@@ -80,7 +80,7 @@ export class NearbyService {
         ' SELECT id, 6371000.0 * 2 * asin(sqrt(least(1.0,greatest(0.0,' +
         ' power(sin(radians(lat::float8-$1::float8)/2),2) +' +
         ' cos(radians($1::float8))*cos(radians(lat::float8))*power(sin(radians(lng::float8-$2::float8)/2),2))))) AS distance' +
-        " FROM found_items WHERE status IN ('AVAILABLE','RESERVED') AND lat BETWEEN $3 AND $4" +
+        " FROM found_items WHERE NOT archived AND status IN ('AVAILABLE','RESERVED') AND lat BETWEEN $3 AND $4" +
         ' AND ($5::boolean OR ($6::boolean AND (lng >= $7 OR lng <= $8)) OR (NOT $6::boolean AND lng BETWEEN $7 AND $8))' +
         " AND ($9::text='ALL' OR category::text=$9)" +
         ' AND ($10::timestamptz IS NULL OR created_at >= $10)' +
@@ -111,7 +111,7 @@ export class NearbyService {
     const remaining = 100 - (cursor?.seen ?? 0),
       page = available.slice(0, Math.min(query.limit, remaining));
     const details = await this.db.foundItem.findMany({
-      where: { id: { in: page.map((row) => row.id) } },
+      where: { archived: false, id: { in: page.map((row) => row.id) } },
       select: publicSelect,
     });
     const byId = new Map(details.map((row) => [row.id, row]));

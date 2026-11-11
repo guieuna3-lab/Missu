@@ -11,6 +11,7 @@ import {
   IsDefined,
   IsEnum,
   IsInt,
+  IsIn,
   IsObject,
   IsOptional,
   IsString,
@@ -24,7 +25,16 @@ import { Category } from '../generated/prisma/enums';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { LocationDto, LostTimeDto, Trim, Type } from '../common/dto';
 
+export const appCategories = [
+  'ELECTRONICS',
+  'WALLET',
+  'BAG',
+  'KEY',
+  'ID',
+  'OTHER',
+];
 export class CreateItemDto {
+  @IsOptional() @IsIn(appCategories) appCategory?: string;
   @Trim() @IsString() @Length(1, 20) name: string;
   @IsOptional() @IsEnum(Category) category?: Category;
   @IsOptional() @Trim() @IsString() @Length(0, 100) publicFeatures?: string;
@@ -72,6 +82,8 @@ export class SearchItemsDto {
   limit = 20;
 }
 export class CreateLostReportDto {
+  @IsOptional() @IsIn(appCategories) category?: string;
+  @IsOptional() @Trim() @IsString() @Length(1, 200) placeName?: string;
   @Trim() @IsString() @Length(1, 20) name: string;
   @IsOptional() @Trim() @IsString() @Length(0, 100) features?: string;
   @IsDefined()
