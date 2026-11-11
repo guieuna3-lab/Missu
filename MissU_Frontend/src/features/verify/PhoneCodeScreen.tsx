@@ -11,6 +11,7 @@ import { usePreview } from '@/lib/preview/PreviewProvider';
 import {
   CODE_VALID_SECONDS,
   confirmPhoneCode,
+  pendingPhone,
   InvalidCodeError,
   MAX_RESENDS,
   requestPhoneCode,
@@ -28,8 +29,9 @@ function formatSeconds(total: number) {
 
 // Figma 07.02 (empty), 07.03 (filled) and 07.04 (wrong or expired code).
 export function PhoneCodeScreen() {
-  const { phone = '', itemId } = useLocalSearchParams<{ phone?: string; itemId?: string }>();
-  const { verifyPhone } = usePreview();
+  const { itemId } = useLocalSearchParams<{ itemId?: string }>();
+  const [phone] = useState(pendingPhone);
+  const { verifyPhone, accessToken } = usePreview();
   const [code, setCode] = useState('');
   const [error, setError] = useState<string>();
   const [message, setMessage] = useState<{ text: string; tone: 'info' | 'error' }>();
@@ -51,7 +53,7 @@ export function PhoneCodeScreen() {
     setResending(true);
     setMessage(undefined);
     try {
-      await requestPhoneCode(phone);
+      await requestPhoneCode(phone, accessToken);
       setResendsLeft((left) => left - 1);
       setIssuedAt(Date.now());
       setNow(Date.now());
@@ -78,7 +80,7 @@ export function PhoneCodeScreen() {
     setSubmitting(true);
     setMessage(undefined);
     try {
-      await confirmPhoneCode({ phone, code });
+      await confirmPhoneCode({ phone, code }, accessToken);
       verifyPhone(phone);
       if (itemId) {
         router.dismissTo({ pathname: '/items/[id]', params: { id: itemId } });
