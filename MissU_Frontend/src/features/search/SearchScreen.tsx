@@ -259,7 +259,8 @@ export default function SearchScreen() {
                 onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
               >
                 {item.location} · {formatFoundAt(item.foundAt).slice(5)}
-                {'\n'}보관 중
+                {'\n'}
+                {item.statusLabel ?? '보관 중'}
               </Card>
             )}
             ListFooterComponent={
