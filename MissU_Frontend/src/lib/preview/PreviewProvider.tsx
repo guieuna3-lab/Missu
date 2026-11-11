@@ -1,3 +1,4 @@
+import { logout, type AuthSession } from '@/features/auth/authApi';
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { previewProfile, type Profile } from './fixtures';
@@ -25,6 +26,7 @@ type PreviewState = {
   profile: Profile | null;
   /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
   sessionId: number;
+  accessToken: string | null;
   /** The server no longer accepts the session (Figma 01.04-S). Nothing sets it in the mock yet. */
   sessionExpired: boolean;
   markSessionExpired: () => void;
@@ -37,8 +39,8 @@ type PreviewState = {
   startLogin: (origin: LoginOrigin) => void;
   cancelLogin: () => void;
   /** Switches to the member state with a mock auth result. */
-  signIn: (profile: Profile) => void;
-  completeSignup: (profile: Profile) => void;
+  signIn: (session: AuthSession) => void;
+  completeSignup: (session: AuthSession) => void;
   /** Clears the login/sign-up screens from history and opens the destination. */
   continueAfterLogin: (destination?: '/search') => void;
 };
@@ -50,6 +52,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   );
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
   const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
+  const [accessToken, setAccessToken] = useState<string | null>(null);
   const [sessionId, setSessionId] = useState(0);
   const [sessionExpired, setSessionExpired] = useState(false);
   const nextSession = () => {
@@ -61,17 +64,20 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
       value={{
         profile,
         sessionId,
+        accessToken,
         sessionExpired,
         markSessionExpired: () => setSessionExpired(true),
         activityPreset,
         updateProfile: (next) =>
           setProfile((current) => (current ? { ...current, ...next } : current)),
         verifyPhone: (phone) =>
-          setProfile((current) => (current ? { ...current, phone } : current)),
+          setProfile((current) => (current ? { ...current, phone, phoneVerified: true } : current)),
         clearPhone: () =>
           setProfile((current) => (current ? { ...current, phone: undefined } : current)),
         exitMemberPreview: () => {
           nextSession();
+          if (accessToken) void logout(accessToken).catch(() => undefined);
+          setAccessToken(null);
           setProfile(null);
         },
         startLogin: (origin) => {
@@ -84,14 +90,16 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         },
         signIn: (next) => {
           nextSession();
-          setActivityPreset('sample');
-          setProfile(next);
+          setActivityPreset('empty');
+          setAccessToken(next.accessToken);
+          setProfile(next.profile);
         },
         completeSignup: (next) => {
           // A new account has no activity yet (Figma 01.05-E).
           nextSession();
           setActivityPreset('empty');
-          setProfile(next);
+          setAccessToken(next.accessToken);
+          setProfile(next.profile);
           if (getSearchReturnTo(loginOrigin)) {
             router.dismissTo('/login');
           } else if (router.canDismiss()) {
