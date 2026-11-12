@@ -17,6 +17,7 @@ import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { categoryLabel } from '@/lib/activity/types';
 import { formatFoundAt, itemRepository, type PublicItem } from '@/lib/items';
+import { lookupPlaceAddress } from '@/lib/placeAddress';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 export default function ItemDetailScreen() {
@@ -24,8 +25,40 @@ export default function ItemDetailScreen() {
   return <ItemDetail key={id} id={id} />;
 }
 
+// 예전 앱이 버튼 이름만 저장한 물품은 상세 화면에서 그 물품의 공개 좌표로 주소를 조회합니다.
+function LegacyFoundLocation({
+  point,
+  token,
+}: {
+  point: { lat: number; lng: number };
+  token: string | null;
+}) {
+  const [address, setAddress] = useState<string | null | undefined>();
+  useEffect(() => {
+    let active = true;
+    void lookupPlaceAddress(point, token)
+      .then((result) => {
+        if (active) setAddress(result);
+      })
+      .catch(() => {
+        if (active) setAddress(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [point, token]);
+  return (
+    <Card title="습득 위치">
+      {address === undefined
+        ? '저장된 위치의 주소를 확인하고 있어요.'
+        : (address ??
+          '주소 확인 불가 · 위도 ' + point.lat.toFixed(5) + ', 경도 ' + point.lng.toFixed(5))}
+    </Card>
+  );
+}
+
 function ItemDetail({ id }: { id: string }) {
-  const { profile, startLogin } = usePreview();
+  const { profile, startLogin, accessToken } = usePreview();
   const [item, setItem] = useState<PublicItem>();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
@@ -119,7 +152,11 @@ function ItemDetail({ id }: { id: string }) {
               {item.statusLabel ?? '보관 중'} · {formatFoundAt(item.foundAt)}
             </Text>
             <Text style={typography.body}>종류 · {categoryLabel(item.category)}</Text>
-            <Card title="습득 위치">{item.location}</Card>
+            {item.legacyLocation ? (
+              <LegacyFoundLocation point={item.legacyLocation} token={accessToken} />
+            ) : (
+              <Card title="습득 위치">{item.location}</Card>
+            )}
             <Card title="보관·수령 안내">
               {item.storage}
               {'\n'}
