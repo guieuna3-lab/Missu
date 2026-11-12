@@ -4,6 +4,7 @@ export type PlaceOption = {
   id: string;
   name: string;
   description: string;
+  address?: string;
   lat?: number;
   lng?: number;
   icon: 'book' | 'bus';

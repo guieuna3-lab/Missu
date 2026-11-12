@@ -1,6 +1,8 @@
 import * as Location from 'expo-location';
 import { api, ApiError } from '@/lib/backend';
-import { useRef, useState } from 'react';
+import { devicePlaceLabel, isCurrentLocationLabel, lookupPlaceAddress } from '@/lib/placeAddress';
+import { usePreview } from '@/lib/preview/PreviewProvider';
+import { useEffect, useRef, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
@@ -29,12 +31,14 @@ export function PlacePickerScreen({
   onSelect: (place: Place) => void;
   onBack: () => void;
 }) {
+  const { accessToken } = usePreview();
+  const detailRevision = useRef(0);
   // 좌표는 선택한 장소 또는 사용자가 허용한 기기 위치에서만 가져옵니다.
   const [placeOptions, setPlaceOptions] = useState<PlaceOption[]>(() => [
     {
       id: 'current',
       name: '현재 위치',
-      description: '기기 위치를 사용하고 상세 장소를 입력하세요.',
+      description: '카카오에서 현재 위치의 주소를 확인합니다.',
       icon: 'book',
     },
     ...(initialPlace?.lat != null && initialPlace?.lng != null
@@ -57,12 +61,20 @@ export function PlacePickerScreen({
   const [selectedId, setSelectedId] = useState<string | undefined>(
     () => placeOptions.find((p) => p.id === 'previous')?.id,
   );
-  const [detail, setDetail] = useState(initialPlace?.detail ?? '');
+  const [detail, setDetail] = useState(
+    isCurrentLocationLabel(initialPlace?.detail ?? '') ? '' : (initialPlace?.detail ?? ''),
+  );
   const [detailError, setDetailError] = useState<string>();
   const selected = placeOptions.find((p) => p.id === selectedId);
   const noResults = results !== null && results.length === 0;
 
   const searchVersion = useRef(0);
+  useEffect(
+    () => () => {
+      searchVersion.current++;
+    },
+    [],
+  );
   function changeQuery(value: string) {
     searchVersion.current++;
     setQuery(value);
@@ -120,40 +132,63 @@ export function PlacePickerScreen({
   async function choose(id: string) {
     const place = placeOptions.find((p) => p.id === id);
     if (!place) return;
-    setSelectedId(id);
-    setDetail((current) =>
-      current.trim() && selectedId === id
-        ? current
-        : id === 'current'
-          ? place.name
-          : place.description || place.name,
-    );
-    setDetailError(undefined);
     const version = ++searchVersion.current;
-    setLooking(false);
-    if (id !== 'current') return;
-    setPlaceOptions((options) =>
-      options.map((p) => (p.id === id ? { ...p, lat: undefined, lng: undefined } : p)),
-    );
-    setLooking(true);
-    // 현재 위치를 누른 경우에만 기기 권한을 요청하고, 사용자가 확인할 좌표를 먼저 지도에 표시합니다.
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (version !== searchVersion.current) return;
-      if (!permission.granted) {
-        setDetailError('현재 위치를 사용하려면 위치 접근을 허용하거나 장소를 검색해 주세요.');
-        return;
-      }
-      const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      if (version !== searchVersion.current) return;
-      setPlaceOptions((options) =>
-        options.map((p) =>
-          p.id === id ? { ...p, lat: point.coords.latitude, lng: point.coords.longitude } : p,
-        ),
+    const current = id === 'current';
+    const previous = id === 'previous' && isCurrentLocationLabel(initialPlace?.detail ?? '');
+    setSelectedId(id);
+    setDetailError(undefined);
+    if (!current && !previous) {
+      setLooking(false);
+      setDetail((value) =>
+        value.trim() && selectedId === id ? value : place.description || place.name,
       );
+      return;
+    }
+
+    setDetail('');
+    const editAtStart = detailRevision.current;
+    setLooking(true);
+    const updatePlace = (patch: Partial<PlaceOption>) => {
+      setPlaceOptions((options) => options.map((p) => (p.id === id ? { ...p, ...patch } : p)));
+    };
+    if (current)
+      updatePlace({
+        lat: undefined,
+        lng: undefined,
+        address: undefined,
+        description: '기기 위치를 확인하고 있어요.',
+      });
+    try {
+      let lat = place.lat,
+        lng = place.lng;
+      if (current) {
+        const permission = await Location.requestForegroundPermissionsAsync();
+        if (version !== searchVersion.current) return;
+        if (!permission.granted) {
+          updatePlace({ description: '위치 권한이 필요해요.' });
+          setDetailError('현재 위치를 사용하려면 위치 접근을 허용하거나 장소를 검색해 주세요.');
+          return;
+        }
+        const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+        if (version !== searchVersion.current) return;
+        lat = point.coords.latitude;
+        lng = point.coords.longitude;
+      }
+      if (lat == null || lng == null) return;
+      // GPS를 먼저 지도에 표시합니다. 주소 서비스가 응답하지 않아도 이 좌표로 장소를 직접 입력할 수 있습니다.
+      updatePlace({ lat, lng, description: '주소를 확인하고 있어요.' });
+      const address = await lookupPlaceAddress({ lat, lng }, accessToken).catch(() => null);
+      if (version !== searchVersion.current) return;
+      updatePlace({
+        address: address ?? undefined,
+        description: address ?? '주소나 알아볼 수 있는 장소명을 직접 입력해 주세요.',
+      });
+      if (address && detailRevision.current === editAtStart) setDetail(address);
     } catch {
-      if (version === searchVersion.current)
+      if (version === searchVersion.current) {
+        updatePlace({ description: '기기 위치를 확인하지 못했어요.' });
         setDetailError('현재 위치를 확인할 수 없어요. 장소를 검색하거나 다시 눌러 주세요.');
+      }
     } finally {
       if (version === searchVersion.current) setLooking(false);
     }
@@ -161,17 +196,29 @@ export function PlacePickerScreen({
 
   function confirm() {
     if (!selected || submitting || looking) return;
-    const text = detail.trim();
-    if (!text) {
-      setDetailError('건물·층·출구 등 상세 위치를 입력해 주세요.');
+    if (selected.lat == null || selected.lng == null) {
+      if (selected.id === 'current') void choose('current');
+      return;
+    }
+    const devicePlace =
+      selected.id === 'current' ||
+      (selected.id === 'previous' && isCurrentLocationLabel(initialPlace?.detail ?? ''));
+    const label = devicePlace ? devicePlaceLabel(selected.address, detail) : detail.trim();
+    if (!label) {
+      setDetailError('주소나 알아볼 수 있는 장소명을 입력해 주세요.');
+      return;
+    }
+    if (label.length > 200) {
+      setDetailError('주소와 상세 위치를 합쳐 200자 이내로 입력해 주세요.');
       return;
     }
     Keyboard.dismiss();
-    if (selected.lat != null && selected.lng != null) {
-      onSelect({ name: selected.name, detail: text, lat: selected.lat, lng: selected.lng });
-      return;
-    }
-    if (selected.id === 'current') void choose('current');
+    onSelect({
+      name: devicePlace ? selected.address || label : selected.name,
+      detail: label,
+      lat: selected.lat,
+      lng: selected.lng,
+    });
   }
 
   const listTitle = selected
@@ -281,12 +328,23 @@ export function PlacePickerScreen({
           </Pressable>
         );
       })}
+      {selected?.id === 'previous' &&
+        isCurrentLocationLabel(initialPlace?.detail ?? '') &&
+        !selected.address && (
+          <ActionButton
+            variant="outline"
+            label="저장된 위치의 주소 확인"
+            onPress={() => void choose('previous')}
+            loading={looking}
+          />
+        )}
       {selected && (
         <FormField
           label="건물·층·출구 등 상세 위치"
           placeholder={`${selected.name} 3층 열람실`}
           value={detail}
           onChangeText={(value) => {
+            detailRevision.current++;
             setDetail(value);
             setDetailError(undefined);
           }}
