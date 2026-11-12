@@ -1,6 +1,6 @@
 import * as Location from 'expo-location';
 import { api, ApiError } from '@/lib/backend';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
@@ -64,7 +64,19 @@ export function PlacePickerScreen({
   const selected = placeOptions.find((p) => p.id === selectedId);
   const noResults = results !== null && results.length === 0;
 
+  const searchVersion = useRef(0);
+  function changeQuery(value: string) {
+    searchVersion.current++;
+    setQuery(value);
+    setLooking(false);
+    setResults(null);
+    setPlaceOptions((old) => old.filter((place) => place.id === 'current'));
+    setSelectedId(undefined);
+    setDetailError(undefined);
+  }
+
   async function search() {
+    const version = ++searchVersion.current;
     Keyboard.dismiss();
     setSelectedId(undefined);
     setDetailError(undefined);
@@ -83,6 +95,7 @@ export function PlacePickerScreen({
           lng: number;
         }[];
       }>('/places?q=' + encodeURIComponent(query.trim()));
+      if (version !== searchVersion.current) return;
       const matches = response.data.map((p, i) => ({
         id: p.providerPlaceId,
         name: p.name,
@@ -95,14 +108,15 @@ export function PlacePickerScreen({
       setPlaceOptions((old) => [old[0], ...matches]);
       setResults(matches);
     } catch (e) {
+      if (version !== searchVersion.current) return;
       setResults(null);
       setDetailError(
         e instanceof ApiError && e.status === 503
-          ? '주소 검색은 현재 사용할 수 없어요. 습득 장소에 있다면 현재 위치를 선택해 주세요.'
+          ? '장소 검색을 잠시 사용할 수 없어요. 잠시 후 다시 검색해 주세요.'
           : '장소를 불러오지 못했어요.',
       );
     } finally {
-      setLooking(false);
+      if (version === searchVersion.current) setLooking(false);
     }
   }
 
@@ -110,7 +124,13 @@ export function PlacePickerScreen({
     const place = placeOptions.find((p) => p.id === id);
     if (!place) return;
     setSelectedId(id);
-    setDetail((current) => (current.trim() && selectedId === id ? current : place.name));
+    setDetail((current) =>
+      current.trim() && selectedId === id
+        ? current
+        : id === 'current'
+          ? place.name
+          : place.description || place.name,
+    );
     setDetailError(undefined);
   }
 
@@ -185,8 +205,7 @@ export function PlacePickerScreen({
           label="다시 확인하기"
           variant="outline"
           onPress={() => {
-            setResults(null);
-            setQuery('');
+            changeQuery('');
           }}
           style={styles.blueOutline}
         />
@@ -220,7 +239,7 @@ export function PlacePickerScreen({
           placeholder="장소명 또는 주소 검색"
           placeholderTextColor={colors.body}
           value={query}
-          onChangeText={setQuery}
+          onChangeText={changeQuery}
           onSubmitEditing={search}
           returnKeyType="search"
           style={styles.input}
