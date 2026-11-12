@@ -7,6 +7,52 @@ import { ExternalHttpService } from '../integrations/external-http.service';
 import { RateLimitService } from '../common/rate-limit.service';
 import { PlacesDto } from './nearby.dto';
 
+type SearchType = 'keyword' | 'address';
+type KakaoDocument = {
+  id?: string;
+  place_name?: string;
+  address_name: string;
+  road_address_name?: string;
+  road_address?: { address_name: string; building_name?: string } | null;
+  x: string;
+  y: string;
+};
+
+function placeResult(doc: KakaoDocument, type: SearchType) {
+  const lat = Number(doc.y),
+    lng = Number(doc.x);
+  if (
+    typeof doc.y !== 'string' ||
+    !doc.y.trim() ||
+    typeof doc.x !== 'string' ||
+    !doc.x.trim() ||
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lng) > 180
+  )
+    throw new Error('Invalid provider coordinates');
+  if (type === 'keyword') {
+    if (!doc.id || !doc.place_name) throw new Error('Invalid provider place');
+    return {
+      providerPlaceId: doc.id,
+      name: doc.place_name,
+      address: doc.road_address_name || doc.address_name || doc.place_name,
+      lat,
+      lng,
+    };
+  }
+  if (!doc.address_name) throw new Error('Invalid provider address');
+  const road = doc.road_address;
+  return {
+    providerPlaceId: 'address:' + doc.address_name,
+    name: road?.building_name || doc.address_name,
+    address: road?.address_name || doc.address_name,
+    lat,
+    lng,
+  };
+}
+
 @Public()
 @Controller('api/v1/places')
 export class PlacesController {
@@ -14,58 +60,56 @@ export class PlacesController {
     private readonly http: ExternalHttpService,
     private readonly rates: RateLimitService,
   ) {}
+
   @Get()
   async search(@Query() query: PlacesDto, @Req() req: SessionRequest) {
     if ((query.lat === undefined) !== (query.lng === undefined))
       fail(400, 'VALIDATION_ERROR', '위도와 경도를 함께 입력하세요.');
-    if (config().placeProvider !== 'kakao')
+    const settings = config();
+    if (settings.placeProvider !== 'kakao' || !settings.kakaoKey)
       fail(503, 'PLACES_NOT_CONFIGURED', '장소 검색 서비스 설정이 필요합니다.');
     await this.rates.consume('places:' + req.ip, 60, 60000);
-    const url = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+
+    // 건물 번호나 번지가 있는 검색은 주소 좌표를 우선합니다. 결과가 없으면 다른 방식으로 한 번 더 찾습니다.
+    const addressLike =
+      /(?:로|길|동|리|가|읍|면)\s*(?:산\s*)?\d+(?:-\d+)?(?:\s|$)/u.test(
+        query.q,
+      );
+    const first = addressLike ? 'address' : 'keyword';
+    const data = await this.lookup(first, query, settings.kakaoKey);
+    if (data.length) return { data };
+    return {
+      data: await this.lookup(
+        addressLike ? 'keyword' : 'address',
+        query,
+        settings.kakaoKey,
+      ),
+    };
+  }
+
+  private async lookup(type: SearchType, query: PlacesDto, key: string) {
+    const url = new URL(
+      'https://dapi.kakao.com/v2/local/search/' + type + '.json',
+    );
     url.searchParams.set('query', query.q);
     url.searchParams.set('size', '15');
-    if (query.lat !== undefined) {
+    if (
+      type === 'keyword' &&
+      query.lat !== undefined &&
+      query.lng !== undefined
+    ) {
       url.searchParams.set('y', String(query.lat));
       url.searchParams.set('x', String(query.lng));
     }
-    // 읽기 요청만 한 번 재시도하며 실패하면 빈 성공 결과로 위장하지 않습니다.
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; ; attempt++) {
       try {
-        const response = await this.http.request(url.toString(), {
-          headers: { Authorization: 'KakaoAK ' + config().kakaoKey },
+        const res = await this.http.request(url.toString(), {
+          headers: { Authorization: 'KakaoAK ' + key },
         });
-        const body = (await response.json()) as {
-          documents?: {
-            id: string;
-            place_name: string;
-            address_name: string;
-            road_address_name: string;
-            x: string;
-            y: string;
-          }[];
-        };
+        const body = (await res.json()) as { documents?: KakaoDocument[] };
         if (!Array.isArray(body.documents))
           throw new Error('Invalid provider response');
-        return {
-          data: body.documents.map((place) => {
-            const lat = Number(place.y),
-              lng = Number(place.x);
-            if (
-              !Number.isFinite(lat) ||
-              !Number.isFinite(lng) ||
-              Math.abs(lat) > 90 ||
-              Math.abs(lng) > 180
-            )
-              throw new Error('Invalid provider coordinates');
-            return {
-              providerPlaceId: place.id,
-              name: place.place_name,
-              address: place.road_address_name || place.address_name,
-              lat,
-              lng,
-            };
-          }),
-        };
+        return body.documents.map((doc) => placeResult(doc, type));
       } catch {
         if (attempt === 1)
           fail(503, 'EXTERNAL_UNAVAILABLE', '장소 검색을 사용할 수 없습니다.');
