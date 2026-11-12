@@ -168,6 +168,99 @@ describe('근처 지도·장소 검색 계약', () => {
       expect(call.mock.calls[0][0]).toContain(
         'https://dapi.kakao.com/v2/local/search/keyword.json?',
       );
+      // 실제 GPS를 보내지 않고도 공공시설의 도로명·지번 조회 결과로 분실 신고를 저장할 수 있습니다.
+      const rawAddress = {
+        address_name: '서울 중구 태평로1가 31',
+        x: '126.9784',
+        y: '37.5666',
+        road_address: {
+          address_name: '서울 중구 세종대로 110',
+          building_name: '서울특별시청',
+        },
+      };
+      const payload = (documents: unknown[]) =>
+        new Response(JSON.stringify({ documents }));
+      for (const q of ['세종대로 110', '태평로1가 31']) {
+        call.mockClear().mockImplementation(async () => payload([rawAddress]));
+        const found = await keeper.agent
+          .get('/api/v1/places')
+          .query({ q })
+          .expect(200);
+        expect(call).toHaveBeenCalledTimes(1);
+        expect(new URL(call.mock.calls[0][0]).pathname).toBe(
+          '/v2/local/search/address.json',
+        );
+        expect(found.body.data).toEqual([
+          {
+            providerPlaceId: 'address:' + rawAddress.address_name,
+            name: '서울특별시청',
+            address: '서울 중구 세종대로 110',
+            lat: 37.5666,
+            lng: 126.9784,
+          },
+        ]);
+        const chosen = found.body.data[0] as {
+          name: string;
+          address: string;
+          lat: number;
+          lng: number;
+        };
+        const filed = await h
+          .post(keeper, '/lost-reports')
+          .send({
+            name: '검색으로 선택한 장소',
+            placeName: chosen.name,
+            category: 'KEY',
+            lostTime: {
+              start: '2026-10-01T02:00:00.000Z',
+              end: '2026-10-01T02:00:00.000Z',
+              precision: 'EXACT',
+            },
+            lostLocation: {
+              label: chosen.address,
+              lat: chosen.lat,
+              lng: chosen.lng,
+            },
+          })
+          .expect(201);
+        const restored = await keeper.agent
+          .get('/api/v1/lost-reports/' + filed.body.data.id)
+          .expect(200);
+        expect(restored.body.data).toMatchObject({
+          placeName: chosen.name,
+          lostLocation: {
+            label: chosen.address,
+            lat: chosen.lat,
+            lng: chosen.lng,
+          },
+        });
+      }
+      call
+        .mockClear()
+        .mockImplementationOnce(async () => payload([]))
+        .mockImplementationOnce(async () =>
+          payload([{ ...rawAddress, road_address: null }]),
+        );
+      const fallback = await keeper.agent
+        .get('/api/v1/places')
+        .query({ q: '태평로' })
+        .expect(200);
+      expect(call.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+        '/v2/local/search/keyword.json',
+        '/v2/local/search/address.json',
+      ]);
+      expect(fallback.body.data[0].address).toBe(rawAddress.address_name);
+      call.mockImplementation(async () => payload([]));
+      const empty = await keeper.agent
+        .get('/api/v1/places')
+        .query({ q: '일치하지 않는 장소' })
+        .expect(200);
+      expect(empty.body.data).toEqual([]);
+      call.mockImplementation(async () => payload([{ ...rawAddress, x: ' ' }]));
+      await keeper.agent
+        .get('/api/v1/places')
+        .query({ q: '세종대로 110' })
+        .expect(503);
       call.mockRejectedValue(new Error('simulated provider outage'));
       await keeper.agent
         .get('/api/v1/places')
