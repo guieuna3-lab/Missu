@@ -37,7 +37,9 @@ export function config() {
   const emailProvider = process.env.EMAIL_PROVIDER ?? 'local';
   const smsProvider = process.env.SMS_PROVIDER ?? 'local';
   const storageProvider = process.env.STORAGE_PROVIDER ?? 'local';
-  const placeProvider = process.env.PLACE_PROVIDER ?? 'disabled';
+  const placeProvider =
+    process.env.PLACE_PROVIDER ??
+    (process.env.KAKAO_REST_API_KEY ? 'kakao' : 'disabled');
   if (
     !['local', 'resend'].includes(emailProvider) ||
     !['local', 'solapi'].includes(smsProvider) ||
