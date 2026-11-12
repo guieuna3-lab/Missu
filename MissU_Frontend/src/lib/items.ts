@@ -1,3 +1,4 @@
+import { isCurrentLocationLabel } from './placeAddress.ts';
 import { api, apiBase, ApiError } from './backend.ts';
 import type { ItemCategory } from './activity/types';
 
@@ -14,6 +15,7 @@ export type PublicItem = {
   statusLabel?: string;
   foundAt: string;
   location: string;
+  legacyLocation?: { lat: number; lng: number };
   storage: string;
   collectionGuide: string;
 };
@@ -115,6 +117,11 @@ export function fromServer(item: ServerItem): PublicItem {
     photoUrl: photoUrls[0],
     foundAt: item.foundAt,
     location: item.foundLocation.label,
+    ...(isCurrentLocationLabel(item.foundLocation.label) &&
+      Number.isFinite(item.foundLocation.lat) &&
+      Number.isFinite(item.foundLocation.lng) && {
+        legacyLocation: { lat: item.foundLocation.lat, lng: item.foundLocation.lng },
+      }),
     storage: item.storagePlace,
     collectionGuide: item.pickupGuide ?? '',
     statusLabel:

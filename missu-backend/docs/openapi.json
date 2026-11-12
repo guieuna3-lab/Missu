@@ -10,7 +10,9 @@
             "description": ""
           }
         },
-        "tags": ["App"]
+        "tags": [
+          "App"
+        ]
       }
     },
     "/api/v1/auth/csrf": {
@@ -32,10 +34,14 @@
                           "type": "string"
                         }
                       },
-                      "required": ["csrfToken"]
+                      "required": [
+                        "csrfToken"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -111,7 +117,9 @@
             }
           }
         },
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "security": []
       }
     },
@@ -157,10 +165,15 @@
                           "type": "string"
                         }
                       },
-                      "required": ["user", "csrfToken"]
+                      "required": [
+                        "user",
+                        "csrfToken"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -236,7 +249,9 @@
             }
           }
         },
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -280,10 +295,16 @@
                           "format": "date-time"
                         }
                       },
-                      "required": ["user", "accessToken", "expiresAt"]
+                      "required": [
+                        "user",
+                        "accessToken",
+                        "expiresAt"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -359,7 +380,9 @@
             }
           }
         },
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "security": []
       }
     },
@@ -386,10 +409,15 @@
                           "format": "date-time"
                         }
                       },
-                      "required": ["accessToken", "expiresAt"]
+                      "required": [
+                        "accessToken",
+                        "expiresAt"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -465,7 +493,9 @@
             }
           }
         },
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "security": []
       }
     },
@@ -558,7 +588,9 @@
             }
           }
         },
-        "tags": ["Auth"],
+        "tags": [
+          "Auth"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -616,10 +648,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["nextCursor"]
+                      "required": [
+                        "nextCursor"
+                      ]
                     }
                   },
-                  "required": ["data", "meta"]
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
                 }
               }
             }
@@ -695,7 +732,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": []
       },
       "post": {
@@ -747,13 +786,20 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": ["AVAILABLE"]
+                          "enum": [
+                            "AVAILABLE"
+                          ]
                         }
                       },
-                      "required": ["id", "status"]
+                      "required": [
+                        "id",
+                        "status"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -829,7 +875,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -866,7 +914,9 @@
                                 "type": "integer"
                               }
                             },
-                            "required": ["distanceM"]
+                            "required": [
+                              "distanceM"
+                            ]
                           }
                         ]
                       }
@@ -885,10 +935,16 @@
                           "type": "string"
                         }
                       },
-                      "required": ["nextCursor", "truncated"]
+                      "required": [
+                        "nextCursor",
+                        "truncated"
+                      ]
                     }
                   },
-                  "required": ["data", "meta"]
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
                 }
               }
             }
@@ -964,7 +1020,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": []
       }
     },
@@ -993,7 +1051,9 @@
                       "$ref": "#/components/schemas/MissuPublicItem"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1069,7 +1129,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": []
       },
       "put": {
@@ -1128,12 +1190,17 @@
                               "nullable": true
                             }
                           },
-                          "required": ["privateFeatures", "appCategory"]
+                          "required": [
+                            "privateFeatures",
+                            "appCategory"
+                          ]
                         }
                       ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1209,7 +1276,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1254,12 +1323,16 @@
                               "nullable": true
                             }
                           },
-                          "required": ["privateFeatures"]
+                          "required": [
+                            "privateFeatures"
+                          ]
                         }
                       ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1335,7 +1408,9 @@
             }
           }
         },
-        "tags": ["Items"],
+        "tags": [
+          "Items"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1366,7 +1441,9 @@
             "multipart/form-data": {
               "schema": {
                 "type": "object",
-                "required": ["file"],
+                "required": [
+                  "file"
+                ],
                 "properties": {
                   "file": {
                     "type": "string",
@@ -1394,13 +1471,20 @@
                         },
                         "state": {
                           "type": "string",
-                          "enum": ["READY"]
+                          "enum": [
+                            "READY"
+                          ]
                         }
                       },
-                      "required": ["photoId", "state"]
+                      "required": [
+                        "photoId",
+                        "state"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1476,7 +1560,9 @@
             }
           }
         },
-        "tags": ["Uploads"],
+        "tags": [
+          "Uploads"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1521,7 +1607,9 @@
             "description": ""
           }
         },
-        "tags": ["Uploads"]
+        "tags": [
+          "Uploads"
+        ]
       }
     },
     "/api/v1/lost-reports": {
@@ -1574,10 +1662,14 @@
                           "format": "uuid"
                         }
                       },
-                      "required": ["id"]
+                      "required": [
+                        "id"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1653,7 +1745,9 @@
             }
           }
         },
-        "tags": ["LostReports"],
+        "tags": [
+          "LostReports"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1697,10 +1791,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["nextCursor"]
+                      "required": [
+                        "nextCursor"
+                      ]
                     }
                   },
-                  "required": ["data", "meta"]
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
                 }
               }
             }
@@ -1776,7 +1875,9 @@
             }
           }
         },
-        "tags": ["LostReports"],
+        "tags": [
+          "LostReports"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1812,7 +1913,9 @@
                       "$ref": "#/components/schemas/MissuLostReport"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -1888,7 +1991,9 @@
             }
           }
         },
-        "tags": ["LostReports"],
+        "tags": [
+          "LostReports"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -1941,7 +2046,9 @@
                       "$ref": "#/components/schemas/MissuLostReport"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -2017,7 +2124,9 @@
             }
           }
         },
-        "tags": ["LostReports"],
+        "tags": [
+          "LostReports"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2123,7 +2232,9 @@
             }
           }
         },
-        "tags": ["LostReports"],
+        "tags": [
+          "LostReports"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2150,7 +2261,9 @@
                       "$ref": "#/components/schemas/MissuProfile"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -2226,7 +2339,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2271,7 +2386,9 @@
                       "$ref": "#/components/schemas/MissuProfile"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -2347,7 +2464,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2445,7 +2564,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2555,7 +2676,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2655,7 +2778,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2692,10 +2817,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["nextCursor"]
+                      "required": [
+                        "nextCursor"
+                      ]
                     }
                   },
-                  "required": ["data", "meta"]
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
                 }
               }
             }
@@ -2771,7 +2901,9 @@
             }
           }
         },
-        "tags": ["Users"],
+        "tags": [
+          "Users"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2791,7 +2923,9 @@
             "description": ""
           }
         },
-        "tags": ["Health"]
+        "tags": [
+          "Health"
+        ]
       }
     },
     "/health/ready": {
@@ -2803,7 +2937,9 @@
             "description": ""
           }
         },
-        "tags": ["Health"]
+        "tags": [
+          "Health"
+        ]
       }
     },
     "/api/v1/auth/challenges": {
@@ -2853,10 +2989,16 @@
                           "format": "date-time"
                         }
                       },
-                      "required": ["challengeId", "retryAfter", "expiresAt"]
+                      "required": [
+                        "challengeId",
+                        "retryAfter",
+                        "expiresAt"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -2932,7 +3074,9 @@
             }
           }
         },
-        "tags": ["Registration"],
+        "tags": [
+          "Registration"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -2993,10 +3137,14 @@
                           "type": "string"
                         }
                       },
-                      "required": ["verified"]
+                      "required": [
+                        "verified"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3072,7 +3220,9 @@
             }
           }
         },
-        "tags": ["Registration"],
+        "tags": [
+          "Registration"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3123,10 +3273,14 @@
                           "format": "uuid"
                         }
                       },
-                      "required": ["id"]
+                      "required": [
+                        "id"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3202,7 +3356,9 @@
             }
           }
         },
-        "tags": ["Registration"],
+        "tags": [
+          "Registration"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3312,7 +3468,9 @@
             }
           }
         },
-        "tags": ["Registration"],
+        "tags": [
+          "Registration"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3382,13 +3540,20 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": ["PENDING"]
+                          "enum": [
+                            "PENDING"
+                          ]
                         }
                       },
-                      "required": ["claimId", "status"]
+                      "required": [
+                        "claimId",
+                        "status"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3464,7 +3629,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3510,10 +3677,15 @@
                           "nullable": true
                         }
                       },
-                      "required": ["nextCursor"]
+                      "required": [
+                        "nextCursor"
+                      ]
                     }
                   },
-                  "required": ["data", "meta"]
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
                 }
               }
             }
@@ -3589,7 +3761,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3654,7 +3828,9 @@
                       "$ref": "#/components/schemas/MissuAppointment"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3730,7 +3906,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3795,7 +3973,9 @@
                       "$ref": "#/components/schemas/MissuAppointment"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -3871,7 +4051,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -3951,10 +4133,15 @@
                           ]
                         }
                       },
-                      "required": ["claimId", "status"]
+                      "required": [
+                        "claimId",
+                        "status"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4030,7 +4217,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4066,7 +4255,9 @@
                       "$ref": "#/components/schemas/MissuClaim"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4142,7 +4333,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4223,13 +4416,23 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
+                          "enum": [
+                            "AVAILABLE",
+                            "RESERVED",
+                            "RETURNED"
+                          ]
                         }
                       },
-                      "required": ["claimId", "status", "itemStatus"]
+                      "required": [
+                        "claimId",
+                        "status",
+                        "itemStatus"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4305,7 +4508,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4366,7 +4571,9 @@
                       ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4442,7 +4649,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4495,7 +4704,9 @@
                       "$ref": "#/components/schemas/MissuMessage"
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4571,7 +4782,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4652,7 +4865,11 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
+                          "enum": [
+                            "AVAILABLE",
+                            "RESERVED",
+                            "RETURNED"
+                          ]
                         },
                         "updatedAt": {
                           "type": "string",
@@ -4667,7 +4884,9 @@
                       ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4743,7 +4962,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4824,7 +5045,11 @@
                         },
                         "itemStatus": {
                           "type": "string",
-                          "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
+                          "enum": [
+                            "AVAILABLE",
+                            "RESERVED",
+                            "RETURNED"
+                          ]
                         },
                         "updatedAt": {
                           "type": "string",
@@ -4839,7 +5064,9 @@
                       ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -4915,7 +5142,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -4985,17 +5214,25 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": ["RECEIVED"]
+                          "enum": [
+                            "RECEIVED"
+                          ]
                         },
                         "receivedAt": {
                           "type": "string",
                           "format": "date-time"
                         }
                       },
-                      "required": ["reportId", "status", "receivedAt"]
+                      "required": [
+                        "reportId",
+                        "status",
+                        "receivedAt"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -5071,7 +5308,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5112,7 +5351,9 @@
                         },
                         "status": {
                           "type": "string",
-                          "enum": ["RECEIVED"]
+                          "enum": [
+                            "RECEIVED"
+                          ]
                         },
                         "receivedAt": {
                           "type": "string",
@@ -5129,10 +5370,17 @@
                           "type": "integer"
                         }
                       },
-                      "required": ["reportId", "status", "receivedAt", "reason"]
+                      "required": [
+                        "reportId",
+                        "status",
+                        "receivedAt",
+                        "reason"
+                      ]
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -5208,7 +5456,9 @@
             }
           }
         },
-        "tags": ["Claims"],
+        "tags": [
+          "Claims"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5262,7 +5512,9 @@
                       }
                     }
                   },
-                  "required": ["data"]
+                  "required": [
+                    "data"
+                  ]
                 }
               }
             }
@@ -5338,8 +5590,146 @@
             }
           }
         },
-        "tags": ["Places"],
+        "tags": [
+          "Places"
+        ],
         "security": []
+      }
+    },
+    "/api/v1/places/reverse": {
+      "post": {
+        "operationId": "PlacesController_reverse",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReversePlaceDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "address": {
+                          "type": "string",
+                          "nullable": true
+                        }
+                      },
+                      "required": [
+                        "address"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Places"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
       }
     },
     "/api/v1/me/routes/status": {
@@ -5366,7 +5756,10 @@
                             },
                             "source": {
                               "type": "string",
-                              "enum": ["DEVICE", "DEMO"]
+                              "enum": [
+                                "DEVICE",
+                                "DEMO"
+                              ]
                             },
                             "startedAt": {
                               "type": "string",
@@ -5415,7 +5808,9 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -5440,7 +5835,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5479,15 +5876,22 @@
                   },
                   "agreed": {
                     "type": "boolean",
-                    "enum": [true]
+                    "enum": [
+                      true
+                    ]
                   },
                   "policyVersion": {
                     "type": "string",
-                    "enum": ["route-48h-v1"]
+                    "enum": [
+                      "route-48h-v1"
+                    ]
                   },
                   "source": {
                     "type": "string",
-                    "enum": ["DEVICE", "DEMO"]
+                    "enum": [
+                      "DEVICE",
+                      "DEMO"
+                    ]
                   }
                 },
                 "required": [
@@ -5518,7 +5922,10 @@
                         },
                         "source": {
                           "type": "string",
-                          "enum": ["DEVICE", "DEMO"]
+                          "enum": [
+                            "DEVICE",
+                            "DEMO"
+                          ]
                         },
                         "startedAt": {
                           "type": "string",
@@ -5544,7 +5951,9 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -5569,7 +5978,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5652,7 +6063,9 @@
                     "maxItems": 100
                   }
                 },
-                "required": ["points"],
+                "required": [
+                  "points"
+                ],
                 "additionalProperties": false
               }
             }
@@ -5679,11 +6092,17 @@
                           "type": "integer"
                         }
                       },
-                      "required": ["accepted", "duplicates", "retentionHours"],
+                      "required": [
+                        "accepted",
+                        "duplicates",
+                        "retentionHours"
+                      ],
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -5708,7 +6127,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5772,7 +6193,10 @@
                         },
                         "source": {
                           "type": "string",
-                          "enum": ["DEVICE", "DEMO"]
+                          "enum": [
+                            "DEVICE",
+                            "DEMO"
+                          ]
                         },
                         "startedAt": {
                           "type": "string",
@@ -5798,7 +6222,9 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -5823,7 +6249,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -5871,7 +6299,9 @@
                                 "minimum": 0
                               }
                             },
-                            "required": ["distanceM"]
+                            "required": [
+                              "distanceM"
+                            ]
                           }
                         ]
                       }
@@ -5890,11 +6320,17 @@
                           "type": "string"
                         }
                       },
-                      "required": ["nextCursor", "truncated"],
+                      "required": [
+                        "nextCursor",
+                        "truncated"
+                      ],
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data", "meta"],
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -5919,7 +6355,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -6023,7 +6461,9 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -6048,7 +6488,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -6087,7 +6529,9 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["true"]
+              "enum": [
+                "true"
+              ]
             },
             "description": "date 또는 all=true 중 하나만 지정. 삭제 시 진행 중 기록도 중지."
           }
@@ -6110,11 +6554,16 @@
                           "type": "boolean"
                         }
                       },
-                      "required": ["deletedPoints", "recordingStopped"],
+                      "required": [
+                        "deletedPoints",
+                        "recordingStopped"
+                      ],
                       "additionalProperties": false
                     }
                   },
-                  "required": ["data"],
+                  "required": [
+                    "data"
+                  ],
                   "additionalProperties": false
                 }
               }
@@ -6139,7 +6588,9 @@
             "description": "입력·권한·중복·기록 상태 제한"
           }
         },
-        "tags": ["본인 이동 경로 · 48시간"],
+        "tags": [
+          "본인 이동 경로 · 48시간"
+        ],
         "security": [
           {
             "sessionCookie": []
@@ -6238,6 +6689,25 @@
         "type": "object",
         "properties": {}
       },
+      "ReversePlaceDto": {
+        "type": "object",
+        "properties": {
+          "lat": {
+            "type": "number",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "lng": {
+            "type": "number",
+            "minimum": -180,
+            "maximum": 180
+          }
+        },
+        "required": [
+          "lat",
+          "lng"
+        ]
+      },
       "StartRouteDto": {
         "type": "object",
         "properties": {}
@@ -6263,7 +6733,11 @@
             "type": "number"
           }
         },
-        "required": ["label", "lat", "lng"]
+        "required": [
+          "label",
+          "lat",
+          "lng"
+        ]
       },
       "MissuLostTime": {
         "type": "object",
@@ -6278,10 +6752,18 @@
           },
           "precision": {
             "type": "string",
-            "enum": ["EXACT", "APPROX", "DATE"]
+            "enum": [
+              "EXACT",
+              "APPROX",
+              "DATE"
+            ]
           }
         },
-        "required": ["start", "end", "precision"]
+        "required": [
+          "start",
+          "end",
+          "precision"
+        ]
       },
       "MissuProfile": {
         "type": "object",
@@ -6301,7 +6783,12 @@
             "type": "boolean"
           }
         },
-        "required": ["id", "email", "nickname", "phoneVerified"]
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "phoneVerified"
+        ]
       },
       "MissuPublicItem": {
         "type": "object",
@@ -6315,7 +6802,11 @@
           },
           "category": {
             "type": "string",
-            "enum": ["OTHER", "ELECTRONICS", "WALLET_BAG"]
+            "enum": [
+              "OTHER",
+              "ELECTRONICS",
+              "WALLET_BAG"
+            ]
           },
           "publicFeatures": {
             "type": "string",
@@ -6341,7 +6832,10 @@
                   "type": "string"
                 }
               },
-              "required": ["id", "url"]
+              "required": [
+                "id",
+                "url"
+              ]
             }
           },
           "storagePlace": {
@@ -6353,7 +6847,11 @@
           },
           "status": {
             "type": "string",
-            "enum": ["AVAILABLE", "RESERVED", "RETURNED"]
+            "enum": [
+              "AVAILABLE",
+              "RESERVED",
+              "RETURNED"
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -6425,7 +6923,10 @@
           },
           "by": {
             "type": "string",
-            "enum": ["holder", "requester"]
+            "enum": [
+              "holder",
+              "requester"
+            ]
           },
           "confirmed": {
             "type": "boolean"
@@ -6440,7 +6941,14 @@
             "type": "string"
           }
         },
-        "required": ["id", "by", "confirmed", "place", "date", "time"]
+        "required": [
+          "id",
+          "by",
+          "confirmed",
+          "place",
+          "date",
+          "time"
+        ]
       },
       "MissuClaim": {
         "type": "object",
@@ -6464,7 +6972,10 @@
           },
           "viewerRole": {
             "type": "string",
-            "enum": ["holder", "requester"]
+            "enum": [
+              "holder",
+              "requester"
+            ]
           },
           "createdAt": {
             "type": "string",
@@ -6492,7 +7003,11 @@
                 "type": "string"
               }
             },
-            "required": ["start", "end", "precision"],
+            "required": [
+              "start",
+              "end",
+              "precision"
+            ],
             "nullable": true
           },
           "lostLocation": {
@@ -6508,7 +7023,11 @@
                 "type": "number"
               }
             },
-            "required": ["label", "lat", "lng"],
+            "required": [
+              "label",
+              "lat",
+              "lng"
+            ],
             "nullable": true
           },
           "appointment": {
@@ -6611,7 +7130,12 @@
             "format": "date-time"
           }
         },
-        "required": ["id", "senderId", "body", "sentAt"]
+        "required": [
+          "id",
+          "senderId",
+          "body",
+          "sentAt"
+        ]
       },
       "MissuHistory": {
         "type": "object",
@@ -6639,7 +7163,12 @@
             "format": "date-time"
           }
         },
-        "required": ["id", "name", "createdAt", "updatedAt"]
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ]
       },
       "MissuError": {
         "type": "object",
@@ -6677,10 +7206,16 @@
                 }
               }
             },
-            "required": ["code", "message", "requestId"]
+            "required": [
+              "code",
+              "message",
+              "requestId"
+            ]
           }
         },
-        "required": ["error"]
+        "required": [
+          "error"
+        ]
       }
     }
   }

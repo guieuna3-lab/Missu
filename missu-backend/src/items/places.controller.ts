@@ -1,11 +1,20 @@
-import { Controller, Get, Query, Req } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  HttpCode,
+  Post,
+  Query,
+  Req,
+} from '@nestjs/common';
 import { Public } from '../auth/auth.guard';
 import type { SessionRequest } from '../auth/session.service';
 import { config } from '../config';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { RateLimitService } from '../common/rate-limit.service';
-import { PlacesDto } from './nearby.dto';
+import { PlacesDto, ReversePlaceDto } from './nearby.dto';
 
 type SearchType = 'keyword' | 'address';
 type KakaoDocument = {
@@ -85,6 +94,40 @@ export class PlacesController {
         settings.kakaoKey,
       ),
     };
+  }
+
+  @Post('reverse')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  async reverse(@Body() point: ReversePlaceDto, @Req() req: SessionRequest) {
+    await this.rates.consume('places:' + req.ip, 60, 60000);
+    const settings = config();
+    if (settings.placeProvider !== 'kakao' || !settings.kakaoKey)
+      fail(503, 'PLACES_NOT_CONFIGURED', '장소 검색 서비스 설정이 필요합니다.');
+    // 미슈 요청 URL에는 기기 좌표를 남기지 않습니다. 카카오는 WGS84 경도(x), 위도(y) 순서입니다.
+    const url = new URL(
+      'https://dapi.kakao.com/v2/local/geo/coord2address.json',
+    );
+    url.searchParams.set('x', String(point.lng));
+    url.searchParams.set('y', String(point.lat));
+    url.searchParams.set('input_coord', 'WGS84');
+    const response = await this.http.request(url.toString(), {
+      headers: { Authorization: 'KakaoAK ' + settings.kakaoKey },
+    });
+    const body = (await response.json().catch(() => null)) as {
+      documents?: {
+        road_address?: { address_name?: string } | null;
+        address?: { address_name?: string } | null;
+      }[];
+    } | null;
+    if (!Array.isArray(body?.documents))
+      fail(503, 'EXTERNAL_UNAVAILABLE', '주소를 확인하지 못했습니다.');
+    const first = body.documents[0];
+    const address =
+      first?.road_address?.address_name?.trim() ||
+      first?.address?.address_name?.trim() ||
+      null;
+    return { data: { address } };
   }
 
   private async lookup(type: SearchType, query: PlacesDto, key: string) {

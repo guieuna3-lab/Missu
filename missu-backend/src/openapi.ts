@@ -232,6 +232,10 @@ export function completeOpenApi(document: OpenAPIObject) {
         ]),
       ),
     ],
+    'post /api/v1/places/reverse': [
+      200,
+      envelope(object({ address: nullable })),
+    ],
     'get /api/v1/places': [
       200,
       envelope(
