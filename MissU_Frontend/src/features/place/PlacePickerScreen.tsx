@@ -36,7 +36,6 @@ export function PlacePickerScreen({
       name: '현재 위치',
       description: '기기 위치를 사용하고 상세 장소를 입력하세요.',
       icon: 'book',
-      pin: { x: 207, y: 96 },
     },
     ...(initialPlace?.lat != null && initialPlace?.lng != null
       ? [
@@ -45,7 +44,6 @@ export function PlacePickerScreen({
             name: initialPlace.name,
             description: initialPlace.detail,
             icon: 'book' as const,
-            pin: { x: 110, y: 140 },
             lat: initialPlace.lat,
             lng: initialPlace.lng,
           },
@@ -96,14 +94,13 @@ export function PlacePickerScreen({
         }[];
       }>('/places?q=' + encodeURIComponent(query.trim()));
       if (version !== searchVersion.current) return;
-      const matches = response.data.map((p, i) => ({
+      const matches = response.data.map((p) => ({
         id: p.providerPlaceId,
         name: p.name,
         description: p.address,
         lat: p.lat,
         lng: p.lng,
         icon: 'book' as const,
-        pin: { x: 110 + 70 * (i % 3), y: 70 + 20 * (i % 4) },
       }));
       setPlaceOptions((old) => [old[0], ...matches]);
       setResults(matches);
@@ -120,7 +117,7 @@ export function PlacePickerScreen({
     }
   }
 
-  function choose(id: string) {
+  async function choose(id: string) {
     const place = placeOptions.find((p) => p.id === id);
     if (!place) return;
     setSelectedId(id);
@@ -132,10 +129,38 @@ export function PlacePickerScreen({
           : place.description || place.name,
     );
     setDetailError(undefined);
+    const version = ++searchVersion.current;
+    setLooking(false);
+    if (id !== 'current') return;
+    setPlaceOptions((options) =>
+      options.map((p) => (p.id === id ? { ...p, lat: undefined, lng: undefined } : p)),
+    );
+    setLooking(true);
+    // 현재 위치를 누른 경우에만 기기 권한을 요청하고, 사용자가 확인할 좌표를 먼저 지도에 표시합니다.
+    try {
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (version !== searchVersion.current) return;
+      if (!permission.granted) {
+        setDetailError('현재 위치를 사용하려면 위치 접근을 허용하거나 장소를 검색해 주세요.');
+        return;
+      }
+      const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      if (version !== searchVersion.current) return;
+      setPlaceOptions((options) =>
+        options.map((p) =>
+          p.id === id ? { ...p, lat: point.coords.latitude, lng: point.coords.longitude } : p,
+        ),
+      );
+    } catch {
+      if (version === searchVersion.current)
+        setDetailError('현재 위치를 확인할 수 없어요. 장소를 검색하거나 다시 눌러 주세요.');
+    } finally {
+      if (version === searchVersion.current) setLooking(false);
+    }
   }
 
-  async function confirm() {
-    if (!selected || submitting) return;
+  function confirm() {
+    if (!selected || submitting || looking) return;
     const text = detail.trim();
     if (!text) {
       setDetailError('건물·층·출구 등 상세 위치를 입력해 주세요.');
@@ -146,25 +171,7 @@ export function PlacePickerScreen({
       onSelect({ name: selected.name, detail: text, lat: selected.lat, lng: selected.lng });
       return;
     }
-    setLooking(true);
-    try {
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (!permission.granted) {
-        setDetailError('위치 사용을 허용한 뒤 다시 선택해 주세요.');
-        return;
-      }
-      const point = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
-      onSelect({
-        name: selected.name,
-        detail: text,
-        lat: point.coords.latitude,
-        lng: point.coords.longitude,
-      });
-    } catch {
-      setDetailError('현재 위치를 확인할 수 없어요. 위치 설정을 확인해 주세요.');
-    } finally {
-      setLooking(false);
-    }
+    if (selected.id === 'current') void choose('current');
   }
 
   const listTitle = selected
