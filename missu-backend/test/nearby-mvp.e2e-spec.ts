@@ -261,6 +261,75 @@ describe('근처 지도·장소 검색 계약', () => {
         .get('/api/v1/places')
         .query({ q: '세종대로 110' })
         .expect(503);
+      const point = { lat: 37.5666, lng: 126.9784 };
+      const reverse = () => h.post(keeper, '/places/reverse').send(point);
+      call
+        .mockClear()
+        .mockImplementation(async () =>
+          payload([
+            {
+              road_address: rawAddress.road_address,
+              address: { address_name: rawAddress.address_name },
+            },
+          ]),
+        );
+      const resolved = await reverse().expect(200);
+      expect(resolved.headers['cache-control']).toBe('no-store');
+      expect(resolved.body.data.address).toBe('서울 중구 세종대로 110');
+      const upstream = new URL(call.mock.calls[0][0]);
+      expect(upstream.pathname).toBe('/v2/local/geo/coord2address.json');
+      expect(upstream.searchParams.get('x')).toBe(String(point.lng));
+      expect(upstream.searchParams.get('y')).toBe(String(point.lat));
+
+      const photo = await h.db.itemPhoto.create({
+        data: {
+          uploaderId: keeper.id,
+          objectKey: randomUUID(),
+          mime: 'image/jpeg',
+          byteSize: 200,
+          width: 8,
+          height: 8,
+        },
+      });
+      const item = await h
+        .post(keeper, '/items')
+        .send({
+          name: '위치 주소 시험',
+          foundAt: new Date(Date.now() - 3600000).toISOString(),
+          foundLocation: {
+            ...point,
+            label: resolved.body.data.address + ' · 1층',
+          },
+          storagePlace: '안내소',
+          photoIds: [photo.id],
+        })
+        .expect(201);
+      const detail = await keeper.agent
+        .get('/api/v1/items/' + item.body.data.id)
+        .expect(200);
+      expect(detail.body.data.foundLocation).toEqual({
+        ...point,
+        label: '서울 중구 세종대로 110 · 1층',
+      });
+      call.mockImplementation(async () =>
+        payload([
+          {
+            road_address: null,
+            address: { address_name: rawAddress.address_name },
+          },
+        ]),
+      );
+      expect((await reverse().expect(200)).body.data.address).toBe(
+        rawAddress.address_name,
+      );
+      call.mockImplementation(async () => payload([]));
+      expect((await reverse().expect(200)).body.data.address).toBeNull();
+      await h
+        .post(keeper, '/places/reverse')
+        .send({ lat: 91, lng: 0 })
+        .expect(400);
+      call.mockImplementation(async () => new Response('{}'));
+      await reverse().expect(503);
       call.mockRejectedValue(new Error('simulated provider outage'));
       await keeper.agent
         .get('/api/v1/places')
