@@ -144,14 +144,20 @@ export const itemRepository = {
     );
     return { items: page.data.map(fromServer), nextCursor: page.meta.nextCursor };
   },
-  async search(filters: SearchFilters): Promise<PublicItem[]> {
+  async searchPage(filters: SearchFilters, cursor?: string, searchTime = Date.now()) {
     const q = new URLSearchParams({ limit: '50' });
+    if (cursor) q.set('cursor', cursor);
     if (filters.query.trim()) q.set('q', filters.query.trim());
     if (filters.place.trim()) q.set('place', filters.place.trim());
     if (filters.period !== 'all')
-      q.set('foundFrom', new Date(Date.now() - Number(filters.period) * 86400000).toISOString());
-    const page = await api<{ data: ServerItem[] }>('/items?' + q.toString());
-    return page.data.map(fromServer);
+      q.set('foundFrom', new Date(searchTime - Number(filters.period) * 86400000).toISOString());
+    const page = await api<{ data: ServerItem[]; meta: { nextCursor: string | null } }>(
+      '/items?' + q.toString(),
+    );
+    return { items: page.data.map(fromServer), nextCursor: page.meta.nextCursor };
+  },
+  async search(filters: SearchFilters): Promise<PublicItem[]> {
+    return (await itemRepository.searchPage(filters)).items;
   },
   async find(id: string): Promise<PublicItem | undefined> {
     try {

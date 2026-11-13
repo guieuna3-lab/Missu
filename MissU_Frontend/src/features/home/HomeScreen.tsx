@@ -102,10 +102,8 @@ export function HomeScreen() {
         const rows = new Map(recent.map((item) => [item.id, item]));
         for (const item of [...(members?.items ?? []), ...(agencies?.items ?? [])])
           rows.set(item.id, item);
-        // 이미 읽은 카드는 제자리에 두고, 추가로 확인한 물품을 날짜순으로 이어 붙입니다.
-        const shown = recent.slice(0, visibleCount);
-        for (const item of shown) rows.delete(item.id);
-        setRecent([...shown, ...[...rows.values()].sort(newestFirst)]);
+        // 다음 기관 페이지에도 더 최근 물품이 있어, 표시 중인 카드까지 함께 정렬합니다.
+        setRecent([...rows.values()].sort(newestFirst));
         if (members) setCursor(members.nextCursor);
         if (agencies) {
           setAgencyCursor(agencies.nextCursor);
