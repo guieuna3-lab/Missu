@@ -4,6 +4,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField } from '@/components/FormField';
+import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { goBack } from '@/lib/navigation';
 import { useReportDraft } from './ReportDraft';
 
@@ -28,7 +29,7 @@ export function FoundStorageScreen() {
       heading="어디에 보관 중인가요?"
       actions={<ActionButton label="다음 · 등록 내용 확인" onPress={next} />}
     >
-      <FormField
+      <PlaceSearchField
         label="보관 장소"
         required
         placeholder="중앙도서관 1층 안내데스크"
