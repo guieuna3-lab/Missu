@@ -23,6 +23,7 @@ import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { formatFoundAt, type PublicItem, type SearchFilters } from '@/lib/items';
 import { itemRepository } from '@/lib/publicItems';
+import { searchInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
@@ -31,7 +32,11 @@ const periods = [
   { value: '7', label: '최근 7일' },
   { value: '30', label: '최근 30일' },
 ] as const;
-type SearchState = { status: 'idle' | 'loading' | 'success' | 'error'; items: PublicItem[] };
+type SearchState = {
+  status: 'idle' | 'loading' | 'success' | 'error';
+  items: (PublicItem | InstitutionItem)[];
+  notice?: string;
+};
 const initialState: SearchState = { status: 'idle', items: [] };
 
 export default function SearchScreen() {
@@ -73,8 +78,34 @@ export default function SearchScreen() {
     setValidation('');
     setState({ status: 'loading', items: [] });
     try {
-      const items = await itemRepository.search(values);
-      if (id === requestId.current) setState({ status: 'success', items });
+      const members = itemRepository.search(values);
+      const institutions = searchInstitutions(values);
+      void members
+        .then((items) => {
+          if (id === requestId.current && items.length)
+            setState({ status: 'success', items, notice: '기관 습득물을 확인하고 있어요.' });
+        })
+        .catch(() => {});
+      const [member, agency] = await Promise.allSettled([members, institutions]);
+      const items: (PublicItem | InstitutionItem)[] = [
+        ...(member.status === 'fulfilled' ? member.value : []),
+        ...(agency.status === 'fulfilled' ? agency.value.items : []),
+      ];
+      const time = (item: PublicItem | InstitutionItem) =>
+        Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
+      items.sort((a, b) => time(b) - time(a));
+      const notices =
+        agency.status === 'fulfilled'
+          ? agency.value.notices
+          : ['기관 자료를 현재 조회할 수 없어요.'];
+      if (member.status === 'rejected') notices.unshift('회원 습득물을 불러오지 못했어요.');
+      if (id === requestId.current)
+        setState({
+          status:
+            member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'success',
+          items,
+          notice: notices.join(' '),
+        });
     } catch {
       if (id === requestId.current) setState({ status: 'error', items: [] });
     } finally {
@@ -150,6 +181,11 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
+      {!!state.notice && (
+        <Text accessibilityLiveRegion="polite" style={typography.body}>
+          {state.notice}
+        </Text>
+      )}
       {state.status === 'success' &&
         (state.items.length ? (
           <Text
@@ -166,7 +202,9 @@ export default function SearchScreen() {
               accessibilityLiveRegion="polite"
               style={typography.heading}
             >
-              일치하는 습득물이 없어요
+              {state.notice
+                ? '조회한 자료에서 일치하는 습득물이 없어요'
+                : '일치하는 습득물이 없어요'}
             </Text>
             <Text style={typography.body}>검색어를 줄이거나 기간·장소 조건을 넓혀 보세요.</Text>
             <ActionButton
@@ -254,21 +292,30 @@ export default function SearchScreen() {
             contentContainerStyle={styles.content}
             ListHeaderComponent={<View style={styles.stack}>{heading}</View>}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
-            renderItem={({ item }) => (
-              <Card
-                title={item.name}
-                onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
-              >
-                {item.location} · {formatFoundAt(item.foundAt).slice(5)}
-                {'\n'}
-                {item.statusLabel ?? '보관 중'}
-              </Card>
-            )}
+            renderItem={({ item }) =>
+              'source' in item ? (
+                <Card title={item.name} onPress={() => openInstitution(item)}>
+                  {item.source} · 보관처 {item.storage}
+                  {'\n'}
+                  {item.dateLabel} {item.date} · {item.reference}
+                  {'\n'}기관 원문 보기
+                </Card>
+              ) : (
+                <Card
+                  title={item.name}
+                  onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
+                >
+                  {item.location} · {formatFoundAt(item.foundAt).slice(5)}
+                  {'\n'}
+                  회원 등록 · {item.statusLabel ?? '보관 중'}
+                </Card>
+              )
+            }
             ListFooterComponent={
               state.status === 'success' && state.items.length > 0 ? (
                 <Text style={[typography.body, styles.footer]}>
                   공개 정보는 누구나 볼 수 있어요.
-                  {!profile && '\n반환 요청은 로그인 후 가능합니다.'}
+                  {!profile && '\n회원 등록 물품은 로그인 후 반환을 요청할 수 있어요.'}
                 </Text>
               ) : undefined
             }
