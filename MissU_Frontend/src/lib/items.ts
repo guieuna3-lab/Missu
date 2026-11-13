@@ -3,6 +3,7 @@ import { api, apiBase, ApiError } from './backend.ts';
 import type { ItemCategory } from './activity/types';
 
 export type PublicItem = {
+  createdAt?: string;
   id: string;
   name: string;
   description: string;
@@ -94,6 +95,7 @@ export function filterItems(items: PublicItem[], filters: SearchFilters, now = D
   });
 }
 export type ServerItem = {
+  createdAt?: string;
   id: string;
   name: string;
   publicFeatures: string | null;
@@ -116,6 +118,7 @@ export function fromServer(item: ServerItem): PublicItem {
     photoUrls,
     photoUrl: photoUrls[0],
     foundAt: item.foundAt,
+    createdAt: item.createdAt,
     location: item.foundLocation.label,
     ...(isCurrentLocationLabel(item.foundLocation.label) &&
       Number.isFinite(item.foundLocation.lat) &&

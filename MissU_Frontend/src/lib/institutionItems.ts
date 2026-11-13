@@ -18,6 +18,9 @@ type NearbyInstitution = InstitutionItem & {
   distanceM: number;
 };
 type Result<T> = { items: T[]; notices: string[] };
+export function recentInstitutions() {
+  return mapApi<Result<InstitutionItem>>('/institution-items/recent');
+}
 export function searchInstitutions(filters: SearchFilters) {
   const params = new URLSearchParams({
     q: filters.query.trim(),
