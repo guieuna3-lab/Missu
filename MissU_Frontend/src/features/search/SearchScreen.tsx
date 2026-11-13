@@ -24,13 +24,7 @@ import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { formatFoundAt, type PublicItem, type SearchFilters } from '@/lib/items';
 import { itemRepository } from '@/lib/publicItems';
-import {
-  searchInstitutions,
-  portalRegistrations,
-  previewInstitutions,
-  openInstitution,
-  type InstitutionItem,
-} from '@/lib/institutionItems';
+import { searchInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
@@ -39,13 +33,70 @@ const periods = [
   { value: '7', label: '최근 7일' },
   { value: '30', label: '최근 30일' },
 ] as const;
+const pageSize = 25;
+type SearchItem = PublicItem | InstitutionItem;
 type SearchState = {
   status: 'idle' | 'loading' | 'success' | 'error';
-  items: (PublicItem | InstitutionItem)[];
-  notice?: string;
-  nextCursor?: string | null;
+  items: SearchItem[];
+  visible: number;
+  memberCursor?: string | null;
+  agencyCursor?: string | null;
+  memberNotice?: string;
+  agencyNotice?: string;
 };
-const initialState: SearchState = { status: 'idle', items: [] };
+const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
+const resultTime = (item: SearchItem) =>
+  Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
+
+async function loadResults(
+  filters: SearchFilters,
+  previous: SearchState,
+  searchTime: number,
+): Promise<SearchState> {
+  const rows = new Map(previous.items.map((item) => [item.id, item]));
+  const target = previous.visible + pageSize;
+  let { memberCursor, agencyCursor, memberNotice, agencyNotice } = previous;
+  let status: SearchState['status'] = 'success';
+  // 두 출처가 응답할 때까지 카드를 공개하지 않고, 넘치는 결과는 다음 더보기에 사용합니다.
+  while (rows.size < target && (memberCursor !== null || agencyCursor !== null)) {
+    const before = rows.size;
+    const [member, agency] = await Promise.allSettled([
+      memberCursor === null
+        ? undefined
+        : itemRepository.searchPage(filters, memberCursor, searchTime),
+      agencyCursor === null ? undefined : searchInstitutions(filters, agencyCursor),
+    ]);
+    if (member.status === 'fulfilled' && member.value) {
+      for (const item of member.value.items) rows.set(item.id, item);
+      memberCursor = member.value.nextCursor;
+      memberNotice = undefined;
+    } else if (member.status === 'rejected') {
+      memberNotice = '회원 습득물을 불러오지 못했어요.';
+    }
+    if (agency.status === 'fulfilled' && agency.value) {
+      for (const item of agency.value.items) rows.set(item.id, item);
+      agencyCursor = agency.value.nextCursor;
+      agencyNotice = agency.value.notices.join(' ');
+    } else if (agency.status === 'rejected') {
+      agencyNotice = '기관 자료를 불러오지 못했어요. 다시 시도해 주세요.';
+    }
+    if (member.status === 'rejected' && agency.status === 'rejected' && !rows.size)
+      status = 'error';
+    if (member.status === 'rejected' || agency.status === 'rejected' || rows.size === before) break;
+  }
+  const items = [...rows.values()].sort(
+    (a, b) => resultTime(b) - resultTime(a) || a.id.localeCompare(b.id),
+  );
+  return {
+    status,
+    items,
+    visible: Math.min(target, items.length),
+    memberCursor,
+    agencyCursor,
+    memberNotice,
+    agencyNotice,
+  };
+}
 
 export default function SearchScreen() {
   const { profile } = usePreview();
@@ -56,14 +107,12 @@ export default function SearchScreen() {
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [portalCount, setPortalCount] = useState<number | null | undefined>();
-  const countVersion = useRef(0);
+  const searchTime = useRef(0);
   const pending = useRef(false);
   const requestId = useRef(0);
   useEffect(
     () => () => {
       requestId.current += 1;
-      countVersion.current++;
     },
     [],
   );
@@ -88,87 +137,30 @@ export default function SearchScreen() {
     setFilters(values);
     setConditions(false);
     setValidation('');
-    setState({ status: 'loading', items: [] });
-    const countId = ++countVersion.current;
-    setPortalCount(undefined);
-    if (values.period === 'all') {
-      void portalRegistrations(values)
-        .then(({ total }) => {
-          if (countId === countVersion.current) setPortalCount(total);
-        })
-        .catch(() => {
-          if (countId === countVersion.current) setPortalCount(null);
-        });
-    }
+    setState({ ...initialState, status: 'loading' });
+    searchTime.current = Date.now();
     try {
-      const members = itemRepository.search(values);
-      const institutions = searchInstitutions(values);
-      let complete = false;
-      const firstRows: (PublicItem | InstitutionItem)[] = [];
-      const time = (item: PublicItem | InstitutionItem) =>
-        Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
-      function showFirst(rows: (PublicItem | InstitutionItem)[]) {
-        if (complete || id !== requestId.current || !rows.length) return;
-        firstRows.push(...rows);
-        setState({
-          status: 'success',
-          items: [...firstRows].sort((a, b) => time(b) - time(a)),
-          notice: '다른 기관의 보관품도 확인하고 있어요.',
-        });
-      }
-      void members.then(showFirst).catch(() => {});
-      void previewInstitutions(values)
-        .then(({ items }) => showFirst(items))
-        .catch(() => {});
-      const [member, agency] = await Promise.allSettled([members, institutions]);
-      complete = true;
-      const items: (PublicItem | InstitutionItem)[] = [
-        ...(member.status === 'fulfilled' ? member.value : []),
-        ...(agency.status === 'fulfilled' ? agency.value.items : []),
-      ];
-      items.sort((a, b) => time(b) - time(a));
-      const notices =
-        agency.status === 'fulfilled'
-          ? agency.value.notices
-          : ['기관 자료를 현재 조회할 수 없어요.'];
-      if (member.status === 'rejected') notices.unshift('회원 습득물을 불러오지 못했어요.');
-      if (id === requestId.current)
-        setState({
-          status:
-            member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'success',
-          items,
-          notice: notices.join(' '),
-          nextCursor: agency.status === 'fulfilled' ? agency.value.nextCursor : null,
-        });
+      const result = await loadResults(values, initialState, searchTime.current);
+      if (id === requestId.current) setState(result);
     } catch {
-      if (id === requestId.current) setState({ status: 'error', items: [] });
+      if (id === requestId.current) setState({ ...initialState, status: 'error' });
     } finally {
       if (id === requestId.current) pending.current = false;
     }
   }
-  async function moreInstitutions() {
-    if (pending.current || !state.nextCursor) return;
+  async function showMore() {
+    if (pending.current) return;
     const id = ++requestId.current;
     pending.current = true;
     setLoadingMore(true);
     try {
-      const page = await searchInstitutions(filters, state.nextCursor);
-      if (id !== requestId.current) return;
-      setState((previous) => {
-        const seen = new Set(previous.items.map((item) => item.id));
-        const added = page.items.filter((item) => !seen.has(item.id));
-        return {
-          ...previous,
-          items: [...previous.items, ...added],
-          nextCursor: page.nextCursor,
-          notice: page.notices.join(' '),
-        };
-      });
+      const result = await loadResults(filters, state, searchTime.current);
+      if (id === requestId.current) setState(result);
     } catch {
       if (id === requestId.current)
         setState((previous) => ({
           ...previous,
-          notice: '다음 기관 물품을 불러오지 못했어요. 다시 시도해 주세요.',
+          agencyNotice: '다음 물품을 불러오지 못했어요. 다시 시도해 주세요.',
         }));
     } finally {
       if (id === requestId.current) {
@@ -198,8 +190,6 @@ export default function SearchScreen() {
         onChangeText={(query) => {
           if (pending.current) return;
           setFilters((f) => ({ ...f, query }));
-          countVersion.current++;
-          setPortalCount(undefined);
           setState(initialState);
           setValidation('');
         }}
@@ -236,7 +226,7 @@ export default function SearchScreen() {
       {state.status === 'loading' && (
         <View style={styles.feedback} accessibilityLiveRegion="polite">
           <ActivityIndicator color={colors.blue} />
-          <Text style={typography.body}>습득물을 찾고 있어요.</Text>
+          <Text style={typography.body}>회원과 기관의 습득물을 함께 찾고 있어요.</Text>
         </View>
       )}
       {state.status === 'error' && (
@@ -248,33 +238,18 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {state.status !== 'idle' && (state.status === 'success' || filters.period === 'all') && (
-        <View style={styles.resultSummary}>
-          {state.status === 'success' && (
-            <Text
-              accessibilityRole="header"
-              accessibilityLiveRegion="polite"
-              style={typography.heading}
-            >
-              미슈에서 확인한 습득물 {state.items.length.toLocaleString('ko-KR')}건
-            </Text>
-          )}
-          {filters.period === 'all' && (
-            <Text accessibilityLiveRegion="polite" style={[typography.body, styles.hint]}>
-              {portalCount === undefined
-                ? '공공포털 전체 등록 건수 확인 중…'
-                : portalCount === null
-                  ? '공공포털 전체 등록 건수 확인 불가'
-                  : '공공포털 전체 등록 ' +
-                    portalCount.toLocaleString('ko-KR') +
-                    '건 · 반환된 물품 포함 가능'}
-            </Text>
-          )}
-        </View>
+      {state.status === 'success' && (
+        <Text
+          accessibilityRole="header"
+          accessibilityLiveRegion="polite"
+          style={typography.heading}
+        >
+          총 습득물 {state.items.length.toLocaleString('ko-KR')}건
+        </Text>
       )}
-      {!!state.notice && (
+      {!!(state.memberNotice || state.agencyNotice) && (
         <Text accessibilityLiveRegion="polite" style={typography.body}>
-          {state.notice}
+          {[state.memberNotice, state.agencyNotice].filter(Boolean).join(' ')}
         </Text>
       )}
       {state.status === 'success' && !state.items.length && (
@@ -359,7 +334,7 @@ export default function SearchScreen() {
           </ScrollView>
         ) : (
           <FlatList
-            data={state.items}
+            data={state.items.slice(0, state.visible)}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
             contentContainerStyle={styles.content}
@@ -387,12 +362,14 @@ export default function SearchScreen() {
             ListFooterComponent={
               state.status === 'success' ? (
                 <View>
-                  {!!state.nextCursor && (
+                  {(state.visible < state.items.length ||
+                    state.memberCursor !== null ||
+                    state.agencyCursor !== null) && (
                     <ActionButton
-                      label="기관 습득물 더보기"
+                      label="습득물 더보기"
                       variant="outline"
                       loading={loadingMore}
-                      onPress={() => void moreInstitutions()}
+                      onPress={() => void showMore()}
                     />
                   )}
                   {state.items.length > 0 && (
@@ -441,7 +418,6 @@ const styles = StyleSheet.create({
   option: { padding: 16, backgroundColor: colors.white, borderRadius: 12 },
   ink: { color: colors.ink },
   hint: { fontSize: 12, lineHeight: 18 },
-  resultSummary: { gap: 4 },
   feedback: { gap: 16, paddingVertical: 16 },
   separator: { height: 16 },
   footer: { marginTop: 16 },
