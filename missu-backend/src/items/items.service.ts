@@ -100,20 +100,27 @@ export class ItemsService {
           }
         : {}),
       ...(from || to ? { foundAt: { gte: from, lte: to } } : {}),
-      AND: cursor ? [...keywords, olderThan(cursor)] : keywords,
+      AND: keywords,
     };
-    const rows = await this.db.foundItem.findMany({
-      where,
-      select: publicSelect,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: query.limit + 1,
-    });
+    const [rows, total] = await Promise.all([
+      this.db.foundItem.findMany({
+        where: cursor
+          ? { ...where, AND: [...keywords, olderThan(cursor)] }
+          : where,
+        select: publicSelect,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: query.limit + 1,
+      }),
+      // 첫 검색의 총건수는 다음 페이지 커서나 표시 개수의 영향을 받지 않습니다.
+      !cursor && query.q ? this.db.foundItem.count({ where }) : undefined,
+    ]);
     const hasMore = rows.length > query.limit,
       page = rows.slice(0, query.limit),
       last = page.at(-1);
     return {
       data: page.map((x) => this.publicDto(x)),
       meta: {
+        total,
         nextCursor:
           hasMore && last ? cursorFor(last.id, last.createdAt, scope) : null,
       },
