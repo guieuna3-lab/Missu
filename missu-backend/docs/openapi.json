@@ -5732,6 +5732,277 @@
         ]
       }
     },
+    "/api/v1/institution-items": {
+      "get": {
+        "operationId": "InstitutionItemsController_search",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "$ref": "#/components/schemas/MissuInstitutionItem"
+                          }
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "notices"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "InstitutionItems"
+        ],
+        "security": []
+      }
+    },
+    "/api/v1/institution-items/nearby": {
+      "get": {
+        "operationId": "InstitutionItemsController_nearby",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "성공",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "allOf": [
+                              {
+                                "$ref": "#/components/schemas/MissuInstitutionItem"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "distanceM": {
+                                    "type": "integer"
+                                  },
+                                  "foundLocation": {
+                                    "type": "object",
+                                    "properties": {
+                                      "lat": {
+                                        "type": "number"
+                                      },
+                                      "lng": {
+                                        "type": "number"
+                                      },
+                                      "label": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": [
+                                      "lat",
+                                      "lng",
+                                      "label"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "distanceM",
+                                  "foundLocation"
+                                ]
+                              }
+                            ]
+                          }
+                        },
+                        "notices": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "notices"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "InstitutionItems"
+        ],
+        "security": []
+      }
+    },
     "/api/v1/me/routes/status": {
       "get": {
         "operationId": "RoutesController_status",
@@ -6719,6 +6990,60 @@
       "StopRouteDto": {
         "type": "object",
         "properties": {}
+      },
+      "MissuInstitutionItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "한성대",
+              "경찰",
+              "지하철"
+            ]
+          },
+          "storage": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "dateLabel": {
+            "type": "string",
+            "enum": [
+              "습득일",
+              "게시일"
+            ]
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "source",
+          "storage",
+          "date",
+          "dateLabel",
+          "url",
+          "reference",
+          "category"
+        ]
       },
       "MissuLocation": {
         "type": "object",
