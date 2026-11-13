@@ -44,13 +44,21 @@ const storageRank = (name: string) =>
   railStorage.test(name) ? 2 : /유실물센터/u.test(name) ? 1 : 0;
 async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
   const results: PromiseSettledResult<T>[] = [];
-  for (let i = 0; i < jobs.length; i += concurrency) {
-    results.push(
-      ...(await Promise.allSettled(
-        jobs.slice(i, i + concurrency).map((run) => run()),
-      )),
-    );
+  let next = 0;
+  async function worker() {
+    while (next < jobs.length) {
+      const i = next++;
+      try {
+        results[i] = { status: 'fulfilled', value: await jobs[i]() };
+      } catch (reason) {
+        results[i] = { status: 'rejected', reason };
+      }
+    }
   }
+  // 느린 요청 하나가 다음 묶음을 막지 않게, 빈 자리가 생길 때마다 이어서 조회합니다.
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, jobs.length) }, worker),
+  );
   return results;
 }
 const sourceList: Source[] = ['한성대', '경찰', '지하철'];
@@ -106,6 +114,36 @@ export class InstitutionItemsService {
     }
     if (since(days)) url.searchParams.set('rgsBgndeStr', since(days));
     return schoolPage(await this.text(url.href, url), page);
+  }
+  async preview(q: string, place: string, days: string) {
+    const result = await this.part('한성대', () => this.school(q, days));
+    return {
+      items: result.items
+        .filter(
+          (i) =>
+            i.date >= since(days) &&
+            (!place || clean(i.storage).includes(clean(place))),
+        )
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    };
+  }
+  async portalRegistrations(q: string, place: string) {
+    // 역·호선별 보조 목록은 겹칩니다. 총건수는 조건에 맞는 원본 목록 한 곳에서만 읽습니다.
+    const params: Record<string, string> = {
+      numOfRows: '40',
+      pageNo: '1',
+      PRDT_NM: q,
+    };
+    if (place)
+      params.DEP_PLACE = place.replace(
+        /^(.+역)\s+([^()]+(?:호선|선))$/u,
+        '$1($2)',
+      );
+    try {
+      return (await this.list('지하철', 'InfoAccTpNmCstdyPlace', params)).total;
+    } catch {
+      return null;
+    }
   }
   private async list(
     source: Provider,
