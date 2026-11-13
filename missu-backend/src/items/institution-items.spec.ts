@@ -100,4 +100,31 @@ describe('기관 습득물', () => {
       ['lost112:F0001:1', '경찰', 0],
     ]);
   });
+  it('역 이름과 노선이 같은 보관품만 해당 역에 올린다', async () => {
+    const site = {
+      place_name: '한성대입구역 4호선',
+      road_address_name: '삼선교로 지하 1',
+      category_group_code: 'SW8',
+      x: '127',
+      y: '37.5',
+    };
+    const stored = { ...row, depPlace: '한성대입구역(4호선)' };
+    const api = service((u) => {
+      if (u.host === 'dapi.kakao.com')
+        return JSON.stringify({
+          meta: { is_end: true },
+          documents:
+            u.searchParams.get('category_group_code') === 'SW8' ? [site] : [],
+        });
+      if (u.pathname.endsWith('DetailInfo')) return xml([stored]);
+      expect(u.searchParams.get('DEP_PLACE')).toBe('한성대입구역');
+      return xml([stored, { ...stored, fdSn: '2', depPlace: '다른역(4호선)' }]);
+    });
+    const data = await api.nearby(
+      Object.assign(new NearbyDto(), { lat: 37.5, lng: 127, radiusM: 1000 }),
+    );
+    expect(data.items.map((item) => [item.storage, item.distanceM])).toEqual([
+      ['한성대입구역(4호선)', 0],
+    ]);
+  });
 });

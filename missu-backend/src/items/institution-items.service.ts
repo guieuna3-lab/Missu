@@ -32,6 +32,8 @@ type KakaoPlace = {
   y: string;
   category_group_code?: string;
 };
+// 카카오는 '한성대입구역 4호선', 포털은 '한성대입구역(4호선)'처럼 표기합니다.
+const stationKey = (name: string) => clean(name).replace(/[()]/g, '');
 const sourceList: Source[] = ['한성대', '경찰', '지하철'];
 const since = (days: string) =>
   /^(7|30)$/.test(days)
@@ -103,21 +105,34 @@ export class InstitutionItemsService {
     place: string,
     days: string,
     site?: Custodian,
+    recent = false,
   ): Promise<Batch> {
+    const station = source === '지하철' && site?.name.match(/^(.+역)\s+(.+)$/u);
+    // 다른 도시의 동명·동일 호선 역은 기관 이름만으로 지도에 배치할 수 없습니다.
+    if (station && site && !(await this.uniqueStation(site, station[1])))
+      return { items: [], limited: true };
     const road = site && roadKey(site.address);
-    if (site && !road) return { items: [], limited: true };
+    if (site && !station && !road) return { items: [], limited: true };
     const filters: Record<string, string> = { numOfRows: '40', pageNo: '1' };
     if (q) filters.PRDT_NM = q;
-    if (site) {
+    let operation = 'InfoAccTpNmCstdyPlace';
+    if (recent) {
+      operation = 'InfoAccToClAreaPd';
+      filters.START_YMD = since('30').replaceAll('-', '');
+      filters.END_YMD = new Date(Date.now() + 9 * 3600000)
+        .toISOString()
+        .slice(0, 10)
+        .replaceAll('-', '');
+      filters.numOfRows = '100';
+    } else if (station) {
+      filters.DEP_PLACE = station[1];
+    } else if (site) {
+      operation = 'InfoAccToLc';
       filters.ADDR = site.address.match(
         /[가-힣A-Za-z0-9·.]+(?:로|길|대로)\s+(?:지하\s*)?\d+(?:-\d+)?/u,
       )![0];
     } else if (place) filters.DEP_PLACE = place;
-    const page = await this.list(
-      source,
-      site ? 'InfoAccToLc' : 'InfoAccTpNmCstdyPlace',
-      filters,
-    );
+    const page = await this.list(source, operation, filters);
     const cutoff = since(days);
     const candidates = page.records.filter((row) => {
       if (!row.atcId || !row.fdSn || !row.depPlace) return false;
@@ -127,6 +142,7 @@ export class InstitutionItemsService {
       )
         return false;
       if (!site) return true;
+      if (station) return stationKey(row.depPlace) === stationKey(site.name);
       if (roadKey(row.addr || '') !== road) return false;
       // 주소가 다른 도시에서도 같을 수 있어, 기관 이름도 확인합니다.
       const name = clean(site.name).replace(/\d+호선$/, '');
@@ -137,8 +153,23 @@ export class InstitutionItemsService {
           (storage.length >= 3 && name.includes(storage)))
       );
     });
+    if (recent)
+      candidates.sort((a, b) =>
+        (b.fdYmd || '')
+          .replaceAll('-', '')
+          .localeCompare((a.fdYmd || '').replaceAll('-', '')),
+      );
+    // 여러 종류의 포털기관이 섞인 목록에서 지하철 보관처를 우선 상세 확인합니다.
+    const homeCandidates =
+      recent && source === '지하철'
+        ? candidates.filter((row) =>
+            /역(?:\s*\(|$)|호선|유실물센터|지하철|도시철도|교통공사|경전철|메트로|역무실/u.test(
+              row.depPlace,
+            ),
+          )
+        : candidates;
     const checked = await Promise.allSettled(
-      candidates.slice(0, 8).map(async (row) => {
+      homeCandidates.slice(0, recent ? 12 : 8).map(async (row) => {
         const detail = await this.list(source, 'DetailInfo', {
           ATC_ID: row.atcId,
           FD_SN: row.fdSn,
@@ -203,6 +234,45 @@ export class InstitutionItemsService {
       .sort((a, b) => b.date.localeCompare(a.date));
     return result;
   }
+  async recent() {
+    const result = combine(
+      await Promise.all(
+        sourceList.map((source) =>
+          this.part(source, () =>
+            source === '한성대'
+              ? this.school('', 'all')
+              : this.records(source, '', '', '30', undefined, true),
+          ),
+        ),
+      ),
+    );
+    result.items = result.items
+      .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
+      .slice(0, 3);
+    return result;
+  }
+  private async uniqueStation(site: Custodian, name: string) {
+    const url = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+    url.search = new URLSearchParams({
+      query: name,
+      category_group_code: 'SW8',
+      size: '15',
+    }).toString();
+    const json = JSON.parse(
+      await this.text(url.href, url, {
+        Authorization: 'KakaoAK ' + process.env.KAKAO_REST_API_KEY,
+      }),
+    ) as { documents: KakaoPlace[]; meta?: { is_end: boolean } };
+    const matches = json.documents.filter(
+      (p) => stationKey(p.place_name) === stationKey(site.name),
+    );
+    return (
+      json.meta?.is_end === true &&
+      matches.length === 1 &&
+      distance(site, { lat: Number(matches[0].y), lng: Number(matches[0].x) }) <
+        100
+    );
+  }
   private async places(
     source: Source,
     query: NearbyDto,
@@ -218,11 +288,14 @@ export class InstitutionItemsService {
     const groups = await Promise.allSettled(
       terms.map(async (term) => {
         // 지도 제공자에는 반올림한 중심만 전달하고 최종 거리는 실제 중심에서 계산합니다.
+        const stations = source === '지하철' && term === '지하철역';
         const url = new URL(
-          'https://dapi.kakao.com/v2/local/search/keyword.json',
+          'https://dapi.kakao.com/v2/local/search/' +
+            (stations ? 'category' : 'keyword') +
+            '.json',
         );
         url.search = new URLSearchParams({
-          query: term,
+          ...(stations ? { category_group_code: 'SW8' } : { query: term }),
           x: query.lng.toFixed(3),
           y: query.lat.toFixed(3),
           radius: String(query.radiusM + 150),
