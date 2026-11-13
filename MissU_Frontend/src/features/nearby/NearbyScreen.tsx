@@ -16,6 +16,7 @@ import { TextLink } from '@/components/FormField';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { formatFoundAt } from '@/lib/items';
+import { nearbyInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { readDeviceLocation } from './deviceLocation';
 import { StreetMap } from './StreetMap';
 import { campus, mapApi, type MapItem, type Coordinates } from './mapData';
@@ -24,17 +25,19 @@ import { categories, defaultFilters, radii, type NearbyFilters } from './nearbyI
 import { Chips, FilterSheet, LocationDialog } from './NearbyOptions';
 import { NearbySearch } from './NearbySearch';
 
-function openDetail(id: string) {
-  router.push({ pathname: '/items/[id]', params: { id } });
+type NearbyRow = MapItem & { institution?: InstitutionItem };
+function openDetail(item: NearbyRow) {
+  if (item.institution) return openInstitution(item.institution);
+  router.push({ pathname: '/items/[id]', params: { id: item.id } });
 }
 
-function ItemRow({ item }: { item: MapItem }) {
+function ItemRow({ item }: { item: NearbyRow }) {
   const date = formatFoundAt(item.foundAt).slice(5, 10);
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={`${item.name} 상세 보기, ${item.foundLocation.label}, ${item.distanceM}m`}
-      onPress={() => openDetail(item.id)}
+      onPress={() => openDetail(item)}
       style={styles.item}
     >
       <MapIcon
@@ -49,7 +52,15 @@ function ItemRow({ item }: { item: MapItem }) {
       />
       <View style={styles.itemText}>
         <Text style={typography.label}>{item.name}</Text>
-        <Text style={styles.caption}>{item.foundLocation.label}</Text>
+        <Text style={styles.caption}>
+          {item.institution ? item.institution.source + ' · ' : '습득 위치 · '}
+          {item.foundLocation.label}
+        </Text>
+        {item.institution && (
+          <Text style={styles.caption}>
+            {item.institution.dateLabel} {item.institution.date} · {item.institution.reference}
+          </Text>
+        )}
       </View>
       <View style={styles.distance}>
         <Text style={[typography.label, styles.blue]}>{item.distanceM}m</Text>
@@ -70,6 +81,12 @@ export function NearbyScreen() {
     reload: number;
     rows: MapItem[];
     error: string;
+  }>();
+  const [agencies, setAgencies] = useState<{
+    params: string;
+    reload: number;
+    rows: NearbyRow[];
+    notice: string;
   }>();
   const [message, setMessage] = useState('');
   const [reload, setReload] = useState(0);
@@ -103,12 +120,39 @@ export function NearbyScreen() {
         q: query,
       }).toString()
     : '';
-  const loading = result?.params !== params || result.reload !== reload;
-  const items = loading ? emptyItems : result.rows;
-  const loadError = loading ? '' : result.error;
+  const membersReady = result?.params === params && result.reload === reload;
+  const agenciesReady = agencies?.params === params && agencies.reload === reload;
+  const loading = !membersReady && !agenciesReady;
+  const memberRows = membersReady ? result.rows : emptyItems;
+  const agencyRows = agenciesReady ? agencies.rows : emptyItems;
+  const items: NearbyRow[] = useMemo(
+    () => [...memberRows, ...agencyRows].sort((a, b) => a.distanceM - b.distanceM),
+    [memberRows, agencyRows],
+  );
+  const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
+  const notice = [
+    agenciesReady ? agencies.notice : '기관 보관품을 확인하고 있어요.',
+    membersReady && items.length ? result.error : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
   useEffect(() => {
     if (!params) return;
     const controller = new AbortController();
+    nearbyInstitutions(params, controller.signal)
+      .then(({ items, notices }) => {
+        if (!controller.signal.aborted)
+          setAgencies({
+            params,
+            reload,
+            rows: items.map((item) => ({ ...item, foundAt: item.date, institution: item })),
+            notice: notices.join(' '),
+          });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted)
+          setAgencies({ params, reload, rows: [], notice: '기관 자료를 현재 조회할 수 없어요.' });
+      });
     mapApi<MapItem[]>('/items/nearby?' + params, { signal: controller.signal })
       .then((rows) => {
         if (!controller.signal.aborted) setResult({ params, reload, rows, error: '' });
@@ -359,7 +403,13 @@ export function NearbyScreen() {
               {searchedArea?.label === '기본 지도 · 한성대학교' && (
                 <TextLink label="내 위치 다시 확인" onPress={() => void locate()} />
               )}
-              {!searchedArea ? null : loading ? (
+              {!!searchedArea && !!notice && (
+                <Text accessibilityLiveRegion="polite" style={styles.caption}>
+                  {notice}
+                </Text>
+              )}
+              {!searchedArea ? null : loading ||
+                (!items.length && (!membersReady || !agenciesReady)) ? (
                 <Text style={styles.caption}>주변 습득물을 불러오는 중이에요.</Text>
               ) : loadError ? (
                 <>
@@ -369,11 +419,18 @@ export function NearbyScreen() {
               ) : selected ? (
                 <>
                   <ItemRow item={selected} />
-                  <ActionButton label="물품 상세 보기" onPress={() => openDetail(selected.id)} />
+                  <ActionButton
+                    label={selected.institution ? '기관 원문 보기' : '물품 상세 보기'}
+                    onPress={() => openDetail(selected)}
+                  />
                 </>
               ) : !items.length ? (
                 <View style={styles.empty}>
-                  <Text style={typography.label}>조건에 맞는 물품이 아직 없어요</Text>
+                  <Text style={typography.label}>
+                    {notice
+                      ? '조회한 자료에서 조건에 맞는 물품이 없어요'
+                      : '조건에 맞는 물품이 아직 없어요'}
+                  </Text>
                   <Text style={typography.body}>지도를 옮기거나 검색 조건을 넓혀보세요.</Text>
                   <ActionButton label="전체 물품 보기" variant="outline" onPress={showAll} />
                 </View>

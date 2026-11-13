@@ -22,6 +22,8 @@ import { ClaimsController } from './claims/claims.controller';
 import { ClaimsService } from './claims/claims.service';
 import { NearbyService } from './items/nearby.service';
 import { PlacesController } from './items/places.controller';
+import { InstitutionItemsController } from './items/institution-items.controller';
+import { InstitutionItemsService } from './items/institution-items.service';
 import { RateLimitService } from './common/rate-limit.service';
 import { ExternalHttpService } from './integrations/external-http.service';
 import { DeliveryService } from './integrations/delivery.service';
@@ -42,6 +44,7 @@ import { RoutesService } from './routes/routes.service';
     RegistrationController,
     ClaimsController,
     PlacesController,
+    InstitutionItemsController,
     RoutesController,
   ],
   providers: [
@@ -53,6 +56,7 @@ import { RoutesService } from './routes/routes.service';
     RegistrationService,
     ClaimsService,
     NearbyService,
+    InstitutionItemsService,
     RateLimitService,
     ExternalHttpService,
     DeliveryService,

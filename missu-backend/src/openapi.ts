@@ -49,6 +49,17 @@ const transition = object({
 
 export function completeOpenApi(document: OpenAPIObject) {
   const schemas: Record<string, SchemaObject> = {
+    InstitutionItem: object({
+      id: string,
+      name: string,
+      source: { type: 'string', enum: ['한성대', '경찰', '지하철'] },
+      storage: string,
+      date: { type: 'string', format: 'date' },
+      dateLabel: { type: 'string', enum: ['습득일', '게시일'] },
+      url: { type: 'string', format: 'uri' },
+      reference: string,
+      category: string,
+    }),
     Location: object({
       label: string,
       lat: { type: 'number' },
@@ -217,6 +228,36 @@ export function completeOpenApi(document: OpenAPIObject) {
     'patch /api/v1/me': [200, envelope(ref('Profile'))],
     'get /api/v1/items': [200, envelope(array(ref('PublicItem')), cursorMeta)],
     'get /api/v1/items/{id}': [200, envelope(ref('PublicItem'))],
+    'get /api/v1/institution-items': [
+      200,
+      envelope(
+        object({
+          items: array(ref('InstitutionItem')),
+          notices: array(string),
+        }),
+      ),
+    ],
+    'get /api/v1/institution-items/nearby': [
+      200,
+      envelope(
+        object({
+          items: array({
+            allOf: [
+              ref('InstitutionItem'),
+              object({
+                distanceM: { type: 'integer' },
+                foundLocation: object({
+                  lat: { type: 'number' },
+                  lng: { type: 'number' },
+                  label: string,
+                }),
+              }),
+            ],
+          }),
+          notices: array(string),
+        }),
+      ),
+    ],
     'get /api/v1/items/nearby': [
       200,
       envelope(
@@ -345,6 +386,8 @@ export function completeOpenApi(document: OpenAPIObject) {
     ],
   };
   const anonymousGet = new Set([
+    '/api/v1/institution-items',
+    '/api/v1/institution-items/nearby',
     '/api/v1/auth/csrf',
     '/api/v1/items',
     '/api/v1/items/{id}',
