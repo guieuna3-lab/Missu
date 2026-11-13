@@ -42,6 +42,17 @@ const railStorage =
   /역(?:\s*\(|$)|호선|지하철|도시철도|교통공사|경전철|메트로|역무실|전철/u;
 const storageRank = (name: string) =>
   railStorage.test(name) ? 2 : /유실물센터/u.test(name) ? 1 : 0;
+async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
+  const results: PromiseSettledResult<T>[] = [];
+  for (let i = 0; i < jobs.length; i += concurrency) {
+    results.push(
+      ...(await Promise.allSettled(
+        jobs.slice(i, i + concurrency).map((run) => run()),
+      )),
+    );
+  }
+  return results;
+}
 const sourceList: Source[] = ['한성대', '경찰', '지하철'];
 const since = (days: string) =>
   /^(7|30)$/.test(days)
@@ -71,7 +82,12 @@ export class InstitutionItemsService {
     if (this.cache.size >= 400)
       this.cache.delete(this.cache.keys().next().value!);
     const value = this.http
-      .request(url.toString(), { headers })
+      .request(url.toString(), {
+        headers,
+        ...(url.hostname === 'apis.data.go.kr' && {
+          signal: AbortSignal.timeout(9500),
+        }),
+      })
       .then((r) => r.text());
     this.cache.set(key, { until: Date.now() + 120000, value });
     void value.catch(() => {
@@ -143,7 +159,7 @@ export class InstitutionItemsService {
     // 포털 첫 페이지에는 공항과 상점도 섞여 있어, 장소를 입력하지 않은
     // 검색에서는 역과 유실물센터 목록도 함께 읽고 같은 관리번호를 합칩니다.
     const globalRail = source === '지하철' && !place && !site;
-    const requests = [this.list(source, operation, filters)];
+    const requests = [() => this.list(source, operation, filters)];
     if (globalRail) {
       // 명칭 조회는 기관별로 결과가 몰릴 수 있어 노선과 센터 목록을 함께 순회합니다.
       for (const venue of [
@@ -152,17 +168,18 @@ export class InstitutionItemsService {
         '호선',
         ...Array.from({ length: 9 }, (_, i) => i + 1 + '호선'),
       ]) {
-        requests.push(
+        requests.push(() =>
           this.list(source, 'InfoAccTpNmCstdyPlace', {
             ...(q ? { PRDT_NM: q } : {}),
             DEP_PLACE: venue,
-            numOfRows: '30',
+            numOfRows: '40',
             pageNo: String(pageNo),
           }),
         );
       }
     }
-    const settled = await Promise.allSettled(requests);
+    // 공급자가 동시 호출을 지연시키더라도 핵심 목록 요청이 먼저 처리되게 합니다.
+    const settled = await readBatches(requests, 4);
     const pages = settled.flatMap((p) =>
       p.status === 'fulfilled' ? [p.value] : [],
     );
@@ -216,8 +233,8 @@ export class InstitutionItemsService {
       shortlist.sort((a, b) => ranks.get(a)! - ranks.get(b)!);
     }
     const limit = site ? 12 : 24;
-    const checked = await Promise.allSettled(
-      shortlist.slice(offset, offset + limit).map(async (row) => {
+    const checked = await readBatches(
+      shortlist.slice(offset, offset + limit).map((row) => async () => {
         const detail = await this.list(source, 'DetailInfo', {
           ATC_ID: row.atcId,
           FD_SN: row.fdSn,
@@ -232,6 +249,7 @@ export class InstitutionItemsService {
           return;
         return governmentItem({ ...row, ...current }, source);
       }),
+      8,
     );
     const items = checked.flatMap((r) =>
       r.status === 'fulfilled' && r.value ? [r.value] : [],
