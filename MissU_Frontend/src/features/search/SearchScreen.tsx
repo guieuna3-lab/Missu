@@ -22,9 +22,14 @@ import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { formatFoundAt, type PublicItem, type SearchFilters } from '@/lib/items';
-import { itemRepository } from '@/lib/publicItems';
-import { searchInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
+import { formatFoundAt, itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
+import {
+  searchInstitutions,
+  openInstitution,
+  institutionTotal,
+  type InstitutionTotal,
+  type InstitutionItem,
+} from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
@@ -39,6 +44,7 @@ type SearchState = {
   status: 'idle' | 'loading' | 'success' | 'error';
   items: SearchItem[];
   visible: number;
+  memberTotal?: number;
   memberCursor?: string | null;
   agencyCursor?: string | null;
   memberNotice?: string;
@@ -55,7 +61,7 @@ async function loadResults(
 ): Promise<SearchState> {
   const rows = new Map(previous.items.map((item) => [item.id, item]));
   const target = previous.visible + pageSize;
-  let { memberCursor, agencyCursor, memberNotice, agencyNotice } = previous;
+  let { memberCursor, agencyCursor, memberNotice, agencyNotice, memberTotal } = previous;
   let status: SearchState['status'] = 'success';
   // 두 출처가 응답할 때까지 카드를 공개하지 않고, 넘치는 결과는 다음 더보기에 사용합니다.
   while (rows.size < target && (memberCursor !== null || agencyCursor !== null)) {
@@ -69,6 +75,7 @@ async function loadResults(
     if (member.status === 'fulfilled' && member.value) {
       for (const item of member.value.items) rows.set(item.id, item);
       memberCursor = member.value.nextCursor;
+      memberTotal ??= member.value.total;
       memberNotice = undefined;
     } else if (member.status === 'rejected') {
       memberNotice = '회원 습득물을 불러오지 못했어요.';
@@ -92,6 +99,7 @@ async function loadResults(
     items,
     visible: Math.min(target, items.length),
     memberCursor,
+    memberTotal,
     agencyCursor,
     memberNotice,
     agencyNotice,
@@ -107,6 +115,28 @@ export default function SearchScreen() {
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [countFilters, setCountFilters] = useState<SearchFilters | null>(null);
+  const [agencyCount, setAgencyCount] = useState<InstitutionTotal | null>(null);
+  useEffect(() => {
+    if (!countFilters) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function check() {
+      try {
+        const reply = await institutionTotal(countFilters!, controller.signal);
+        if (controller.signal.aborted) return;
+        setAgencyCount(reply);
+        if (reply.status === 'counting') timer = setTimeout(() => void check(), 3500);
+      } catch {
+        if (!controller.signal.aborted) setAgencyCount({ status: 'unavailable', total: null });
+      }
+    }
+    void check();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [countFilters]);
   const searchTime = useRef(0);
   const pending = useRef(false);
   const requestId = useRef(0);
@@ -138,6 +168,8 @@ export default function SearchScreen() {
     setConditions(false);
     setValidation('');
     setState({ ...initialState, status: 'loading' });
+    setAgencyCount(null);
+    setCountFilters({ ...values });
     searchTime.current = Date.now();
     try {
       const result = await loadResults(values, initialState, searchTime.current);
@@ -190,6 +222,8 @@ export default function SearchScreen() {
         onChangeText={(query) => {
           if (pending.current) return;
           setFilters((f) => ({ ...f, query }));
+          setCountFilters(null);
+          setAgencyCount(null);
           setState(initialState);
           setValidation('');
         }}
@@ -244,7 +278,13 @@ export default function SearchScreen() {
           accessibilityLiveRegion="polite"
           style={typography.heading}
         >
-          총 습득물 {state.items.length.toLocaleString('ko-KR')}건
+          {agencyCount?.status === 'unavailable' || state.memberTotal === undefined
+            ? '전체 습득물 건수를 확인할 수 없어요'
+            : agencyCount?.status === 'complete' && agencyCount.total !== null
+              ? '총 습득물 ' +
+                (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
+                '건'
+              : '전체 습득물 건수를 확인하고 있어요'}
         </Text>
       )}
       {!!(state.memberNotice || state.agencyNotice) && (
