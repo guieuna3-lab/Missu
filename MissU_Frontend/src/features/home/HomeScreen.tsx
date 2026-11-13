@@ -1,7 +1,12 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback, useRef } from 'react';
 import { itemRepository, formatFoundAt, type PublicItem } from '@/lib/items';
-import { recentInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
+import {
+  recentInstitutions,
+  previewInstitutions,
+  openInstitution,
+  type InstitutionItem,
+} from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -40,16 +45,22 @@ export function HomeScreen() {
       setState('loading');
       setNotice('');
       const members = itemRepository.recentPage();
-      void members
-        .then(({ items }) => {
-          if (current === generation.current && items.length) {
-            setRecent(items);
-            setState('ready');
-          }
-        })
+      let complete = false;
+      const firstRows: HomeItem[] = [];
+      function showFirst(items: HomeItem[]) {
+        if (complete || current !== generation.current || !items.length) return;
+        firstRows.push(...items);
+        setRecent([...firstRows].sort(newestFirst));
+        setState('ready');
+        setNotice('다른 기관의 보관품도 확인하고 있어요.');
+      }
+      void members.then(({ items }) => showFirst(items)).catch(() => {});
+      void previewInstitutions()
+        .then(({ items }) => showFirst(items))
         .catch(() => {});
       void Promise.allSettled([members, recentInstitutions()]).then(([member, agency]) => {
         if (current !== generation.current) return;
+        complete = true;
         const rows: HomeItem[] = [
           ...(member.status === 'fulfilled' ? member.value.items : []),
           ...(agency.status === 'fulfilled' ? agency.value.items : []),
