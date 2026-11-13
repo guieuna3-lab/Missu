@@ -69,13 +69,16 @@ export function PlacePickerScreen({
   const noResults = results !== null && results.length === 0;
 
   const searchVersion = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(
     () => () => {
       searchVersion.current++;
+      clearTimeout(searchTimer.current);
     },
     [],
   );
   function changeQuery(value: string) {
+    clearTimeout(searchTimer.current);
     searchVersion.current++;
     setQuery(value);
     setLooking(false);
@@ -83,14 +86,16 @@ export function PlacePickerScreen({
     setPlaceOptions((old) => old.filter((place) => place.id === 'current'));
     setSelectedId(undefined);
     setDetailError(undefined);
+    if (value.trim()) searchTimer.current = setTimeout(() => void search(value, true), 300);
   }
 
-  async function search() {
+  async function search(value = query, typing = false) {
+    clearTimeout(searchTimer.current);
     const version = ++searchVersion.current;
-    Keyboard.dismiss();
+    if (!typing) Keyboard.dismiss();
     setSelectedId(undefined);
     setDetailError(undefined);
-    if (!query.trim()) {
+    if (!value.trim()) {
       setResults(null);
       return;
     }
@@ -104,7 +109,7 @@ export function PlacePickerScreen({
           lat: number;
           lng: number;
         }[];
-      }>('/places?q=' + encodeURIComponent(query.trim()));
+      }>('/places?q=' + encodeURIComponent(value.trim()));
       if (version !== searchVersion.current) return;
       const matches = response.data.map((p) => ({
         id: p.providerPlaceId,
@@ -115,7 +120,8 @@ export function PlacePickerScreen({
         icon: 'book' as const,
       }));
       setPlaceOptions((old) => [old[0], ...matches]);
-      setResults(matches);
+      setResults(typing && !matches.length ? null : matches);
+      if (typing && !matches.length) setDetailError('일치하는 장소가 없어요.');
     } catch (e) {
       if (version !== searchVersion.current) return;
       setResults(null);
@@ -130,6 +136,7 @@ export function PlacePickerScreen({
   }
 
   async function choose(id: string) {
+    clearTimeout(searchTimer.current);
     const place = placeOptions.find((p) => p.id === id);
     if (!place) return;
     const version = ++searchVersion.current;
@@ -250,7 +257,7 @@ export function PlacePickerScreen({
         description="장소명이나 주소를 다시 입력해 주세요."
         actions={
           <>
-            <ActionButton label="장소 검색하기" onPress={search} />
+            <ActionButton label="장소 검색하기" onPress={() => void search()} />
             {previousStep}
           </>
         }
@@ -279,7 +286,7 @@ export function PlacePickerScreen({
         <>
           <ActionButton
             label={selected ? '이 장소로 선택' : '장소 검색하기'}
-            onPress={selected ? confirm : search}
+            onPress={selected ? confirm : () => void search()}
             loading={submitting || looking}
           />
           {previousStep}
@@ -294,7 +301,7 @@ export function PlacePickerScreen({
           placeholderTextColor={colors.body}
           value={query}
           onChangeText={changeQuery}
-          onSubmitEditing={search}
+          onSubmitEditing={() => void search()}
           returnKeyType="search"
           style={styles.input}
         />
