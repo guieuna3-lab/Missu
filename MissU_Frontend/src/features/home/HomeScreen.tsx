@@ -13,6 +13,7 @@ import { previewActivity } from '@/lib/preview/fixtures';
 import { isPreview } from '@/lib/preview/PreviewProvider';
 
 type HomeItem = PublicItem | InstitutionItem;
+const recentItemLimit = 10;
 // 기관 날짜의 정밀도는 일 단위입니다. 서울 날짜의 시작을 기준으로 회원 등록 시각과 비교합니다.
 const recentTime = (item: HomeItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : (item.createdAt ?? item.foundAt));
@@ -29,7 +30,7 @@ export function HomeScreen() {
       void members
         .then((items) => {
           if (active && items.length) {
-            setRecent(items.slice(0, 3));
+            setRecent(items.slice(0, recentItemLimit));
             setState('ready');
           }
         })
@@ -43,7 +44,7 @@ export function HomeScreen() {
         setRecent(
           rows
             .sort((a, b) => recentTime(b) - recentTime(a) || a.id.localeCompare(b.id))
-            .slice(0, 3),
+            .slice(0, recentItemLimit),
         );
         const messages =
           agency.status === 'fulfilled'
