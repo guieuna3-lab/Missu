@@ -181,7 +181,7 @@ describe('기관 습득물', () => {
     expect(details).toBe(1);
   });
   it('홈과 검색이 같은 원본 페이지의 나머지 물품부터 확인한 뒤 실제 다음 페이지를 읽는다', async () => {
-    const wallets = Array.from({ length: 33 }, (_, n) => ({
+    const wallets = Array.from({ length: 43 }, (_, n) => ({
       ...row,
       atcId: 'W' + n,
       fdPrdtNm: '지갑',
@@ -197,9 +197,12 @@ describe('기관 습득물', () => {
         );
       if (u.searchParams.get('DEP_PLACE') !== '2호선') return xml([]);
       const page = Number(u.searchParams.get('pageNo'));
-      return xml(wallets.slice((page - 1) * 30, page * 30)).replace(
+      const size = Number(u.searchParams.get('numOfRows'));
+      return xml(wallets.slice((page - 1) * size, page * size)).replace(
         '<items>',
-        '<totalCount>33</totalCount><numOfRows>30</numOfRows><pageNo>' +
+        '<totalCount>43</totalCount><numOfRows>' +
+          size +
+          '</numOfRows><pageNo>' +
           page +
           '</pageNo><items>',
       );
@@ -212,11 +215,11 @@ describe('기관 습득물', () => {
         b = await fetch(a.nextCursor!),
         c = await fetch(b.nextCursor!);
       expect([a.items.length, b.items.length, c.items.length]).toEqual([
-        24, 6, 3,
+        24, 16, 3,
       ]);
       expect(
         new Set([...a.items, ...b.items, ...c.items].map((i) => i.id)).size,
-      ).toBe(33);
+      ).toBe(43);
       expect(c.nextCursor).toBeNull();
     }
   });
