@@ -5735,7 +5735,17 @@
     "/api/v1/institution-items": {
       "get": {
         "operationId": "InstitutionItemsController_search",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "직전 기관 목록이 반환한 다음 페이지 값",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "성공",
@@ -5758,11 +5768,16 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "items",
-                        "notices"
+                        "notices",
+                        "nextCursor"
                       ]
                     }
                   },
@@ -6006,7 +6021,17 @@
     "/api/v1/institution-items/recent": {
       "get": {
         "operationId": "InstitutionItemsController_recent",
-        "parameters": [],
+        "parameters": [
+          {
+            "name": "cursor",
+            "required": false,
+            "in": "query",
+            "description": "직전 기관 목록이 반환한 다음 페이지 값",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "성공",
@@ -6029,11 +6054,16 @@
                           "items": {
                             "type": "string"
                           }
+                        },
+                        "nextCursor": {
+                          "type": "string",
+                          "nullable": true
                         }
                       },
                       "required": [
                         "items",
-                        "notices"
+                        "notices",
+                        "nextCursor"
                       ]
                     }
                   },

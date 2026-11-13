@@ -18,16 +18,20 @@ type NearbyInstitution = InstitutionItem & {
   distanceM: number;
 };
 type Result<T> = { items: T[]; notices: string[] };
-export function recentInstitutions() {
-  return mapApi<Result<InstitutionItem>>('/institution-items/recent');
+type InstitutionPage = Result<InstitutionItem> & { nextCursor: string | null };
+export function recentInstitutions(cursor?: string) {
+  return mapApi<InstitutionPage>(
+    '/institution-items/recent' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''),
+  );
 }
-export function searchInstitutions(filters: SearchFilters) {
+export function searchInstitutions(filters: SearchFilters, cursor?: string) {
   const params = new URLSearchParams({
     q: filters.query.trim(),
     place: filters.place.trim(),
     period: filters.period,
   });
-  return mapApi<Result<InstitutionItem>>('/institution-items?' + params);
+  if (cursor) params.set('cursor', cursor);
+  return mapApi<InstitutionPage>('/institution-items?' + params);
 }
 export function nearbyInstitutions(params: string, signal: AbortSignal) {
   return mapApi<Result<NearbyInstitution>>('/institution-items/nearby?' + params, { signal });

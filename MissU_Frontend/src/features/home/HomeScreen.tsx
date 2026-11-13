@@ -23,6 +23,7 @@ export function HomeScreen() {
   const [recent, setRecent] = useState<HomeItem[]>([]);
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const [cursor, setCursor] = useState<string | null>();
+  const [agencyCursor, setAgencyCursor] = useState<string | null>(null);
   const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const generation = useRef(0);
   const fetchingMore = useRef(false);
@@ -34,6 +35,7 @@ export function HomeScreen() {
       fetchingMore.current = false;
       setVisibleCount(pageSize);
       setCursor(undefined);
+      setAgencyCursor(null);
       setMoreStatus('idle');
       setState('loading');
       setNotice('');
@@ -54,6 +56,7 @@ export function HomeScreen() {
         ];
         setRecent(rows.sort(newestFirst));
         setCursor(member.status === 'fulfilled' ? member.value.nextCursor : null);
+        setAgencyCursor(agency.status === 'fulfilled' ? agency.value.nextCursor : null);
         const messages =
           agency.status === 'fulfilled'
             ? agency.value.notices.filter((n) => n.includes('조회할 수 없어요'))
@@ -73,17 +76,31 @@ export function HomeScreen() {
     const nextCount = visibleCount + pageSize;
     const memberCount = recent.filter((item) => !('source' in item)).length;
     // 마지막 회원 페이지보다 오래된 기관 카드가 먼저 펼쳐지지 않게 합니다.
-    if (cursor && nextCount > memberCount) {
+    const loadMembers = !!cursor && nextCount > memberCount;
+    const loadAgencies = !!agencyCursor && nextCount > recent.length - memberCount;
+    if (loadMembers || loadAgencies) {
       const current = generation.current;
       fetchingMore.current = true;
       setMoreStatus('loading');
       try {
-        const page = await itemRepository.recentPage(cursor);
+        const [members, agencies] = await Promise.all([
+          loadMembers ? itemRepository.recentPage(cursor!) : undefined,
+          loadAgencies ? recentInstitutions(agencyCursor!) : undefined,
+        ]);
         if (current !== generation.current) return;
         const rows = new Map(recent.map((item) => [item.id, item]));
-        for (const item of page.items) rows.set(item.id, item);
-        setRecent([...rows.values()].sort(newestFirst));
-        setCursor(page.nextCursor);
+        for (const item of [...(members?.items ?? []), ...(agencies?.items ?? [])])
+          rows.set(item.id, item);
+        // 이미 읽은 카드는 제자리에 두고, 추가로 확인한 물품을 날짜순으로 이어 붙입니다.
+        const shown = recent.slice(0, visibleCount);
+        for (const item of shown) rows.delete(item.id);
+        setRecent([...shown, ...[...rows.values()].sort(newestFirst)]);
+        if (members) setCursor(members.nextCursor);
+        if (agencies) {
+          setAgencyCursor(agencies.nextCursor);
+          const issues = agencies.notices.filter((s) => s.includes('현재 조회'));
+          if (issues.length) setNotice(issues.join(' '));
+        }
         setMoreStatus('idle');
       } catch {
         if (current === generation.current) setMoreStatus('error');
@@ -92,7 +109,7 @@ export function HomeScreen() {
         if (current === generation.current) fetchingMore.current = false;
       }
     }
-    setVisibleCount(nextCount);
+    setVisibleCount(Math.min(visibleCount, recent.length) + pageSize);
   }
 
   return (
@@ -189,7 +206,7 @@ export function HomeScreen() {
             ))}
           {state === 'ready' &&
             cursor !== undefined &&
-            (recent.length > visibleCount || !!cursor) && (
+            (recent.length > visibleCount || !!cursor || !!agencyCursor) && (
               <ActionButton
                 label={
                   moreStatus === 'loading'

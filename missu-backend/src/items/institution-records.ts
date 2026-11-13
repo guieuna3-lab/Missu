@@ -32,7 +32,7 @@ function category(text: string) {
   if (/지갑|가방|백팩|파우치/u.test(text)) return 'WALLET_BAG';
   return 'OTHER';
 }
-export function schoolPage(html: string): Batch {
+export function schoolPage(html: string, page = 1): Batch {
   const dom = parseDocument(html);
   if (
     !byTag('th', dom.children).some((node) => plain(node).trim() === '작성일')
@@ -73,13 +73,19 @@ export function schoolPage(html: string): Batch {
     });
   }
   const count = plain(dom).match(/총\s*([\d,]+)\s*개의?\s*게시물/u);
+  const pageLinks = byTag('a', dom.children).map((a) =>
+    Number(a.attribs.href?.match(/page_link\(['"](\d+)['"]\)/)?.[1] || 0),
+  );
+  const rows = byTag('td', dom.children).filter(
+    (x) => x.attribs.class === 'td-date',
+  ).length;
   return {
     items,
-    limited: count
-      ? Number(count[1].replaceAll(',', '')) >
-        byTag('td', dom.children).filter((x) => x.attribs.class === 'td-date')
-          .length
-      : false,
+    limited:
+      pageLinks.some((n) => n > page) ||
+      (!!count &&
+        rows > 0 &&
+        Number(count[1].replaceAll(',', '')) > (page - 1) * 10 + rows),
   };
 }
 export function policePage(xml: string) {
@@ -96,7 +102,13 @@ export function policePage(xml: string) {
       ),
     ),
   ) as Record<string, string>[];
-  return { records, limited: Number(tag('totalCount')) > records.length };
+  const page = Number(tag('pageNo')) || 1;
+  const size = Number(tag('numOfRows')) || records.length;
+  const total = Number(tag('totalCount'));
+  return {
+    records,
+    limited: records.length > 0 && (page - 1) * size + records.length < total,
+  };
 }
 export function governmentItem(
   row: Record<string, string>,
