@@ -82,6 +82,17 @@ export class InstitutionItemsController {
       },
     };
   }
+  @Get('search-total')
+  @Header('Cache-Control', 'no-store')
+  async searchTotal(
+    @Query() query: SearchInstitutionsDto,
+    @Req() req: SessionRequest,
+  ) {
+    await this.rates.consume('institution-total:' + req.ip, 30, 60000);
+    return {
+      data: await this.service.searchTotal(query.q, query.place, query.period),
+    };
+  }
   @Get('recent')
   async recent(@Req() req: SessionRequest, @Query() query: InstitutionPageDto) {
     await this.rates.consume('institution-search:' + req.ip, 30, 60000);
