@@ -39,7 +39,6 @@ const railStorage =
 const storageRank = (name: string) =>
   railStorage.test(name) ? 2 : /유실물센터/u.test(name) ? 1 : 0;
 const sourceList: Source[] = ['한성대', '경찰', '지하철'];
-const recentItemLimit = 10;
 const since = (days: string) =>
   /^(7|30)$/.test(days)
     ? new Date(Date.now() + (9 * 3600 - (Number(days) - 1) * 86400) * 1000)
@@ -274,9 +273,10 @@ export class InstitutionItemsService {
         ),
       ),
     );
-    result.items = result.items
-      .sort((a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id))
-      .slice(0, recentItemLimit);
+    // 이미 보관 상태를 확인한 목록을 한 번 보내고 홈에서 10건씩 펼칩니다.
+    result.items.sort(
+      (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
+    );
     return result;
   }
   private async uniqueStation(site: Custodian, name: string) {
