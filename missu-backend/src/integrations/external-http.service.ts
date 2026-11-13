@@ -9,7 +9,7 @@ export class ExternalHttpService {
       const response = await fetch(url, {
         ...init,
         redirect: 'error',
-        signal: AbortSignal.timeout(5000),
+        signal: init.signal ?? AbortSignal.timeout(5000),
       });
       if (!response.ok) throw new Error('Provider rejected request');
       return response;
