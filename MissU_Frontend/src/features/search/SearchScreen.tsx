@@ -17,6 +17,7 @@ import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { Card } from '@/components/Card';
 import { FormField } from '@/components/FormField';
+import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
@@ -36,6 +37,7 @@ type SearchState = {
   status: 'idle' | 'loading' | 'success' | 'error';
   items: (PublicItem | InstitutionItem)[];
   notice?: string;
+  nextCursor?: string | null;
 };
 const initialState: SearchState = { status: 'idle', items: [] };
 
@@ -47,6 +49,7 @@ export default function SearchScreen() {
   const [choosingPeriod, setChoosingPeriod] = useState(false);
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
+  const [loadingMore, setLoadingMore] = useState(false);
   const pending = useRef(false);
   const requestId = useRef(0);
   useEffect(
@@ -105,11 +108,43 @@ export default function SearchScreen() {
             member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'success',
           items,
           notice: notices.join(' '),
+          nextCursor: agency.status === 'fulfilled' ? agency.value.nextCursor : null,
         });
     } catch {
       if (id === requestId.current) setState({ status: 'error', items: [] });
     } finally {
       if (id === requestId.current) pending.current = false;
+    }
+  }
+  async function moreInstitutions() {
+    if (pending.current || !state.nextCursor) return;
+    const id = ++requestId.current;
+    pending.current = true;
+    setLoadingMore(true);
+    try {
+      const page = await searchInstitutions(filters, state.nextCursor);
+      if (id !== requestId.current) return;
+      setState((previous) => {
+        const seen = new Set(previous.items.map((item) => item.id));
+        const added = page.items.filter((item) => !seen.has(item.id));
+        return {
+          ...previous,
+          items: [...previous.items, ...added],
+          nextCursor: page.nextCursor,
+          notice: page.notices.join(' '),
+        };
+      });
+    } catch {
+      if (id === requestId.current)
+        setState((previous) => ({
+          ...previous,
+          notice: '다음 기관 물품을 불러오지 못했어요. 다시 시도해 주세요.',
+        }));
+    } finally {
+      if (id === requestId.current) {
+        pending.current = false;
+        setLoadingMore(false);
+      }
     }
   }
   function openConditions(reset = false) {
@@ -274,7 +309,7 @@ export default function SearchScreen() {
                     </Pressable>
                   ))}
               </View>
-              <FormField
+              <PlaceSearchField
                 label="장소"
                 placeholder="전체 장소"
                 value={draft.place}
@@ -312,11 +347,23 @@ export default function SearchScreen() {
               )
             }
             ListFooterComponent={
-              state.status === 'success' && state.items.length > 0 ? (
-                <Text style={[typography.body, styles.footer]}>
-                  공개 정보는 누구나 볼 수 있어요.
-                  {!profile && '\n회원 등록 물품은 로그인 후 반환을 요청할 수 있어요.'}
-                </Text>
+              state.status === 'success' ? (
+                <View>
+                  {!!state.nextCursor && (
+                    <ActionButton
+                      label="기관 습득물 더보기"
+                      variant="outline"
+                      loading={loadingMore}
+                      onPress={() => void moreInstitutions()}
+                    />
+                  )}
+                  {state.items.length > 0 && (
+                    <Text style={[typography.body, styles.footer]}>
+                      공개 정보는 누구나 볼 수 있어요.
+                      {!profile && '\n회원 등록 물품은 로그인 후 반환을 요청할 수 있어요.'}
+                    </Text>
+                  )}
+                </View>
               ) : undefined
             }
           />
