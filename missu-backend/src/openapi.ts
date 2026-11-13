@@ -234,6 +234,7 @@ export function completeOpenApi(document: OpenAPIObject) {
         object({
           items: array(ref('InstitutionItem')),
           notices: array(string),
+          nextCursor: nullable,
         }),
       ),
     ],
