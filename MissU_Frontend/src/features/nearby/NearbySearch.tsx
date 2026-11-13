@@ -4,7 +4,9 @@ import { TextLink } from '@/components/FormField';
 import { Header } from '@/components/Header';
 import { colors, typography } from '@/constants/theme';
 import { MapIcon, mapArt } from './mapArt';
-import { mapApi, type Coordinates, type MapItem } from './mapData';
+import { mapApi, type Coordinates } from './mapData';
+
+type SearchPlace = Coordinates & { providerPlaceId: string; name: string; address: string };
 
 const suggested = ['한성대학교', '이어폰', '지갑'];
 
@@ -27,36 +29,32 @@ export function NearbySearch({
   const term = input.trim();
   const [placeResult, setPlaceResult] = useState<{
     term: string;
-    places: MapItem['foundLocation'][];
+    places: SearchPlace[];
+    failed: boolean;
   }>();
-  const foundPlaces = placeResult?.term === term ? placeResult.places : [];
+  const current = placeResult?.term === term ? placeResult : undefined;
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     if (!term) return;
     const timer = setTimeout(() => {
-      mapApi<MapItem[]>('/items?place=' + encodeURIComponent(term) + '&limit=30', {
+      // 등록 화면과 같은 카카오 장소·주소 검색을 사용합니다.
+      mapApi<SearchPlace[]>('/places?q=' + encodeURIComponent(term), {
         signal: controller.signal,
       })
-        .then((rows) => {
-          if (!controller.signal.aborted)
-            setPlaceResult({
-              term,
-              places: [
-                ...new Map(
-                  rows.map((row) => [row.foundLocation.label, row.foundLocation]),
-                ).values(),
-              ],
-            });
+        .then((places) => {
+          if (!controller.signal.aborted) setPlaceResult({ term, places, failed: false });
         })
-        .catch(() => {});
+        .catch(() => {
+          if (!controller.signal.aborted) setPlaceResult({ term, places: [], failed: true });
+        });
     }, 300);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [term]);
-  const matchingPlaces = ['한성대학교'].filter((name) => name.includes(term));
-  const choices = term ? matchingPlaces : recent.length ? recent : suggested;
+  }, [term, attempt]);
+  const choices = term ? [] : recent.length ? recent : suggested;
 
   function submit(value: string) {
     Keyboard.dismiss();
@@ -105,21 +103,45 @@ export function NearbySearch({
         {!!term && (
           <Pressable accessibilityRole="button" onPress={() => submit(term)} style={styles.choice}>
             <MapIcon source={mapArt.search} size={20} />
-            <Text style={typography.label}>{term} 검색</Text>
+            <Text style={typography.label}>{term} 물품 검색</Text>
           </Pressable>
         )}
         <Text style={typography.body}>
           {term ? '장소' : recent.length ? '최근 검색' : '추천 검색'}
         </Text>
-        {foundPlaces.map((place) => (
+        {!!term && !current && <Text style={typography.body}>장소를 찾고 있어요.</Text>}
+        {!!term && current?.failed && (
+          <View>
+            <Text style={typography.body}>장소를 불러오지 못했어요.</Text>
+            <TextLink
+              label="다시 시도"
+              onPress={() => {
+                setPlaceResult(undefined);
+                setAttempt((value) => value + 1);
+              }}
+            />
+          </View>
+        )}
+        {!!term && current && !current.failed && !current.places.length && (
+          <Text style={typography.body}>
+            일치하는 장소가 없어요. 다른 이름이나 주소로 검색해 주세요.
+          </Text>
+        )}
+        {current?.places.map((place) => (
           <Pressable
             accessibilityRole="button"
-            key={place.label}
+            key={place.providerPlaceId}
             style={styles.choice}
-            onPress={() => onPlace(place, place.label)}
+            onPress={() => {
+              Keyboard.dismiss();
+              onPlace({ lat: place.lat, lng: place.lng }, place.name);
+            }}
           >
             <MapIcon source={mapArt.place} size={20} />
-            <Text style={typography.label}>{place.label}</Text>
+            <View style={styles.placeText}>
+              <Text style={typography.label}>{place.name}</Text>
+              {place.address !== place.name && <Text style={typography.body}>{place.address}</Text>}
+            </View>
           </Pressable>
         ))}
         {choices.map((choice) => (
@@ -155,5 +177,6 @@ const styles = StyleSheet.create({
   body: { padding: 20, gap: 10 },
   heading: { ...typography.label, fontSize: 16, fontWeight: '700', lineHeight: 24 },
   choice: { flexDirection: 'row', alignItems: 'center', gap: 12, minHeight: 44 },
+  placeText: { flex: 1 },
   actionText: { ...typography.label, color: colors.blue, fontWeight: '700' },
 });
