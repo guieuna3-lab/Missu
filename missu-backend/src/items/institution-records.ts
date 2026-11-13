@@ -104,10 +104,18 @@ export function policePage(xml: string) {
   ) as Record<string, string>[];
   const page = Number(tag('pageNo')) || 1;
   const size = Number(tag('numOfRows')) || records.length;
-  const total = Number(tag('totalCount'));
+  const rawTotal = tag('totalCount');
+  const total =
+    /^\d+$/.test(rawTotal) && Number.isSafeInteger(Number(rawTotal))
+      ? Number(rawTotal)
+      : null;
   return {
     records,
-    limited: records.length > 0 && (page - 1) * size + records.length < total,
+    total,
+    limited:
+      total !== null &&
+      records.length > 0 &&
+      (page - 1) * size + records.length < total,
   };
 }
 export function governmentItem(

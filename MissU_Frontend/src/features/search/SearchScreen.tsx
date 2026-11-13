@@ -24,7 +24,13 @@ import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { formatFoundAt, type PublicItem, type SearchFilters } from '@/lib/items';
 import { itemRepository } from '@/lib/publicItems';
-import { searchInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
+import {
+  searchInstitutions,
+  portalRegistrations,
+  previewInstitutions,
+  openInstitution,
+  type InstitutionItem,
+} from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
@@ -50,11 +56,14 @@ export default function SearchScreen() {
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [portalCount, setPortalCount] = useState<number | null | undefined>();
+  const countVersion = useRef(0);
   const pending = useRef(false);
   const requestId = useRef(0);
   useEffect(
     () => () => {
       requestId.current += 1;
+      countVersion.current++;
     },
     [],
   );
@@ -80,22 +89,43 @@ export default function SearchScreen() {
     setConditions(false);
     setValidation('');
     setState({ status: 'loading', items: [] });
+    const countId = ++countVersion.current;
+    setPortalCount(undefined);
+    if (values.period === 'all') {
+      void portalRegistrations(values)
+        .then(({ total }) => {
+          if (countId === countVersion.current) setPortalCount(total);
+        })
+        .catch(() => {
+          if (countId === countVersion.current) setPortalCount(null);
+        });
+    }
     try {
       const members = itemRepository.search(values);
       const institutions = searchInstitutions(values);
-      void members
-        .then((items) => {
-          if (id === requestId.current && items.length)
-            setState({ status: 'success', items, notice: '기관 습득물을 확인하고 있어요.' });
-        })
+      let complete = false;
+      const firstRows: (PublicItem | InstitutionItem)[] = [];
+      const time = (item: PublicItem | InstitutionItem) =>
+        Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
+      function showFirst(rows: (PublicItem | InstitutionItem)[]) {
+        if (complete || id !== requestId.current || !rows.length) return;
+        firstRows.push(...rows);
+        setState({
+          status: 'success',
+          items: [...firstRows].sort((a, b) => time(b) - time(a)),
+          notice: '다른 기관의 보관품도 확인하고 있어요.',
+        });
+      }
+      void members.then(showFirst).catch(() => {});
+      void previewInstitutions(values)
+        .then(({ items }) => showFirst(items))
         .catch(() => {});
       const [member, agency] = await Promise.allSettled([members, institutions]);
+      complete = true;
       const items: (PublicItem | InstitutionItem)[] = [
         ...(member.status === 'fulfilled' ? member.value : []),
         ...(agency.status === 'fulfilled' ? agency.value.items : []),
       ];
-      const time = (item: PublicItem | InstitutionItem) =>
-        Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
       items.sort((a, b) => time(b) - time(a));
       const notices =
         agency.status === 'fulfilled'
@@ -168,6 +198,8 @@ export default function SearchScreen() {
         onChangeText={(query) => {
           if (pending.current) return;
           setFilters((f) => ({ ...f, query }));
+          countVersion.current++;
+          setPortalCount(undefined);
           setState(initialState);
           setValidation('');
         }}
@@ -221,6 +253,26 @@ export default function SearchScreen() {
           {state.notice}
         </Text>
       )}
+      {state.status !== 'idle' && filters.period === 'all' && (
+        <View>
+          <Text
+            accessibilityRole="header"
+            accessibilityLiveRegion="polite"
+            style={typography.heading}
+          >
+            {portalCount === undefined
+              ? '공공포털 등록 건수 확인 중…'
+              : portalCount === null
+                ? '공공포털 등록 건수 확인 불가'
+                : '공공포털 등록 ' + portalCount.toLocaleString('ko-KR') + '건'}
+          </Text>
+          {typeof portalCount === 'number' && (
+            <Text style={typography.body}>
+              지하철·공항 등 포털기관의 등록 기록이며, 반환된 물품도 포함될 수 있어요.
+            </Text>
+          )}
+        </View>
+      )}
       {state.status === 'success' &&
         (state.items.length ? (
           <Text
@@ -228,7 +280,7 @@ export default function SearchScreen() {
             accessibilityLiveRegion="polite"
             style={[typography.heading, styles.resultTitle]}
           >
-            검색 결과 {state.items.length}건
+            미슈에 표시한 물품 {state.items.length}건
           </Text>
         ) : (
           <>

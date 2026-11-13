@@ -22,6 +22,11 @@ class SearchInstitutionsDto extends InstitutionPageDto {
   @IsOptional() @Trim() @IsString() @Length(0, 80) place = '';
   @IsOptional() @IsIn(['all', '7', '30']) period = 'all';
 }
+class InstitutionPreviewDto {
+  @IsOptional() @Trim() @IsString() @Length(0, 80) q = '';
+  @IsOptional() @Trim() @IsString() @Length(0, 80) place = '';
+  @IsOptional() @IsIn(['all', '7', '30']) period = 'all';
+}
 
 @Public()
 @Controller('api/v1/institution-items')
@@ -50,6 +55,32 @@ export class InstitutionItemsController {
   async nearby(@Query() query: NearbyDto, @Req() req: SessionRequest) {
     await this.rates.consume('institution-nearby:' + req.ip, 20, 60000);
     return { data: await this.service.nearby(query) };
+  }
+  @Get('preview')
+  async preview(
+    @Query() query: InstitutionPreviewDto,
+    @Req() req: SessionRequest,
+  ) {
+    await this.rates.consume('institution-preview:' + req.ip, 30, 60000);
+    return {
+      data: await this.service.preview(query.q, query.place, query.period),
+    };
+  }
+  @Get('registrations')
+  async registrations(
+    @Query() query: SearchInstitutionsDto,
+    @Req() req: SessionRequest,
+  ) {
+    await this.rates.consume('institution-registrations:' + req.ip, 30, 60000);
+    // 명칭·보관처 조회는 기간 제한을 지원하지 않아 기간 검색에는 무관한 수를 보내지 않습니다.
+    return {
+      data: {
+        total:
+          query.period === 'all'
+            ? await this.service.portalRegistrations(query.q, query.place)
+            : null,
+      },
+    };
   }
   @Get('recent')
   async recent(@Req() req: SessionRequest, @Query() query: InstitutionPageDto) {

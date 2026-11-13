@@ -238,6 +238,16 @@ export function completeOpenApi(document: OpenAPIObject) {
         }),
       ),
     ],
+    'get /api/v1/institution-items/registrations': [
+      200,
+      envelope(
+        object({ total: { type: 'integer', nullable: true, minimum: 0 } }),
+      ),
+    ],
+    'get /api/v1/institution-items/preview': [
+      200,
+      envelope(object({ items: array(ref('InstitutionItem')) })),
+    ],
     'get /api/v1/institution-items/nearby': [
       200,
       envelope(
@@ -389,6 +399,8 @@ export function completeOpenApi(document: OpenAPIObject) {
   contracts['get /api/v1/institution-items/recent'] =
     contracts['get /api/v1/institution-items'];
   const anonymousGet = new Set([
+    '/api/v1/institution-items/registrations',
+    '/api/v1/institution-items/preview',
     '/api/v1/institution-items/recent',
     '/api/v1/institution-items',
     '/api/v1/institution-items/nearby',

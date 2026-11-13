@@ -55,6 +55,33 @@ describe('기관 습득물', () => {
     expect(result.items.map((x) => x.id)).toEqual(['hansung:1']);
     expect(result.notices).toHaveLength(2);
   });
+  it('포털 전체 등록 수는 상세 카드 수나 역별 합계가 아닌 원본 totalCount로 읽는다', async () => {
+    let calls = 0;
+    const api = service((url) => {
+      calls++;
+      expect(url.searchParams.get('PRDT_NM')).toBe('지갑');
+      expect(url.searchParams.has('DEP_PLACE')).toBe(false);
+      return xml([row]).replace(
+        '<items>',
+        '<totalCount>2700</totalCount><items>',
+      );
+    });
+    expect(await api.portalRegistrations('지갑', '')).toBe(2700);
+    expect(calls).toBe(1);
+    expect(
+      await service(() => xml([])).portalRegistrations('지갑', ''),
+    ).toBeNull();
+  });
+  it('먼저 표시할 검색 결과에는 장소·날짜가 맞는 보관품만 담고 전국 기관을 기다리지 않는다', async () => {
+    const api = service((url) => {
+      expect(url.host).toBe('www.hansung.ac.kr');
+      return school;
+    });
+    expect(
+      (await api.preview('이어폰', '', 'all')).items.map((i) => i.id),
+    ).toEqual(['hansung:1']);
+    expect((await api.preview('이어폰', '강남역', 'all')).items).toEqual([]);
+  });
   it('지도에는 반경 안의 일치하는 보관처와 현재 보관 중인 물품만 담는다', async () => {
     const api = service((u) => {
       if (u.host === 'dapi.kakao.com')
