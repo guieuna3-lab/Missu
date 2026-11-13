@@ -1,5 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { itemRepository, formatFoundAt, type PublicItem } from '@/lib/items';
 import { recentInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -13,39 +13,47 @@ import { previewActivity } from '@/lib/preview/fixtures';
 import { isPreview } from '@/lib/preview/PreviewProvider';
 
 type HomeItem = PublicItem | InstitutionItem;
-const recentItemLimit = 10;
+const pageSize = 10;
 // 기관 날짜의 정밀도는 일 단위입니다. 서울 날짜의 시작을 기준으로 회원 등록 시각과 비교합니다.
 const recentTime = (item: HomeItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : (item.createdAt ?? item.foundAt));
+const newestFirst = (a: HomeItem, b: HomeItem) =>
+  recentTime(b) - recentTime(a) || b.id.localeCompare(a.id);
 export function HomeScreen() {
   const [recent, setRecent] = useState<HomeItem[]>([]);
+  const [visibleCount, setVisibleCount] = useState(pageSize);
+  const [cursor, setCursor] = useState<string | null>();
+  const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
+  const generation = useRef(0);
+  const fetchingMore = useRef(false);
   const [notice, setNotice] = useState('');
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   useFocusEffect(
     useCallback(() => {
-      let active = true;
+      const current = ++generation.current;
+      fetchingMore.current = false;
+      setVisibleCount(pageSize);
+      setCursor(undefined);
+      setMoreStatus('idle');
       setState('loading');
       setNotice('');
-      const members = itemRepository.search({ query: '', place: '', period: 'all' });
+      const members = itemRepository.recentPage();
       void members
-        .then((items) => {
-          if (active && items.length) {
-            setRecent(items.slice(0, recentItemLimit));
+        .then(({ items }) => {
+          if (current === generation.current && items.length) {
+            setRecent(items);
             setState('ready');
           }
         })
         .catch(() => {});
       void Promise.allSettled([members, recentInstitutions()]).then(([member, agency]) => {
-        if (!active) return;
+        if (current !== generation.current) return;
         const rows: HomeItem[] = [
-          ...(member.status === 'fulfilled' ? member.value : []),
+          ...(member.status === 'fulfilled' ? member.value.items : []),
           ...(agency.status === 'fulfilled' ? agency.value.items : []),
         ];
-        setRecent(
-          rows
-            .sort((a, b) => recentTime(b) - recentTime(a) || a.id.localeCompare(b.id))
-            .slice(0, recentItemLimit),
-        );
+        setRecent(rows.sort(newestFirst));
+        setCursor(member.status === 'fulfilled' ? member.value.nextCursor : null);
         const messages =
           agency.status === 'fulfilled'
             ? agency.value.notices.filter((n) => n.includes('조회할 수 없어요'))
@@ -55,10 +63,37 @@ export function HomeScreen() {
         setState(member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'ready');
       });
       return () => {
-        active = false;
+        generation.current++;
       };
     }, []),
   );
+
+  async function showMore() {
+    if (fetchingMore.current || cursor === undefined) return;
+    const nextCount = visibleCount + pageSize;
+    const memberCount = recent.filter((item) => !('source' in item)).length;
+    // 마지막 회원 페이지보다 오래된 기관 카드가 먼저 펼쳐지지 않게 합니다.
+    if (cursor && nextCount > memberCount) {
+      const current = generation.current;
+      fetchingMore.current = true;
+      setMoreStatus('loading');
+      try {
+        const page = await itemRepository.recentPage(cursor);
+        if (current !== generation.current) return;
+        const rows = new Map(recent.map((item) => [item.id, item]));
+        for (const item of page.items) rows.set(item.id, item);
+        setRecent([...rows.values()].sort(newestFirst));
+        setCursor(page.nextCursor);
+        setMoreStatus('idle');
+      } catch {
+        if (current === generation.current) setMoreStatus('error');
+        return;
+      } finally {
+        if (current === generation.current) fetchingMore.current = false;
+      }
+    }
+    setVisibleCount(nextCount);
+  }
 
   return (
     <Screen>
@@ -118,7 +153,7 @@ export function HomeScreen() {
             </Text>
           )}
           {state === 'ready' &&
-            recent.map((item) => (
+            recent.slice(0, visibleCount).map((item) => (
               <Pressable
                 key={item.id}
                 accessibilityRole="button"
@@ -152,6 +187,24 @@ export function HomeScreen() {
                 </View>
               </Pressable>
             ))}
+          {state === 'ready' &&
+            cursor !== undefined &&
+            (recent.length > visibleCount || !!cursor) && (
+              <ActionButton
+                label={
+                  moreStatus === 'loading'
+                    ? '불러오는 중…'
+                    : moreStatus === 'error'
+                      ? '다시 시도'
+                      : '더보기'
+                }
+                variant="outline"
+                onPress={moreStatus === 'loading' ? undefined : () => void showMore()}
+              />
+            )}
+          {moreStatus === 'error' && (
+            <Text style={styles.secondary}>다음 물품을 불러오지 못했어요.</Text>
+          )}
           {state === 'ready' && !!notice && <Text style={styles.secondary}>{notice}</Text>}
         </View>
       </ScrollView>

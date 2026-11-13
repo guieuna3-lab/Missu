@@ -100,6 +100,29 @@ describe('기관 습득물', () => {
       ['lost112:F0001:1', '경찰', 0],
     ]);
   });
+  it('홈에서 더 볼 수 있도록 첫 10건 뒤의 보관품도 최신순으로 반환한다', async () => {
+    const board =
+      '<table><th>작성일</th>' +
+      Array.from(
+        { length: 12 },
+        (_, i) =>
+          '<tr><td><a href="/bbs/onestop/1718/' +
+          (i + 1) +
+          '/artclView.do">물품 보관중</a></td><td class="td-date">2026.01.' +
+          String(i + 1).padStart(2, '0') +
+          '</td></tr>',
+      ).join('') +
+      '</table>';
+    const api = service((u) =>
+      u.host === 'www.hansung.ac.kr' ? board : xml([]),
+    );
+    const { items } = await api.recent();
+    expect(items).toHaveLength(12);
+    expect(items.slice(10).map((i) => i.id)).toEqual([
+      'hansung:2',
+      'hansung:1',
+    ]);
+  });
   it('역 이름과 노선이 같은 보관품만 해당 역에 올린다', async () => {
     const site = {
       place_name: '한성대입구역 4호선',
