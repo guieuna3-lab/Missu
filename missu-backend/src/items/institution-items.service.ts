@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import {
@@ -25,6 +26,9 @@ type Located = InstitutionItem & {
   distanceM: number;
 };
 type Result<T> = { items: T[]; notices: string[] };
+// 기관마다 원본 페이지와 아직 상세 확인하지 않은 후보 위치가 다릅니다.
+type Position = [page: number, offset: number] | null;
+type PageBatch = Batch & { next?: Position };
 type KakaoPlace = {
   place_name: string;
   road_address_name: string;
@@ -75,17 +79,17 @@ export class InstitutionItemsService {
     });
     return value;
   }
-  private async school(q: string, days: string) {
+  private async school(q: string, days: string, page = 1) {
     const url = new URL(
       'https://www.hansung.ac.kr/bbs/onestop/1718/artclList.do',
     );
-    url.searchParams.set('page', '1');
+    url.searchParams.set('page', String(page));
     if (q) {
       url.searchParams.set('findType', 'sj');
       url.searchParams.set('findWord', q);
     }
     if (since(days)) url.searchParams.set('rgsBgndeStr', since(days));
-    return schoolPage(await this.text(url.href, url));
+    return schoolPage(await this.text(url.href, url), page);
   }
   private async list(
     source: Provider,
@@ -110,26 +114,26 @@ export class InstitutionItemsService {
     days: string,
     site?: Custodian,
     recent = false,
-  ): Promise<Batch> {
+    position: Exclude<Position, null> = [1, 0],
+  ): Promise<PageBatch> {
+    const [pageNo, offset] = position;
     const station = source === '지하철' && site?.name.match(/^(.+역)\s+(.+)$/u);
     // 다른 도시의 동명·동일 호선 역은 기관 이름만으로 지도에 배치할 수 없습니다.
-    if (station && site && !(await this.uniqueStation(site, station[1])))
+    if (station && site && !(await this.uniqueStation(site)))
       return { items: [], limited: true };
     const road = site && roadKey(site.address);
     if (site && !station && !road) return { items: [], limited: true };
-    const filters: Record<string, string> = { numOfRows: '40', pageNo: '1' };
+    const filters: Record<string, string> = {
+      numOfRows: '40',
+      pageNo: String(pageNo),
+    };
     if (q) filters.PRDT_NM = q;
     let operation = 'InfoAccTpNmCstdyPlace';
     if (recent) {
       operation = 'InfoAccToClAreaPd';
-      filters.START_YMD = since('30').replaceAll('-', '');
-      filters.END_YMD = new Date(Date.now() + 9 * 3600000)
-        .toISOString()
-        .slice(0, 10)
-        .replaceAll('-', '');
-      filters.numOfRows = '100';
+      filters.numOfRows = '60';
     } else if (station) {
-      filters.DEP_PLACE = station[1];
+      filters.DEP_PLACE = station[1] + '(' + station[2] + ')';
     } else if (site) {
       operation = 'InfoAccToLc';
       filters.ADDR = site.address.match(
@@ -141,13 +145,19 @@ export class InstitutionItemsService {
     const globalRail = source === '지하철' && !place && !site;
     const requests = [this.list(source, operation, filters)];
     if (globalRail) {
-      for (const venue of ['역', '유실물센터']) {
+      // 명칭 조회는 기관별로 결과가 몰릴 수 있어 노선과 센터 목록을 함께 순회합니다.
+      for (const venue of [
+        '역',
+        '유실물센터',
+        '호선',
+        ...Array.from({ length: 9 }, (_, i) => i + 1 + '호선'),
+      ]) {
         requests.push(
           this.list(source, 'InfoAccTpNmCstdyPlace', {
             ...(q ? { PRDT_NM: q } : {}),
             DEP_PLACE: venue,
-            numOfRows: '80',
-            pageNo: '1',
+            numOfRows: '30',
+            pageNo: String(pageNo),
           }),
         );
       }
@@ -193,9 +203,21 @@ export class InstitutionItemsService {
     const shortlist = globalRail
       ? candidates.filter((r) => storageRank(r.depPlace) > 0)
       : candidates;
-    const limit = recent || globalRail ? 12 : 8;
+    if (globalRail && !recent) {
+      // 같은 보관처의 두 번째 물품보다 다른 보관처의 첫 물품을 먼저 확인합니다.
+      const seen = new Map<string, number>();
+      const ranks = new Map<Record<string, string>, number>();
+      for (const row of shortlist) {
+        const storage = clean(row.depPlace);
+        const rank = seen.get(storage) || 0;
+        ranks.set(row, rank);
+        seen.set(storage, rank + 1);
+      }
+      shortlist.sort((a, b) => ranks.get(a)! - ranks.get(b)!);
+    }
+    const limit = site ? 12 : 24;
     const checked = await Promise.allSettled(
-      shortlist.slice(0, limit).map(async (row) => {
+      shortlist.slice(offset, offset + limit).map(async (row) => {
         const detail = await this.list(source, 'DetailInfo', {
           ATC_ID: row.atcId,
           FD_SN: row.fdSn,
@@ -216,10 +238,16 @@ export class InstitutionItemsService {
     );
     return {
       items,
+      next:
+        offset + limit < shortlist.length
+          ? [pageNo, offset + limit]
+          : pages.some((p) => p.limited) && pageNo < 9999
+            ? [pageNo + 1, 0]
+            : null,
       limited:
         pages.length < requests.length ||
         pages.some((p) => p.limited) ||
-        shortlist.length > limit ||
+        shortlist.length > offset + limit ||
         checked.some((r) => r.status === 'rejected'),
     };
   }
@@ -240,66 +268,135 @@ export class InstitutionItemsService {
       };
     }
   }
-  async search(q: string, place: string, days: string) {
-    const result = combine(
-      await Promise.all(
-        sourceList.map((source) =>
-          this.part(source, () =>
-            source === '한성대'
-              ? this.school(q, days)
-              : this.records(source, q, place, days),
-          ),
-        ),
-      ),
+  async search(q: string, place: string, days: string, cursor?: string) {
+    const storagePlace = place.replace(
+      /^(.+역)\s+([^()]+(?:호선|선))$/u,
+      '$1($2)',
     );
+    const result = await this.page(q, storagePlace, days, false, cursor);
     result.items = result.items
       .filter(
         (x) =>
           x.date >= since(days) &&
-          (!place || clean(x.storage).includes(clean(place))),
+          (!storagePlace ||
+            stationKey(x.storage).includes(stationKey(storagePlace))),
       )
       .sort((a, b) => b.date.localeCompare(a.date));
     return result;
   }
-  async recent() {
-    const result = combine(
-      await Promise.all(
-        sourceList.map((source) =>
-          this.part(source, () =>
-            source === '한성대'
-              ? this.school('', 'all')
-              : this.records(source, '', '', '30', undefined, true),
-          ),
-        ),
-      ),
-    );
-    // 이미 보관 상태를 확인한 목록을 한 번 보내고 홈에서 10건씩 펼칩니다.
+  async recent(cursor?: string) {
+    const result = await this.page('', '', 'all', true, cursor);
     result.items.sort(
       (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
     );
     return result;
   }
-  private async uniqueStation(site: Custodian, name: string) {
+  private async page(
+    q: string,
+    place: string,
+    days: string,
+    recent: boolean,
+    cursor?: string,
+  ) {
+    let positions: Position[] = sourceList.map(() => [1, 0]);
+    if (cursor) {
+      try {
+        const parsed: unknown = JSON.parse(
+          Buffer.from(cursor, 'base64url').toString('utf8'),
+        );
+        if (
+          !Array.isArray(parsed) ||
+          parsed.length !== sourceList.length ||
+          !parsed.every(
+            (p) =>
+              p === null ||
+              (Array.isArray(p) &&
+                p.length === 2 &&
+                Number.isInteger(p[0]) &&
+                p[0] >= 1 &&
+                p[0] <= 9999 &&
+                Number.isInteger(p[1]) &&
+                p[1] >= 0 &&
+                p[1] <= 1000),
+          )
+        )
+          throw Error();
+        positions = parsed;
+      } catch {
+        fail(400, 'VALIDATION_ERROR', '다음 페이지 값이 올바르지 않습니다.');
+      }
+    }
+    const next: Position[] = sourceList.map(() => null);
+    const parts = await Promise.all(
+      sourceList.map((source, i) =>
+        this.part(source, async () => {
+          const pos = positions[i];
+          if (!pos) return { items: [], limited: false };
+          if (source === '한성대') {
+            const batch = await this.school(q, days, pos[0]);
+            next[i] = batch.limited && pos[0] < 9999 ? [pos[0] + 1, 0] : null;
+            return batch;
+          }
+          const batch = await this.records(
+            source,
+            q,
+            place,
+            days,
+            undefined,
+            recent,
+            pos,
+          );
+          next[i] = batch.next ?? null;
+          return batch;
+        }),
+      ),
+    );
+    const result = combine(parts);
+    if (
+      !result.items.length &&
+      parts.every(
+        (p, i) =>
+          !positions[i] || p.notices.some((n) => n.includes('현재 조회')),
+      )
+    ) {
+      if (cursor)
+        fail(
+          503,
+          'EXTERNAL_UNAVAILABLE',
+          '기관 자료를 불러오지 못했어요. 다시 시도해 주세요.',
+        );
+    }
+    return {
+      ...result,
+      nextCursor: next.some(Boolean)
+        ? Buffer.from(JSON.stringify(next)).toString('base64url')
+        : null,
+    };
+  }
+  private async uniqueStation(site: Custodian) {
     const url = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
     url.search = new URLSearchParams({
-      query: name,
+      query: site.name,
       category_group_code: 'SW8',
       size: '15',
     }).toString();
-    const json = JSON.parse(
-      await this.text(url.href, url, {
-        Authorization: 'KakaoAK ' + process.env.KAKAO_REST_API_KEY,
-      }),
-    ) as { documents: KakaoPlace[]; meta?: { is_end: boolean } };
-    const matches = json.documents.filter(
-      (p) => stationKey(p.place_name) === stationKey(site.name),
-    );
-    return (
-      json.meta?.is_end === true &&
-      matches.length === 1 &&
-      distance(site, { lat: Number(matches[0].y), lng: Number(matches[0].x) }) <
-        100
-    );
+    let matched = false;
+    for (let page = 1; page <= 3; page++) {
+      url.searchParams.set('page', String(page));
+      const json = JSON.parse(
+        await this.text(url.href, url, {
+          Authorization: 'KakaoAK ' + process.env.KAKAO_REST_API_KEY,
+        }),
+      ) as { documents: KakaoPlace[]; meta?: { is_end: boolean } };
+      for (const p of json.documents) {
+        if (stationKey(p.place_name) !== stationKey(site.name)) continue;
+        if (distance(site, { lat: Number(p.y), lng: Number(p.x) }) >= 100)
+          return false;
+        matched = true;
+      }
+      if (json.meta?.is_end) return matched;
+    }
+    return false;
   }
   private async places(
     source: Source,

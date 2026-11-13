@@ -140,7 +140,7 @@ describe('기관 습득물', () => {
             u.searchParams.get('category_group_code') === 'SW8' ? [site] : [],
         });
       if (u.pathname.endsWith('DetailInfo')) return xml([stored]);
-      expect(u.searchParams.get('DEP_PLACE')).toBe('한성대입구역');
+      expect(u.searchParams.get('DEP_PLACE')).toBe('한성대입구역(4호선)');
       return xml([stored, { ...stored, fdSn: '2', depPlace: '다른역(4호선)' }]);
     });
     const data = await api.nearby(
@@ -179,5 +179,45 @@ describe('기관 습득물', () => {
       result.items.filter((i) => i.source === '지하철').map((i) => i.name),
     ).toEqual(['카드지갑']);
     expect(details).toBe(1);
+  });
+  it('홈과 검색이 같은 원본 페이지의 나머지 물품부터 확인한 뒤 실제 다음 페이지를 읽는다', async () => {
+    const wallets = Array.from({ length: 33 }, (_, n) => ({
+      ...row,
+      atcId: 'W' + n,
+      fdPrdtNm: '지갑',
+      depPlace: '테스트역(2호선)',
+    }));
+    const api = service((u) => {
+      if (u.host === 'www.hansung.ac.kr')
+        return '<table><th>작성일</th></table>';
+      if (!u.pathname.includes('LosPtfund')) return xml([]);
+      if (u.pathname.endsWith('DetailInfo'))
+        return xml(
+          wallets.filter((w) => w.atcId === u.searchParams.get('ATC_ID')),
+        );
+      if (u.searchParams.get('DEP_PLACE') !== '2호선') return xml([]);
+      const page = Number(u.searchParams.get('pageNo'));
+      return xml(wallets.slice((page - 1) * 30, page * 30)).replace(
+        '<items>',
+        '<totalCount>33</totalCount><numOfRows>30</numOfRows><pageNo>' +
+          page +
+          '</pageNo><items>',
+      );
+    });
+    for (const fetch of [
+      (cursor?: string) => api.recent(cursor),
+      (cursor?: string) => api.search('지갑', '', 'all', cursor),
+    ]) {
+      const a = await fetch(),
+        b = await fetch(a.nextCursor!),
+        c = await fetch(b.nextCursor!);
+      expect([a.items.length, b.items.length, c.items.length]).toEqual([
+        24, 6, 3,
+      ]);
+      expect(
+        new Set([...a.items, ...b.items, ...c.items].map((i) => i.id)).size,
+      ).toBe(33);
+      expect(c.nextCursor).toBeNull();
+    }
   });
 });
