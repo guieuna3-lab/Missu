@@ -29,6 +29,17 @@ type Result<T> = { items: T[]; notices: string[] };
 // 기관마다 원본 페이지와 아직 상세 확인하지 않은 후보 위치가 다릅니다.
 type Position = [page: number, offset: number] | null;
 type PageBatch = Batch & { next?: Position };
+type CountProgress = {
+  status: 'counting' | 'complete' | 'unavailable';
+  total: number | null;
+};
+type CountScan = {
+  ids: Set<string>;
+  cursor?: string;
+  expires: number;
+  result: CountProgress;
+  running?: Promise<CountProgress>;
+};
 type KakaoPlace = {
   place_name: string;
   road_address_name: string;
@@ -82,6 +93,7 @@ function combine<T extends InstitutionItem>(parts: Result<T>[]): Result<T> {
 @Injectable()
 export class InstitutionItemsService {
   constructor(private readonly http: ExternalHttpService) {}
+  private readonly counts = new Map<string, CountScan>();
   // 동일 기관 상세 요청을 합치고, 만료 시 원본 보관 상태를 다시 읽습니다.
   private cache = new Map<string, { until: number; value: Promise<string> }>();
   private text(key: string, url: URL, headers?: Record<string, string>) {
@@ -169,6 +181,7 @@ export class InstitutionItemsService {
     site?: Custodian,
     recent = false,
     position: Exclude<Position, null> = [1, 0],
+    strict = false,
   ): Promise<PageBatch> {
     const [pageNo, offset] = position;
     const station = source === '지하철' && site?.name.match(/^(.+역)\s+(.+)$/u);
@@ -222,6 +235,18 @@ export class InstitutionItemsService {
       p.status === 'fulfilled' ? [p.value] : [],
     );
     if (!pages.length) throw Error('Source unavailable');
+    // 목록에서는 일부 결과를 제공할 수 있지만 전체 건수에는 누락된 응답을 허용하지 않습니다.
+    if (
+      strict &&
+      (pages.length !== requests.length ||
+        pages.some(
+          (p) =>
+            p.total === null ||
+            (p.limited && pageNo >= 9999) ||
+            (p.total > 0 && !p.records.length && pageNo === 1),
+        ))
+    )
+      throw Error('Incomplete agency list');
     const records = [
       ...new Map(
         pages.flatMap((p) => p.records).map((r) => [r.atcId + ':' + r.fdSn, r]),
@@ -280,6 +305,7 @@ export class InstitutionItemsService {
         const current = detail.records.find(
           (x) => x.atcId === row.atcId && x.fdSn === row.fdSn,
         );
+        if (!current && strict) throw Error('Missing detail');
         if (
           !current ||
           (site && clean(current.depPlace || '') !== clean(row.depPlace))
@@ -292,6 +318,8 @@ export class InstitutionItemsService {
     const items = checked.flatMap((r) =>
       r.status === 'fulfilled' && r.value ? [r.value] : [],
     );
+    if (strict && checked.some((r) => r.status === 'rejected'))
+      throw Error('Incomplete agency details');
     return {
       items,
       next:
@@ -324,12 +352,25 @@ export class InstitutionItemsService {
       };
     }
   }
-  async search(q: string, place: string, days: string, cursor?: string) {
+  async search(
+    q: string,
+    place: string,
+    days: string,
+    cursor?: string,
+    strict = false,
+  ) {
     const storagePlace = place.replace(
       /^(.+역)\s+([^()]+(?:호선|선))$/u,
       '$1($2)',
     );
-    const result = await this.page(q, storagePlace, days, false, cursor);
+    const result = await this.page(
+      q,
+      storagePlace,
+      days,
+      false,
+      cursor,
+      strict,
+    );
     result.items = result.items
       .filter(
         (x) =>
@@ -339,6 +380,58 @@ export class InstitutionItemsService {
       )
       .sort((a, b) => b.date.localeCompare(a.date));
     return result;
+  }
+  async searchTotal(
+    q: string,
+    place: string,
+    days: string,
+  ): Promise<CountProgress> {
+    const key = JSON.stringify([q, place, days, since(days)]);
+    const now = Date.now();
+    for (const [k, scan] of this.counts) {
+      if (!scan.running && scan.expires <= now) this.counts.delete(k);
+    }
+    let scan = this.counts.get(key);
+    if (!scan) {
+      if (this.counts.size >= 48) return { status: 'unavailable', total: null };
+      scan = {
+        ids: new Set(),
+        result: { status: 'counting', total: null },
+        expires: now + 120000,
+      };
+      this.counts.set(key, scan);
+    }
+    if (scan.result.status !== 'counting') return scan.result;
+    if (scan.running) return scan.running;
+    const current = scan;
+    // 한 번에 원본 한 페이지를 확인합니다. 같은 검색은 진행 위치와 요청을 공유합니다.
+    current.running = this.search(q, place, days, current.cursor, true)
+      .then((page) => {
+        if (page.notices.some((notice) => notice.includes('현재 조회')))
+          throw Error('Missing source');
+        for (const item of page.items) current.ids.add(item.id);
+        if (page.nextCursor) {
+          if (page.nextCursor === current.cursor)
+            throw Error('Repeated cursor');
+          current.cursor = page.nextCursor;
+        } else {
+          current.result = { status: 'complete', total: current.ids.size };
+          current.ids.clear();
+        }
+        return current.result;
+      })
+      .catch(() => {
+        current.ids.clear();
+        current.result = { status: 'unavailable', total: null };
+        return current.result;
+      })
+      .finally(() => {
+        current.running = undefined;
+        current.expires =
+          Date.now() +
+          (current.result.status === 'unavailable' ? 15000 : 300000);
+      });
+    return current.running;
   }
   async recent(cursor?: string) {
     const result = await this.page('', '', 'all', true, cursor);
@@ -353,6 +446,7 @@ export class InstitutionItemsService {
     days: string,
     recent: boolean,
     cursor?: string,
+    strict = false,
   ) {
     let positions: Position[] = sourceList.map(() => [1, 0]);
     if (cursor) {
@@ -390,6 +484,8 @@ export class InstitutionItemsService {
           if (!pos) return { items: [], limited: false };
           if (source === '한성대') {
             const batch = await this.school(q, days, pos[0]);
+            if (strict && batch.limited && pos[0] >= 9999)
+              throw Error('Incomplete school board');
             next[i] = batch.limited && pos[0] < 9999 ? [pos[0] + 1, 0] : null;
             return batch;
           }
@@ -401,6 +497,7 @@ export class InstitutionItemsService {
             undefined,
             recent,
             pos,
+            strict,
           );
           next[i] = batch.next ?? null;
           return batch;

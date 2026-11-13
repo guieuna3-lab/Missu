@@ -82,6 +82,51 @@ describe('기관 습득물', () => {
     ).toEqual(['hansung:1']);
     expect((await api.preview('이어폰', '강남역', 'all')).items).toEqual([]);
   });
+  it('끝 페이지까지 확인하고 페이지·기관 간 같은 관리번호를 한 번만 센다', async () => {
+    const api = service(() => school);
+    const item = (id: string) =>
+      ({ id }) as Awaited<ReturnType<typeof api.search>>['items'][number];
+    const search = jest
+      .spyOn(api, 'search')
+      .mockResolvedValueOnce({
+        items: [item('hansung:1'), item('lost112:1:1')],
+        nextCursor: 'second',
+        notices: [],
+      })
+      .mockResolvedValueOnce({
+        items: [item('lost112:1:1'), item('lost112:2:1')],
+        nextCursor: null,
+        notices: [],
+      });
+    const first = await Promise.all([
+      api.searchTotal('지갑', '', 'all'),
+      api.searchTotal('지갑', '', 'all'),
+    ]);
+    expect(first).toEqual(Array(2).fill({ status: 'counting', total: null }));
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'complete',
+      total: 3,
+    });
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'complete',
+      total: 3,
+    });
+    expect(search).toHaveBeenCalledTimes(2);
+  });
+  it('확인하지 못한 기관이 있으면 일부 합계를 전체로 보내지 않는다', async () => {
+    const api = service(() => school);
+    jest
+      .spyOn(api, 'search')
+      .mockResolvedValue({
+        items: [],
+        nextCursor: null,
+        notices: ['경찰 자료를 현재 조회할 수 없어요.'],
+      });
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'unavailable',
+      total: null,
+    });
+  });
   it('지도에는 반경 안의 일치하는 보관처와 현재 보관 중인 물품만 담는다', async () => {
     const api = service((u) => {
       if (u.host === 'dapi.kakao.com')

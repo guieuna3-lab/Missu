@@ -36,14 +36,8 @@ function firstPage(path: string, cursor?: string) {
   }, forget);
   return value;
 }
-export function previewInstitutions(filters?: SearchFilters) {
-  const params = new URLSearchParams();
-  if (filters) {
-    params.set('q', filters.query.trim());
-    params.set('place', filters.place.trim());
-    params.set('period', filters.period);
-  }
-  return mapApi<{ items: InstitutionItem[] }>('/institution-items/preview?' + params);
+export function previewInstitutions() {
+  return mapApi<{ items: InstitutionItem[] }>('/institution-items/preview');
 }
 export function recentInstitutions(cursor?: string) {
   return firstPage(
@@ -51,22 +45,26 @@ export function recentInstitutions(cursor?: string) {
     cursor,
   );
 }
-export function searchInstitutions(filters: SearchFilters, cursor?: string) {
-  const params = new URLSearchParams({
+function institutionQuery(filters: SearchFilters) {
+  return new URLSearchParams({
     q: filters.query.trim(),
     place: filters.place.trim(),
     period: filters.period,
   });
+}
+export function searchInstitutions(filters: SearchFilters, cursor?: string) {
+  const params = institutionQuery(filters);
   if (cursor) params.set('cursor', cursor);
   return firstPage('/institution-items?' + params, cursor);
 }
-export function portalRegistrations(filters: SearchFilters) {
-  const params = new URLSearchParams({
-    q: filters.query.trim(),
-    place: filters.place.trim(),
-    period: filters.period,
+export type InstitutionTotal = {
+  status: 'counting' | 'complete' | 'unavailable';
+  total: number | null;
+};
+export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
+  return mapApi<InstitutionTotal>('/institution-items/search-total?' + institutionQuery(filters), {
+    signal,
   });
-  return mapApi<{ total: number | null }>('/institution-items/registrations?' + params);
 }
 export function nearbyInstitutions(params: string, signal: AbortSignal) {
   return mapApi<Result<NearbyInstitution>>('/institution-items/nearby?' + params, { signal });
