@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
+import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import type { Party } from '@/lib/activity/types';
 import { isTimeText, normalizeTimeText, parseDate } from '@/lib/dateTime';
@@ -60,7 +61,7 @@ export function AppointmentProposalScreen({
       heading="약속 장소·시간 제안"
       actions={<ActionButton label="제안 보내기" onPress={send} loading={submitting} />}
     >
-      <FormField
+      <PlaceSearchField
         label="약속 장소"
         required
         placeholder="중앙도서관 1층 안내데스크"

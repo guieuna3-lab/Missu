@@ -4,7 +4,8 @@ import { ActivityIndicator } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { FlowScreen } from '@/components/FlowScreen';
-import { FormField, FormMessage } from '@/components/FormField';
+import { FormField, FormMessage, TextLink } from '@/components/FormField';
+import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { colors } from '@/constants/theme';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import { itemRepository, type PublicItem } from '@/lib/items';
@@ -23,6 +24,7 @@ export function RequestFormScreen() {
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const [feature, setFeature] = useState('');
   const [lostInfo, setLostInfo] = useState('');
+  const [placeQuery, setPlaceQuery] = useState<string>();
   const [errors, setErrors] = useState<{ feature?: string; lostInfo?: string }>({});
   const [requestError, setRequestError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -116,6 +118,22 @@ export function RequestFormScreen() {
         error={errors.lostInfo}
         onSubmitEditing={submit}
       />
+      {placeQuery === undefined ? (
+        <TextLink label="분실 장소 검색" onPress={() => setPlaceQuery('')} />
+      ) : (
+        <PlaceSearchField
+          label="분실 장소 검색"
+          placeholder="장소명 또는 주소"
+          value={placeQuery}
+          onChangeText={setPlaceQuery}
+          onPick={(name) => {
+            // 날짜·시간이나 비공개 특징을 지도 서비스에 보내지 않고 장소만 덧붙입니다.
+            setLostInfo((previous) => [previous.trim(), name].filter(Boolean).join(' · '));
+            setErrors((previous) => ({ ...previous, lostInfo: undefined }));
+            setPlaceQuery(undefined);
+          }}
+        />
+      )}
       <Card title="보관자에게만 전달돼요" blue>
         {'작성한 정보는 공개되지 않습니다.\n휴대전화 인증만으로 소유 여부가 확인되지는 않아요.'}
       </Card>
