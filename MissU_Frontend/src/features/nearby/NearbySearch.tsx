@@ -100,15 +100,7 @@ export function NearbySearch({
           <MapIcon source={mapArt.locate} size={22} tintColor={colors.blue} />
           <Text style={styles.actionText}>현재 위치에서 찾기</Text>
         </Pressable>
-        {!!term && (
-          <Pressable accessibilityRole="button" onPress={() => submit(term)} style={styles.choice}>
-            <MapIcon source={mapArt.search} size={20} />
-            <Text style={typography.label}>{term} 물품 검색</Text>
-          </Pressable>
-        )}
-        <Text style={typography.body}>
-          {term ? '장소' : recent.length ? '최근 검색' : '추천 검색'}
-        </Text>
+        {!term && <Text style={typography.body}>{recent.length ? '최근 검색' : '추천 검색'}</Text>}
         {!!term && !current && <Text style={typography.body}>장소를 찾고 있어요.</Text>}
         {!!term && current?.failed && (
           <View>
@@ -144,6 +136,12 @@ export function NearbySearch({
             </View>
           </Pressable>
         ))}
+        {!!term && (
+          <Pressable accessibilityRole="button" onPress={() => submit(term)} style={styles.choice}>
+            <MapIcon source={mapArt.search} size={20} />
+            <Text style={typography.label}>{term} 물품 검색</Text>
+          </Pressable>
+        )}
         {choices.map((choice) => (
           <Pressable
             key={choice}
