@@ -248,59 +248,45 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {!!state.notice && (
-        <Text accessibilityLiveRegion="polite" style={typography.body}>
-          {state.notice}
-        </Text>
-      )}
-      {state.status !== 'idle' && filters.period === 'all' && (
-        <View>
-          <Text
-            accessibilityRole="header"
-            accessibilityLiveRegion="polite"
-            style={typography.heading}
-          >
-            {portalCount === undefined
-              ? '공공포털 등록 건수 확인 중…'
-              : portalCount === null
-                ? '공공포털 등록 건수 확인 불가'
-                : '공공포털 등록 ' + portalCount.toLocaleString('ko-KR') + '건'}
-          </Text>
-          {typeof portalCount === 'number' && (
-            <Text style={typography.body}>
-              지하철·공항 등 포털기관의 등록 기록이며, 반환된 물품도 포함될 수 있어요.
-            </Text>
-          )}
-        </View>
-      )}
-      {state.status === 'success' &&
-        (state.items.length ? (
-          <Text
-            accessibilityRole="header"
-            accessibilityLiveRegion="polite"
-            style={[typography.heading, styles.resultTitle]}
-          >
-            미슈에 표시한 물품 {state.items.length}건
-          </Text>
-        ) : (
-          <>
+      {state.status !== 'idle' && (state.status === 'success' || filters.period === 'all') && (
+        <View style={styles.resultSummary}>
+          {state.status === 'success' && (
             <Text
               accessibilityRole="header"
               accessibilityLiveRegion="polite"
               style={typography.heading}
             >
-              {state.notice
-                ? '조회한 자료에서 일치하는 습득물이 없어요'
-                : '일치하는 습득물이 없어요'}
+              미슈에서 확인한 습득물 {state.items.length.toLocaleString('ko-KR')}건
             </Text>
-            <Text style={typography.body}>검색어를 줄이거나 기간·장소 조건을 넓혀 보세요.</Text>
-            <ActionButton
-              label="검색 조건 다시 설정"
-              variant="outline"
-              onPress={() => openConditions(true)}
-            />
-          </>
-        ))}
+          )}
+          {filters.period === 'all' && (
+            <Text accessibilityLiveRegion="polite" style={[typography.body, styles.hint]}>
+              {portalCount === undefined
+                ? '공공포털 전체 등록 건수 확인 중…'
+                : portalCount === null
+                  ? '공공포털 전체 등록 건수 확인 불가'
+                  : '공공포털 전체 등록 ' +
+                    portalCount.toLocaleString('ko-KR') +
+                    '건 · 반환된 물품 포함 가능'}
+            </Text>
+          )}
+        </View>
+      )}
+      {!!state.notice && (
+        <Text accessibilityLiveRegion="polite" style={typography.body}>
+          {state.notice}
+        </Text>
+      )}
+      {state.status === 'success' && !state.items.length && (
+        <>
+          <Text style={typography.body}>검색어를 줄이거나 기간·장소 조건을 넓혀 보세요.</Text>
+          <ActionButton
+            label="검색 조건 다시 설정"
+            variant="outline"
+            onPress={() => openConditions(true)}
+          />
+        </>
+      )}
     </>
   );
   return (
@@ -455,7 +441,7 @@ const styles = StyleSheet.create({
   option: { padding: 16, backgroundColor: colors.white, borderRadius: 12 },
   ink: { color: colors.ink },
   hint: { fontSize: 12, lineHeight: 18 },
-  resultTitle: { fontSize: 18, lineHeight: 28 },
+  resultSummary: { gap: 4 },
   feedback: { gap: 16, paddingVertical: 16 },
   separator: { height: 16 },
   footer: { marginTop: 16 },
