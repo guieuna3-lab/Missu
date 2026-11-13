@@ -151,13 +151,11 @@ export const itemRepository = {
     if (filters.place.trim()) q.set('place', filters.place.trim());
     if (filters.period !== 'all')
       q.set('foundFrom', new Date(searchTime - Number(filters.period) * 86400000).toISOString());
-    const page = await api<{ data: ServerItem[]; meta: { nextCursor: string | null } }>(
-      '/items?' + q.toString(),
-    );
-    return { items: page.data.map(fromServer), nextCursor: page.meta.nextCursor };
-  },
-  async search(filters: SearchFilters): Promise<PublicItem[]> {
-    return (await itemRepository.searchPage(filters)).items;
+    const page = await api<{
+      data: ServerItem[];
+      meta: { total?: number; nextCursor: string | null };
+    }>('/items?' + q.toString());
+    return { items: page.data.map(fromServer), ...page.meta };
   },
   async find(id: string): Promise<PublicItem | undefined> {
     try {
