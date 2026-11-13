@@ -36,4 +36,9 @@ export class InstitutionItemsController {
     await this.rates.consume('institution-nearby:' + req.ip, 20, 60000);
     return { data: await this.service.nearby(query) };
   }
+  @Get('recent')
+  async recent(@Req() req: SessionRequest) {
+    await this.rates.consume('institution-search:' + req.ip, 30, 60000);
+    return { data: await this.service.recent() };
+  }
 }

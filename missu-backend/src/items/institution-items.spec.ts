@@ -100,4 +100,61 @@ describe('기관 습득물', () => {
       ['lost112:F0001:1', '경찰', 0],
     ]);
   });
+  it('역 이름과 노선이 같은 보관품만 해당 역에 올린다', async () => {
+    const site = {
+      place_name: '한성대입구역 4호선',
+      road_address_name: '삼선교로 지하 1',
+      category_group_code: 'SW8',
+      x: '127',
+      y: '37.5',
+    };
+    const stored = { ...row, depPlace: '한성대입구역(4호선)' };
+    const api = service((u) => {
+      if (u.host === 'dapi.kakao.com')
+        return JSON.stringify({
+          meta: { is_end: true },
+          documents:
+            u.searchParams.get('category_group_code') === 'SW8' ? [site] : [],
+        });
+      if (u.pathname.endsWith('DetailInfo')) return xml([stored]);
+      expect(u.searchParams.get('DEP_PLACE')).toBe('한성대입구역');
+      return xml([stored, { ...stored, fdSn: '2', depPlace: '다른역(4호선)' }]);
+    });
+    const data = await api.nearby(
+      Object.assign(new NearbyDto(), { lat: 37.5, lng: 127, radiusM: 1000 }),
+    );
+    expect(data.items.map((item) => [item.storage, item.distanceM])).toEqual([
+      ['한성대입구역(4호선)', 0],
+    ]);
+  });
+  it('장소 없이 지갑을 찾아도 다른 포털기관에 밀린 역 보관품을 한 번만 표시한다', async () => {
+    const wallet = {
+      ...row,
+      fdPrdtNm: '카드지갑',
+      depPlace: '한성대입구역(4호선)',
+    };
+    let details = 0;
+    const api = service((u) => {
+      if (u.host === 'www.hansung.ac.kr') return school;
+      if (!u.pathname.includes('LosPtfund')) return xml([]);
+      if (u.pathname.endsWith('DetailInfo')) {
+        details++;
+        return xml([wallet]);
+      }
+      expect(u.searchParams.get('PRDT_NM')).toBe('지갑');
+      if (u.searchParams.has('DEP_PLACE')) return xml([wallet]);
+      return xml(
+        Array.from({ length: 40 }, (_, i) => ({
+          ...wallet,
+          atcId: 'SHOP' + i,
+          depPlace: '쇼핑몰 안내센터',
+        })),
+      );
+    });
+    const result = await api.search('지갑', '', 'all');
+    expect(
+      result.items.filter((i) => i.source === '지하철').map((i) => i.name),
+    ).toEqual(['카드지갑']);
+    expect(details).toBe(1);
+  });
 });

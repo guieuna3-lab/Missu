@@ -385,7 +385,10 @@ export function completeOpenApi(document: OpenAPIObject) {
       }),
     ],
   };
+  contracts['get /api/v1/institution-items/recent'] =
+    contracts['get /api/v1/institution-items'];
   const anonymousGet = new Set([
+    '/api/v1/institution-items/recent',
     '/api/v1/institution-items',
     '/api/v1/institution-items/nearby',
     '/api/v1/auth/csrf',
