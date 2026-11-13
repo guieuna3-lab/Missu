@@ -136,6 +136,14 @@ export function fromServer(item: ServerItem): PublicItem {
   };
 }
 export const itemRepository = {
+  async recentPage(cursor?: string) {
+    const params = new URLSearchParams({ limit: '50' });
+    if (cursor) params.set('cursor', cursor);
+    const page = await api<{ data: ServerItem[]; meta: { nextCursor: string | null } }>(
+      '/items?' + params.toString(),
+    );
+    return { items: page.data.map(fromServer), nextCursor: page.meta.nextCursor };
+  },
   async search(filters: SearchFilters): Promise<PublicItem[]> {
     const q = new URLSearchParams({ limit: '50' });
     if (filters.query.trim()) q.set('q', filters.query.trim());
