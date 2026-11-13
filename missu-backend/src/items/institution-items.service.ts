@@ -34,6 +34,10 @@ type KakaoPlace = {
 };
 // 카카오는 '한성대입구역 4호선', 포털은 '한성대입구역(4호선)'처럼 표기합니다.
 const stationKey = (name: string) => clean(name).replace(/[()]/g, '');
+const railStorage =
+  /역(?:\s*\(|$)|호선|지하철|도시철도|교통공사|경전철|메트로|역무실|전철/u;
+const storageRank = (name: string) =>
+  railStorage.test(name) ? 2 : /유실물센터/u.test(name) ? 1 : 0;
 const sourceList: Source[] = ['한성대', '경찰', '지하철'];
 const since = (days: string) =>
   /^(7|30)$/.test(days)
@@ -132,9 +136,34 @@ export class InstitutionItemsService {
         /[가-힣A-Za-z0-9·.]+(?:로|길|대로)\s+(?:지하\s*)?\d+(?:-\d+)?/u,
       )![0];
     } else if (place) filters.DEP_PLACE = place;
-    const page = await this.list(source, operation, filters);
+    // 포털 첫 페이지에는 공항과 상점도 섞여 있어, 장소를 입력하지 않은
+    // 검색에서는 역과 유실물센터 목록도 함께 읽고 같은 관리번호를 합칩니다.
+    const globalRail = source === '지하철' && !place && !site;
+    const requests = [this.list(source, operation, filters)];
+    if (globalRail) {
+      for (const venue of ['역', '유실물센터']) {
+        requests.push(
+          this.list(source, 'InfoAccTpNmCstdyPlace', {
+            ...(q ? { PRDT_NM: q } : {}),
+            DEP_PLACE: venue,
+            numOfRows: '80',
+            pageNo: '1',
+          }),
+        );
+      }
+    }
+    const settled = await Promise.allSettled(requests);
+    const pages = settled.flatMap((p) =>
+      p.status === 'fulfilled' ? [p.value] : [],
+    );
+    if (!pages.length) throw Error('Source unavailable');
+    const records = [
+      ...new Map(
+        pages.flatMap((p) => p.records).map((r) => [r.atcId + ':' + r.fdSn, r]),
+      ).values(),
+    ];
     const cutoff = since(days);
-    const candidates = page.records.filter((row) => {
+    const candidates = records.filter((row) => {
       if (!row.atcId || !row.fdSn || !row.depPlace) return false;
       if (
         cutoff &&
@@ -153,23 +182,20 @@ export class InstitutionItemsService {
           (storage.length >= 3 && name.includes(storage)))
       );
     });
-    if (recent)
-      candidates.sort((a, b) =>
-        (b.fdYmd || '')
-          .replaceAll('-', '')
-          .localeCompare((a.fdYmd || '').replaceAll('-', '')),
-      );
-    // 여러 종류의 포털기관이 섞인 목록에서 지하철 보관처를 우선 상세 확인합니다.
-    const homeCandidates =
-      recent && source === '지하철'
-        ? candidates.filter((row) =>
-            /역(?:\s*\(|$)|호선|유실물센터|지하철|도시철도|교통공사|경전철|메트로|역무실/u.test(
-              row.depPlace,
-            ),
-          )
-        : candidates;
+    candidates.sort((a, b) => {
+      const byDate = (b.fdYmd || '')
+        .replaceAll('-', '')
+        .localeCompare((a.fdYmd || '').replaceAll('-', ''));
+      if (!globalRail) return byDate;
+      const byStorage = storageRank(b.depPlace) - storageRank(a.depPlace);
+      return recent ? byDate || byStorage : byStorage || byDate;
+    });
+    const shortlist = globalRail
+      ? candidates.filter((r) => storageRank(r.depPlace) > 0)
+      : candidates;
+    const limit = recent || globalRail ? 12 : 8;
     const checked = await Promise.allSettled(
-      homeCandidates.slice(0, recent ? 12 : 8).map(async (row) => {
+      shortlist.slice(0, limit).map(async (row) => {
         const detail = await this.list(source, 'DetailInfo', {
           ATC_ID: row.atcId,
           FD_SN: row.fdSn,
@@ -191,8 +217,9 @@ export class InstitutionItemsService {
     return {
       items,
       limited:
-        page.limited ||
-        candidates.length > 8 ||
+        pages.length < requests.length ||
+        pages.some((p) => p.limited) ||
+        shortlist.length > limit ||
         checked.some((r) => r.status === 'rejected'),
     };
   }

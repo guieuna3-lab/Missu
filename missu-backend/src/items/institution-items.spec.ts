@@ -127,4 +127,34 @@ describe('기관 습득물', () => {
       ['한성대입구역(4호선)', 0],
     ]);
   });
+  it('장소 없이 지갑을 찾아도 다른 포털기관에 밀린 역 보관품을 한 번만 표시한다', async () => {
+    const wallet = {
+      ...row,
+      fdPrdtNm: '카드지갑',
+      depPlace: '한성대입구역(4호선)',
+    };
+    let details = 0;
+    const api = service((u) => {
+      if (u.host === 'www.hansung.ac.kr') return school;
+      if (!u.pathname.includes('LosPtfund')) return xml([]);
+      if (u.pathname.endsWith('DetailInfo')) {
+        details++;
+        return xml([wallet]);
+      }
+      expect(u.searchParams.get('PRDT_NM')).toBe('지갑');
+      if (u.searchParams.has('DEP_PLACE')) return xml([wallet]);
+      return xml(
+        Array.from({ length: 40 }, (_, i) => ({
+          ...wallet,
+          atcId: 'SHOP' + i,
+          depPlace: '쇼핑몰 안내센터',
+        })),
+      );
+    });
+    const result = await api.search('지갑', '', 'all');
+    expect(
+      result.items.filter((i) => i.source === '지하철').map((i) => i.name),
+    ).toEqual(['카드지갑']);
+    expect(details).toBe(1);
+  });
 });
