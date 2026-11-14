@@ -19,7 +19,7 @@ import { formatFoundAt } from '@/lib/items';
 import { nearbyInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { readDeviceLocation } from './deviceLocation';
 import { StreetMap } from './StreetMap';
-import { campus, mapApi, type MapItem, type Coordinates } from './mapData';
+import { campus, mapApi, nearbyMembers, type MapItem, type Coordinates } from './mapData';
 import { MapIcon, mapArt } from './mapArt';
 import { categories, defaultFilters, radii, type NearbyFilters } from './nearbyItems';
 import { Chips, FilterSheet, LocationDialog } from './NearbyOptions';
@@ -74,6 +74,11 @@ function ItemRow({ item }: { item: NearbyRow }) {
   );
 }
 
+type AreaCount = {
+  status: 'counting' | 'complete' | 'partial' | 'unavailable';
+  total: number | null;
+  incomplete: string[];
+};
 const emptyItems: MapItem[] = [];
 export function NearbyScreen() {
   const [center, setCenter] = useState(campus);
@@ -84,8 +89,10 @@ export function NearbyScreen() {
     params: string;
     reload: number;
     rows: MapItem[];
+    total: number | null;
     error: string;
   }>();
+  const [count, setCount] = useState<{ params: string; reload: number; value: AreaCount }>();
   const [agencies, setAgencies] = useState<{
     params: string;
     reload: number;
@@ -137,6 +144,12 @@ export function NearbyScreen() {
     () => [...memberRows, ...agencyRows].sort((a, b) => a.distanceM - b.distanceM),
     [memberRows, agencyRows],
   );
+  const areaCount = count?.params === params && count.reload === reload ? count.value : undefined;
+  const total =
+    membersReady && result.total != null && areaCount?.total != null
+      ? result.total + areaCount.total
+      : null;
+  const countFailed = (membersReady && !!result.error) || areaCount?.status === 'unavailable';
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
   const notice = [
     agenciesReady ? agencies.notices.join(' ') : '기관 보관품을 확인하고 있어요.',
@@ -147,6 +160,22 @@ export function NearbyScreen() {
   useEffect(() => {
     if (!params) return;
     const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    async function refreshCount() {
+      let value: AreaCount;
+      try {
+        value = await mapApi<AreaCount>('/institution-items/nearby-total?' + params, {
+          signal: controller.signal,
+        });
+      } catch {
+        value = { status: 'unavailable', total: null, incomplete: [] };
+      }
+      if (controller.signal.aborted) return;
+      setCount({ params, reload, value });
+      if (value.status !== 'complete')
+        timer = setTimeout(() => void refreshCount(), value.status === 'counting' ? 3500 : 65000);
+    }
+    void refreshCount();
     nearbyInstitutions(params, controller.signal)
       .then(({ items, notices, nextCursor }) => {
         if (!controller.signal.aborted)
@@ -168,15 +197,23 @@ export function NearbyScreen() {
             nextCursor: null,
           });
       });
-    mapApi<MapItem[]>('/items/nearby?' + params, { signal: controller.signal })
-      .then((rows) => {
-        if (!controller.signal.aborted) setResult({ params, reload, rows, error: '' });
+    nearbyMembers(params, controller.signal)
+      .then(({ data: rows, meta }) => {
+        if (!controller.signal.aborted)
+          setResult({ params, reload, rows, total: meta.total, error: '' });
       })
       .catch(() => {
         if (!controller.signal.aborted)
-          setResult({ params, reload, rows: [], error: '주변 습득물을 불러오지 못했어요.' });
+          setResult({
+            params,
+            reload,
+            rows: [],
+            total: null,
+            error: '주변 습득물을 불러오지 못했어요.',
+          });
       });
     return () => {
+      clearTimeout(timer);
       controller.abort();
       moreRequest.current?.abort();
       moreRequest.current = null;
@@ -445,15 +482,20 @@ export function NearbyScreen() {
                 >
                   {selected
                     ? '선택한 습득물'
-                    : loading
-                      ? '근처 습득물'
-                      : `${resultLabel} ${items.length}개`}
+                    : total !== null
+                      ? resultLabel +
+                        (areaCount?.status === 'partial' ? ' · 확인된 총 ' : ' · 총 ') +
+                        total.toLocaleString('ko-KR') +
+                        '개'
+                      : countFailed
+                        ? '주변 총건수 조회 불가'
+                        : '주변 총건수 확인 중'}
                 </Text>
                 {selected ? (
                   <TextLink label="닫기" onPress={() => setSelectedId(undefined)} />
                 ) : expanded ? (
                   <TextLink label="지도 보기" onPress={() => setExpanded(false)} />
-                ) : items.length ? (
+                ) : items.length || (agenciesReady && agencies.nextCursor) ? (
                   <TextLink label="전체 보기" onPress={() => setExpanded(true)} />
                 ) : hasFilters ? (
                   <TextLink label="필터 해제" onPress={() => updateFilters(defaultFilters)} />
@@ -469,9 +511,14 @@ export function NearbyScreen() {
               {searchedArea?.label === '기본 지도 · 한성대학교' && (
                 <TextLink label="내 위치 다시 확인" onPress={() => void locate()} />
               )}
-              {!!searchedArea && !!notice && (
+              {expanded && !!searchedArea && !!notice && (
                 <Text accessibilityLiveRegion="polite" style={styles.caption}>
                   {notice}
+                </Text>
+              )}
+              {expanded && !!areaCount?.incomplete.length && (
+                <Text style={styles.caption}>
+                  전체 조회가 어려운 기관 · {areaCount.incomplete.join(', ')}
                 </Text>
               )}
               {!searchedArea ? null : loading ||
@@ -490,9 +537,7 @@ export function NearbyScreen() {
                     onPress={() => openDetail(selected)}
                   />
                 </>
-              ) : !items.length && agenciesReady && agencies.nextCursor ? (
-                <Text style={styles.caption}>다음 학교 공고를 확인할 수 있어요.</Text>
-              ) : !items.length ? (
+              ) : !items.length && !(agenciesReady && agencies.nextCursor) ? (
                 <View style={styles.empty}>
                   <Text style={typography.label}>
                     {notice
@@ -509,19 +554,19 @@ export function NearbyScreen() {
                     {items.map((item) => (
                       <ItemRow key={item.id} item={item} />
                     ))}
+                    {agenciesReady && !!agencies.nextCursor && (
+                      <ActionButton
+                        label="한성대 물품 더보기"
+                        variant="outline"
+                        loading={agencies.loadingMore}
+                        onPress={() => void loadMoreSchool()}
+                      />
+                    )}
                   </ScrollView>
                 </>
-              ) : (
+              ) : items[0] ? (
                 <ItemRow item={items[0]} />
-              )}
-              {!selected && agenciesReady && !!agencies.nextCursor && (
-                <ActionButton
-                  label="한성대 물품 더보기"
-                  variant="outline"
-                  loading={agencies.loadingMore}
-                  onPress={() => void loadMoreSchool()}
-                />
-              )}
+              ) : null}
             </View>
           </>
         )}
