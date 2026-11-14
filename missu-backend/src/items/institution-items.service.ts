@@ -96,6 +96,8 @@ async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
   );
   return results;
 }
+// 페이지 0은 저장된 결과, 이 표식은 저장 목록을 본 후 돌아갈 원본 첫 페이지입니다.
+const liveFirstOffset = 1000;
 const walletSnapshot = '지갑:6개월';
 const sourceList: ('한성대' | Provider)[] = ['한성대', '경찰', '포털기관'];
 function combine<T extends InstitutionItem>(parts: Result<T>[]): Result<T> {
@@ -931,8 +933,8 @@ export class InstitutionItemsService
           if (!pos) return { items: [] };
           if (source === '포털기관' && pos[0] === 0) {
             const saved = await this.savedPage(q, place, days, pos[1], next, i);
-            if (!next[i] && !this.portalOffline() && pos[1] >= 0)
-              next[i] = [1, 1000];
+            if (!next[i] && !this.portalOffline())
+              next[i] = [1, liveFirstOffset];
             return saved;
           }
           if (source === '한성대') {
@@ -954,7 +956,7 @@ export class InstitutionItemsService
               days,
               undefined,
               recent,
-              pos,
+              pos[1] === liveFirstOffset ? [1, 0] : pos,
               strict,
             );
           if (canFallback && pos[0] === 1 && pos[1] === 0) {
@@ -963,28 +965,15 @@ export class InstitutionItemsService
               // 화면은 DB에서 응답하고, 사용자가 실제 검색한 조건만 백그라운드에서 재확인합니다.
               this.refreshPortal([q, place, days, recent], fetchLive);
               // 저장 목록을 본 후 '더보기'에서 포털 원본의 다음 결과도 확인할 수 있습니다.
-              next[i] ??= this.portalOffline() ? null : [1, 1000];
+              next[i] ??= this.portalOffline() ? null : [1, liveFirstOffset];
               return saved;
             }
           }
-          const batch = await (
-            pos[1] === 1000
-              ? this.records(
-                  source,
-                  q,
-                  place,
-                  days,
-                  undefined,
-                  recent,
-                  [1, 0],
-                  strict,
-                )
-              : fetchLive()
-          ).catch((error: unknown) => {
+          const batch = await fetchLive().catch((error: unknown) => {
             if (!canFallback) throw error;
             return { items: [], loadFailed: true, limited: true, next: null };
           });
-          if (canFallback && batch.loadFailed && pos[1] !== 1000) {
+          if (canFallback && batch.loadFailed && pos[1] !== liveFirstOffset) {
             const saved = await this.savedPage(q, place, days, 0, next, i);
             return {
               items: [...saved.items, ...batch.items],
