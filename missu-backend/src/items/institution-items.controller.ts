@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Query, Req } from '@nestjs/common';
+import { Controller, Get, Header, Param, Query, Req } from '@nestjs/common';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsIn, IsOptional, IsString, Length } from 'class-validator';
 import { Public } from '../auth/auth.guard';
@@ -55,6 +55,11 @@ export class InstitutionItemsController {
   async nearby(@Query() query: NearbyDto, @Req() req: SessionRequest) {
     await this.rates.consume('institution-nearby:' + req.ip, 20, 60000);
     return { data: await this.service.nearby(query) };
+  }
+  @Get('detail/:id')
+  async detail(@Param('id') id: string, @Req() req: SessionRequest) {
+    await this.rates.consume('institution-detail:' + req.ip, 60, 60000);
+    return { data: await this.service.detail(id) };
   }
   @Get('preview')
   async preview(
