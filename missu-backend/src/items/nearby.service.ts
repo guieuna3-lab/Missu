@@ -1,4 +1,5 @@
 /** 경계 상자로 후보를 좁힌 뒤 구면 거리로 검증합니다. 날짜 변경선과 극점도 처리합니다. */
+import { sinceFound } from './institution-records';
 import { Injectable } from '@nestjs/common';
 import { isUUID } from 'class-validator';
 import { DatabaseService } from '../database/database.service';
@@ -85,6 +86,7 @@ export class NearbyService {
         " AND ($9::text='ALL' OR category::text=$9)" +
         ' AND ($10::timestamptz IS NULL OR created_at >= $10)' +
         " AND ($11::text='' OR name ILIKE $12 OR public_features ILIKE $12)" +
+        ' AND found_at BETWEEN $14 AND CURRENT_TIMESTAMP' +
         ') SELECT id, distance FROM candidates WHERE distance <= $13 ORDER BY distance,id LIMIT 101',
       query.lat,
       query.lng,
@@ -99,6 +101,7 @@ export class NearbyService {
       query.q ?? '',
       pattern,
       query.radiusM,
+      new Date(sinceFound() + 'T00:00:00+09:00'),
     );
     const available = rows
       .slice(0, 100)

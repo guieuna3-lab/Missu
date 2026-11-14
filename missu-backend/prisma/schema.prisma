@@ -345,6 +345,21 @@ model AgencyCountCandidate {
   @@map("agency_count_candidates")
 }
 
+// 포털이 실제로 응답한 공개 필드와 확인 시각만 저장합니다.
+model VerifiedPortalItem {
+  id String @id
+  name String
+  source String
+  storage String
+  placeKey String @map("place_key")
+  day String
+  category String
+  stored Boolean
+  checkedAt DateTime @map("checked_at") @db.Timestamptz
+  @@index([stored, day, id])
+  @@map("verified_portal_items")
+}
+
 model AgencyCountBudget {
   day   String @id
   calls Int

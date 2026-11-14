@@ -43,7 +43,7 @@ export const categories = [
   { value: 'WALLET_BAG', label: '지갑/가방' },
 ] as const;
 export const periods = [
-  { value: 'ALL', label: '전체 기간' },
+  { value: 'ALL', label: '최근 6개월' },
   { value: '7', label: '최근 7일' },
   { value: '30', label: '최근 30일' },
 ] as const;

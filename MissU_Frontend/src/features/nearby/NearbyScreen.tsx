@@ -59,6 +59,8 @@ function ItemRow({ item }: { item: NearbyRow }) {
         {item.institution && (
           <Text style={styles.caption}>
             {item.institution.dateLabel} {item.institution.date} · {item.institution.reference}
+            {item.institution.lastVerifiedOn &&
+              ' · 마지막 보관 확인 ' + item.institution.lastVerifiedOn}
           </Text>
         )}
       </View>

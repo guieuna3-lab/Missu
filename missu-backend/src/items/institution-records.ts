@@ -11,6 +11,7 @@ export type InstitutionItem = {
   dateLabel: '게시일' | '습득일';
   url: string;
   reference: string;
+  lastVerifiedOn?: string;
   category: string;
 };
 export type Batch = { items: InstitutionItem[]; limited: boolean };
@@ -18,7 +19,7 @@ export type Batch = { items: InstitutionItem[]; limited: boolean };
 const byTag = DomUtils.getElementsByTagName;
 const plain = DomUtils.textContent;
 export const school = '한성대학교 상상관 글로벌원스톱센터';
-const policeSite =
+export const policeSite =
   'https://minwon24.police.go.kr/cvlcpt/cvlcptGdInfo.do?cvlcptId=MW-201';
 export const clean = (value: string) =>
   value.replace(/\s+/gu, '').toLowerCase();
@@ -171,4 +172,45 @@ export function roadKey(address: string) {
       /([가-힣A-Za-z0-9·.]+(?:로|길|대로))\s+(?:지하\s*)?(\d+(?:-\d+)?)(?=\s|,|\(|$)/u,
     )?.[0]
     .replace(/\s+/g, '');
+}
+
+export const koreaDay = (ms = Date.now()) =>
+  new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
+// 월말을 대상 월의 마지막 날로 맞춥니다. 예: 8월 31일 → 2월 28일(윤년은 29일).
+export function sinceFound(days = 'all', ms = Date.now()) {
+  const today = new Date(koreaDay(ms) + 'T00:00:00Z');
+  if (days === '7' || days === '30') {
+    today.setUTCDate(today.getUTCDate() - Number(days) + 1);
+    return today.toISOString().slice(0, 10);
+  }
+  const last = new Date(
+    Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5, 0),
+  );
+  last.setUTCDate(Math.min(today.getUTCDate(), last.getUTCDate()));
+  return last.toISOString().slice(0, 10);
+}
+export function schoolFoundDay(html: string) {
+  // 작성일이나 각인 숫자를 습득일로 오인하지 않도록 본문에서 명시한 날짜만 읽습니다.
+  const dom = parseDocument(html);
+  const body = DomUtils.findOne(
+    (el) => (el.attribs.class || '').split(/\s+/).includes('txt'),
+    dom.children,
+  );
+  const match =
+    body &&
+    plain(body).match(
+      /(?:습득|발견)\s*(?:일자|일시|일|날짜)\s*[:：]?\s*(20\d{2})\s*[-./년]\s*(\d{1,2})\s*[-./월]\s*(\d{1,2})(?!\d)/u,
+    );
+  if (!match) return;
+  const day = [
+    match[1],
+    match[2].padStart(2, '0'),
+    match[3].padStart(2, '0'),
+  ].join('-');
+  const date = new Date(day + 'T00:00:00Z');
+  if (
+    Number.isFinite(date.getTime()) &&
+    date.toISOString().startsWith(day + 'T')
+  )
+    return day;
 }

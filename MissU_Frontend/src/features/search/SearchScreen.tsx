@@ -34,7 +34,7 @@ import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
 const periods = [
-  { value: 'all', label: '전체 기간' },
+  { value: 'all', label: '최근 6개월' },
   { value: '7', label: '최근 7일' },
   { value: '30', label: '최근 30일' },
 ] as const;
@@ -101,7 +101,16 @@ async function loadResults(
     }
     if (member.status === 'rejected' && agency.status === 'rejected' && !rows.size)
       status = 'error';
-    if (member.status === 'rejected' || agency.status === 'rejected' || rows.size === before) break;
+    // 저장 목록의 마지막 페이지가 짧아도 첫 화면을 먼저 표시하고 원본 추가 조회는 더보기에서 진행합니다.
+    const savedPage =
+      agency.status === 'fulfilled' && agency.value?.items.some((item) => item.lastVerifiedOn);
+    if (
+      member.status === 'rejected' ||
+      agency.status === 'rejected' ||
+      rows.size === before ||
+      savedPage
+    )
+      break;
   }
   const items = [...rows.values()].sort(
     (a, b) => resultTime(b) - resultTime(a) || a.id.localeCompare(b.id),
@@ -428,6 +437,7 @@ export default function SearchScreen() {
                   {item.source} · 보관처 {item.storage}
                   {'\n'}
                   {item.dateLabel} {item.date} · {item.reference}
+                  {item.lastVerifiedOn && '\n마지막 보관 확인 ' + item.lastVerifiedOn}
                   {'\n'}기관 원문 보기
                 </Card>
               ) : (
