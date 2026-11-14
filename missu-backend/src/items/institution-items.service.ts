@@ -39,6 +39,12 @@ function nextPortalDay() {
   const date = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
   return Date.parse(date + 'T00:00:00+09:00') + 86400000;
 }
+type NearbyCount = {
+  status: 'counting' | 'complete' | 'partial' | 'unavailable';
+  total: number | null;
+  incomplete: Source[];
+};
+type NearbyCountJob = { result: NearbyCount; expires: number };
 type Custodian = Point & { name: string; address: string; source: Source };
 type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
@@ -1148,6 +1154,7 @@ export class InstitutionItemsService
   private async places(
     source: Source,
     query: NearbyDto,
+    all = false,
   ): Promise<{ sites: Custodian[]; limited: boolean }> {
     const key = process.env.KAKAO_REST_API_KEY;
     if (!key) throw Error('No geocoder');
@@ -1174,14 +1181,25 @@ export class InstitutionItemsService
           sort: 'distance',
           size: '15',
         }).toString();
-        const json = JSON.parse(
-          (await this.text(url.href, url, { Authorization: 'KakaoAK ' + key }))
-            .body,
-        ) as { documents: KakaoPlace[]; meta?: { is_end: boolean } };
-        if (!Array.isArray(json.documents))
-          throw Error('Unknown place response');
+        const documents: KakaoPlace[] = [];
+        let limited = false;
+        for (let page = 1; ; page++) {
+          if (page > 1) url.searchParams.set('page', String(page));
+          const json = JSON.parse(
+            (
+              await this.text(url.href, url, {
+                Authorization: 'KakaoAK ' + key,
+              })
+            ).body,
+          ) as { documents: KakaoPlace[]; meta?: { is_end: boolean } };
+          if (!Array.isArray(json.documents))
+            throw Error('Unknown place response');
+          documents.push(...json.documents);
+          limited = json.meta?.is_end === false;
+          if (!all || !limited || page === 3) break;
+        }
         const sites: Custodian[] = [];
-        for (const doc of json.documents) {
+        for (const doc of documents) {
           if (!doc.x || !doc.y || !doc.place_name) continue;
           if (
             source === '한성대' &&
@@ -1208,7 +1226,7 @@ export class InstitutionItemsService
           };
           if (distance(query, site) <= query.radiusM) sites.push(site);
         }
-        return { sites, limited: json.meta?.is_end === false };
+        return { sites, limited };
       }),
     );
     if (groups.every((g) => g.status === 'rejected'))
@@ -1222,11 +1240,149 @@ export class InstitutionItemsService
       (a, b) => distance(query, a) - distance(query, b),
     );
     return {
-      sites: sites.slice(0, 4),
+      sites: all ? sites : sites.slice(0, 4),
       limited:
-        sites.length > 4 ||
+        (!all && sites.length > 4) ||
         groups.some((g) => g.status === 'rejected' || g.value.limited),
     };
+  }
+  private readonly schoolCounts = new Map<
+    string,
+    { value: Promise<Map<string, string>>; expires: number }
+  >();
+  private schoolInventory(q: string, days: string) {
+    const key = JSON.stringify([q, days, koreaDay()]);
+    const cached = this.schoolCounts.get(key);
+    if (cached && cached.expires > Date.now()) return cached.value;
+    for (const [k, v] of this.schoolCounts)
+      if (v.expires <= Date.now()) this.schoolCounts.delete(k);
+    if (this.schoolCounts.size >= 24) throw Error('School count busy');
+    // 같은 학교·검색어의 전체 목록은 반경과 분류가 바뀌어도 함께 사용합니다.
+    const value = (async () => {
+      const items = new Map<string, string>();
+      for (let page = 1; page <= 9999; page++) {
+        const result = await this.school(q, days, page);
+        if (result.loadFailed) throw Error('School details unavailable');
+        for (const item of result.items) items.set(item.id, item.category);
+        if (!result.limited) return items;
+      }
+      throw Error('School list incomplete');
+    })();
+    const entry = { value, expires: Infinity };
+    this.schoolCounts.set(key, entry);
+    void value.then(
+      () => {
+        entry.expires = Date.now() + 300000;
+      },
+      () => {
+        this.schoolCounts.delete(key);
+      },
+    );
+    return value;
+  }
+  private async nearbySourceIds(source: '한성대' | Provider, query: NearbyDto) {
+    const { sites, limited } = await this.places(source, query, true);
+    const ids = new Set<string>();
+    if (source === '한성대') {
+      if (sites.length)
+        for (const [id, category] of await this.schoolInventory(
+          query.q || '',
+          query.registeredDays,
+        ))
+          if (query.category === 'ALL' || query.category === category)
+            ids.add(id);
+      return { ids, complete: sites.length > 0 || !limited };
+    }
+    const checks = await readBatches(
+      sites.map((site) => async () => {
+        const isStation =
+          source === '포털기관' && /역\s+.+선$/u.test(site.name);
+        if (isStation && this.db && (await this.uniqueStation(site))) {
+          // 한도가 소진되어도 해당 보관처에서 확인해 둔 전체 자료는 포함합니다.
+          const saved = await this.db.verifiedPortalItem.findMany({
+            where: {
+              stored: true,
+              placeKey: stationKey(site.name),
+              day: { gte: since(query.registeredDays), lte: koreaDay() },
+              name: {
+                contains: (query.q || '').replace(/[\\%_]/g, '\\$&'),
+                mode: 'insensitive',
+              },
+              ...(query.category !== 'ALL' && { category: query.category }),
+            },
+            select: { id: true },
+          });
+          for (const row of saved) ids.add(row.id);
+        }
+        let pos: Exclude<Position, null> = [1, 0];
+        for (;;) {
+          const result = await this.records(
+            source,
+            query.q || '',
+            '',
+            query.registeredDays,
+            site,
+            false,
+            pos,
+          );
+          for (const item of result.items)
+            if (query.category === 'ALL' || query.category === item.category)
+              ids.add(item.id);
+          if (result.loadFailed) return false;
+          if (!result.next) return !result.limited;
+          pos = result.next;
+        }
+      }),
+      2,
+    );
+    return {
+      ids,
+      complete:
+        !limited && checks.every((r) => r.status === 'fulfilled' && r.value),
+    };
+  }
+  private readonly nearbyCounts = new Map<string, NearbyCountJob>();
+  nearbyTotal(query: NearbyDto): NearbyCount {
+    const key = JSON.stringify([
+      query.lat,
+      query.lng,
+      query.radiusM,
+      query.category,
+      query.registeredDays,
+      query.q || '',
+      koreaDay(),
+    ]);
+    const now = Date.now();
+    for (const [k, v] of this.nearbyCounts)
+      if (v.expires <= now) this.nearbyCounts.delete(k);
+    const cached = this.nearbyCounts.get(key);
+    if (cached) return cached.result;
+    if (this.nearbyCounts.size >= 32)
+      return { status: 'unavailable', total: null, incomplete: [] };
+    const job: NearbyCountJob = {
+      result: { status: 'counting', total: null, incomplete: [] },
+      expires: Infinity,
+    };
+    this.nearbyCounts.set(key, job);
+    void Promise.allSettled(
+      sourceList.map((source) => this.nearbySourceIds(source, query)),
+    ).then((parts) => {
+      const ids = new Set<string>();
+      const incomplete: Source[] = [];
+      parts.forEach((part, i) => {
+        if (part.status === 'fulfilled')
+          for (const id of part.value.ids) ids.add(id);
+        if (part.status === 'rejected' || !part.value.complete)
+          incomplete.push(sourceList[i]);
+      });
+      job.result = {
+        total: ids.size,
+        status: incomplete.length ? 'partial' : 'complete',
+        incomplete,
+      };
+      job.expires = Date.now() + (incomplete.length ? 60000 : 300000);
+    });
+    return job.result;
   }
   private async nearbySchool(query: NearbyDto, startPage: number) {
     // 다음 페이지에서 실패해도 같은 위치에서 재시도할 수 있게 합니다.
