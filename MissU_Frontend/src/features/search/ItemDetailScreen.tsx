@@ -1,3 +1,4 @@
+import { InstitutionDetailScreen, HansungDemoScreen } from './InstitutionDetailScreen';
 import { useEffect, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import {
@@ -22,6 +23,9 @@ import { usePreview } from '@/lib/preview/PreviewProvider';
 
 export default function ItemDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  if (id === 'hansung-demo') return <HansungDemoScreen />;
+  if (id?.startsWith('hansung:') || id?.startsWith('lost112:'))
+    return <InstitutionDetailScreen key={id} id={id} />;
   return <ItemDetail key={id} id={id} />;
 }
 

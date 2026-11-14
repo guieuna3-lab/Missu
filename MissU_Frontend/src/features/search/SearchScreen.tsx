@@ -436,9 +436,10 @@ export default function SearchScreen() {
                 <Card title={item.name} onPress={() => openInstitution(item)}>
                   {item.source} · 보관처 {item.storage}
                   {'\n'}
-                  {item.dateLabel} {item.date} · {item.reference}
+                  {item.dateLabel} {item.date}
+                  {item.dateLabel === '게시일' && ' · 습득일 미공개'} · {item.reference}
                   {item.lastVerifiedOn && '\n마지막 보관 확인 ' + item.lastVerifiedOn}
-                  {'\n'}기관 원문 보기
+                  {'\n'}기관 물품 상세 보기
                 </Card>
               ) : (
                 <Card

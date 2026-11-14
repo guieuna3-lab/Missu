@@ -16,7 +16,9 @@ import {
   governmentItem,
   koreaDay,
   sinceFound as since,
-  schoolFoundDay,
+  schoolDetail,
+  schoolList,
+  schoolArticle,
   policeSite,
   policePage,
   roadKey,
@@ -182,9 +184,7 @@ export class InstitutionItemsService
     return { body: await value, observedAt };
   }
   private async school(q: string, days: string, page = 1) {
-    const url = new URL(
-      'https://www.hansung.ac.kr/bbs/onestop/1718/artclList.do',
-    );
+    const url = new URL(schoolList);
     url.searchParams.set('page', String(page));
     if (q) {
       url.searchParams.set('findType', 'sj');
@@ -198,11 +198,12 @@ export class InstitutionItemsService
       batch.items
         .filter((i) => i.date >= cutoff)
         .map((item) => async () => {
-          const day = schoolFoundDay(
+          const record = schoolDetail(
             (await this.text(item.url, new URL(item.url))).body,
+            item.reference,
           );
-          return day && day >= cutoff && day <= today
-            ? { ...item, date: day, dateLabel: '습득일' as const }
+          return record && record.date >= cutoff && record.date <= today
+            ? record
             : null;
         }),
       4,
@@ -214,6 +215,75 @@ export class InstitutionItemsService
       items,
       limited: batch.limited,
       loadFailed: results.some((r) => r.status === 'rejected'),
+    };
+  }
+  async detail(id: string) {
+    const hs = /^hansung:(\d{1,12})$/.exec(id);
+    const missing = () =>
+      fail(
+        404,
+        'RESOURCE_NOT_FOUND',
+        '반환되었거나 조회할 수 없는 물품이에요.',
+      );
+    if (hs) {
+      const url = schoolArticle(hs[1]);
+      const item = schoolDetail(
+        (await this.text(url, new URL(url))).body,
+        hs[1],
+      );
+      return item ?? missing();
+    }
+    const m = /^lost112:([A-Z0-9]{2,32}):(\d{1,6})$/.exec(id);
+    if (!m) return missing();
+    const saved = await this.db?.verifiedPortalItem.findUnique({
+      where: { id },
+    });
+    if (saved && !saved.stored) return missing();
+    const source = m[1].startsWith('V') || saved ? '포털기관' : '경찰';
+    let result;
+    try {
+      result = await this.list(source, 'DetailInfo', {
+        ATC_ID: m[1],
+        FD_SN: m[2],
+      });
+    } catch {
+      if (!saved)
+        return fail(
+          503,
+          'EXTERNAL_UNAVAILABLE',
+          '기관 상세를 불러올 수 없어요. 잠시 후 다시 확인해 주세요.',
+        );
+      return this.savedItem(saved);
+    }
+    const row = result.records.find((r) => r.atcId === m[1] && r.fdSn === m[2]);
+    if (!row?.csteSteNm) return saved ? this.savedItem(saved) : missing();
+    const current = await this.verifiedItem(row, source, result.observedAt);
+    return current
+      ? { ...current, lastVerifiedOn: koreaDay(result.observedAt.getTime()) }
+      : missing();
+  }
+  private savedItem(r: {
+    id: string;
+    name: string;
+    storage: string;
+    source: string;
+    category: string;
+    day: string;
+    checkedAt: Date;
+    phone?: string | null;
+  }): InstitutionItem {
+    return {
+      id: r.id,
+      name: r.name,
+      storage: r.storage,
+      source: r.source === '지하철' ? '지하철' : '포털기관',
+      category: r.category,
+      date: r.day,
+      dateLabel: '습득일',
+      url: policeSite,
+      reference: r.id.slice(8).replace(':', ' / '),
+      lastVerifiedOn: koreaDay(r.checkedAt.getTime()),
+      phone: r.phone ?? undefined,
     };
   }
   async preview(q: string, place: string, days: string) {
@@ -288,11 +358,11 @@ export class InstitutionItemsService
       const id = 'lost112:' + row.atcId + ':' + row.fdSn;
       // 늦게 도착한 이전 보관 응답이 더 최근의 반환 확인을 덮어쓰지 않게 합니다.
       await db.$executeRaw`INSERT INTO verified_portal_items AS old
-        (id,name,source,storage,place_key,day,category,stored,checked_at)
+        (id,name,source,storage,place_key,day,category,stored,checked_at,phone)
         VALUES (${id},${item?.name ?? ''},${item?.source ?? source},${item?.storage ?? ''},
-          ${stationKey(item?.storage ?? '')},${item?.date ?? ''},${item?.category ?? ''},${stored},${observedAt})
+          ${stationKey(item?.storage ?? '')},${item?.date ?? ''},${item?.category ?? ''},${stored},${observedAt},${item?.phone ?? null})
         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,source=EXCLUDED.source,storage=EXCLUDED.storage,
-        place_key=EXCLUDED.place_key,day=EXCLUDED.day,category=EXCLUDED.category,stored=EXCLUDED.stored,checked_at=EXCLUDED.checked_at
+        place_key=EXCLUDED.place_key,day=EXCLUDED.day,category=EXCLUDED.category,stored=EXCLUDED.stored,checked_at=EXCLUDED.checked_at,phone=EXCLUDED.phone
         WHERE old.checked_at < EXCLUDED.checked_at OR (old.checked_at = EXCLUDED.checked_at AND NOT EXCLUDED.stored)`;
     }
     return item;
@@ -907,18 +977,9 @@ export class InstitutionItemsService
       take: 26,
     });
     next[index] = rows.length > 25 ? [0, offset + 25] : null;
-    const items: InstitutionItem[] = rows.slice(0, 25).map((r) => ({
-      id: r.id,
-      name: r.name,
-      storage: r.storage,
-      source: r.source === '지하철' ? '지하철' : '포털기관',
-      category: r.category,
-      date: r.day,
-      dateLabel: '습득일',
-      url: policeSite,
-      reference: r.id.slice(8).replace(':', ' / '),
-      lastVerifiedOn: koreaDay(r.checkedAt.getTime()),
-    }));
+    const items: InstitutionItem[] = rows
+      .slice(0, 25)
+      .map((r) => this.savedItem(r));
     return { items };
   }
   private async page(

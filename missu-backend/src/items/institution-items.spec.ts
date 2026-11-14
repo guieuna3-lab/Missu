@@ -1,11 +1,16 @@
-import { sinceFound, schoolFoundDay } from './institution-records';
+import {
+  sinceFound,
+  schoolFoundDay,
+  schoolDetail,
+  schoolPage,
+} from './institution-records';
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import type { DatabaseService } from '../database/database.service';
 
 const school =
-  '<table><th>작성일</th><tr><td><a href="/bbs/onestop/1718/1/artclView.do"><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.11.22</td></tr><tr><td><a href="/bbs/onestop/1718/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.11.22</td></tr></table>';
+  '<table><th>작성일</th><tr><td><a href="/bbs/hansung/2175/1/artclView.do"><span class="cate-name">접수</span><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.11.22</td></tr><tr><td><a href="/bbs/hansung/2175/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.11.22</td></tr></table>';
 function xml(rows: Record<string, string>[]) {
   return (
     '<response><resultCode>00</resultCode><items>' +
@@ -60,7 +65,7 @@ describe('기관 습득물', () => {
         ) {
           const id = Number(url.split('/').at(-2));
           return new Response(
-            '<div class="txt">습득일: 2026.11.' +
+            '<div class="title"><span class="cate-name">접수</span><strong>학교에서 습득한 (이어폰) 보관중</strong><li>작성일 : 2026.11.13</li></div><div class="txt">습득일: 2026.11.' +
               String(id).padStart(2, '0') +
               '</div>',
           );
@@ -113,6 +118,19 @@ describe('기관 습득물', () => {
     ]);
     expect(raw.mock.calls[0]).toContain(2);
   });
+  it('제목이 그대로여도 반환은 제외하고 습득일이 없으면 게시일로 표시한다', () => {
+    const head =
+      '<div class="title"><span class="cate-name">접수</span><strong>연구실에서 습득한 (충전기) 보관중</strong><li>작성일 : 2026.11.13</li></div>';
+    expect(schoolDetail(head, '226051')).toMatchObject({
+      name: '충전기',
+      date: '2026-11-13',
+      dateLabel: '게시일',
+    });
+    expect(
+      schoolDetail(head.replace('접수', '반환'), '226051'),
+    ).toBeUndefined();
+    expect(schoolPage(school.replace('접수', '반환')).items).toEqual([]);
+  });
   it('한국 달력의 최근 6개월과 학교 원문의 실제 습득일을 적용한다', () => {
     expect(sinceFound('all', Date.parse('2024-08-31T00:00:00+09:00'))).toBe(
       '2024-02-29',
@@ -129,19 +147,17 @@ describe('기관 습득물', () => {
   });
   it('포털이 닫혀도 이름·기간·장소가 일치한 저장 보관품을 날짜와 함께 바로 전달한다', async () => {
     const checkedAt = new Date('2026-11-13T23:00:00+09:00');
-    const findMany = jest
-      .fn()
-      .mockResolvedValue([
-        {
-          id: 'lost112:V111:2',
-          source: '지하철',
-          name: '카드지갑',
-          storage: '가상역(2호선)',
-          day: '2026-05-14',
-          category: 'WALLET_BAG',
-          checkedAt,
-        },
-      ]);
+    const findMany = jest.fn().mockResolvedValue([
+      {
+        id: 'lost112:V111:2',
+        source: '지하철',
+        name: '카드지갑',
+        storage: '가상역(2호선)',
+        day: '2026-05-14',
+        category: 'WALLET_BAG',
+        checkedAt,
+      },
+    ]);
     const api = new InstitutionItemsService(
       {
         request: async () => {
@@ -421,9 +437,9 @@ describe('기관 습득물', () => {
       Array.from(
         { length: 12 },
         (_, i) =>
-          '<tr><td><a href="/bbs/onestop/1718/' +
+          '<tr><td><a href="/bbs/hansung/2175/' +
           (i + 1) +
-          '/artclView.do">물품 보관중</a></td><td class="td-date">2026.11.' +
+          '/artclView.do"><span class="cate-name">접수</span><strong>물품 보관중</strong></a></td><td class="td-date">2026.11.' +
           String(i + 1).padStart(2, '0') +
           '</td></tr>',
       ).join('') +

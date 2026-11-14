@@ -64,6 +64,7 @@ model User {
   auditEvents        AuditEvent[]
   challenges         AuthChallenge[]
   consents           Consent[]
+  hansungDemoRequests HansungDemoRequest[]
   claims             Claim[]
   messages           Message[]
   abuseReports       AbuseReport[]
@@ -347,6 +348,7 @@ model AgencyCountCandidate {
 
 // 포털이 실제로 응답한 공개 필드와 확인 시각만 저장합니다.
 model VerifiedPortalItem {
+  phone String?
   id String @id
   name String
   source String
@@ -400,4 +402,15 @@ model RoutePoint {
   @@index([recordingId, recordedAt, id])
   @@index([expiresAt])
   @@map("route_points")
+}
+
+model HansungDemoRequest {
+  id String @id @db.Uuid
+  requesterId String @map("requester_id") @db.Uuid
+  requester User @relation(fields:[requesterId],references:[id],onDelete:NoAction,onUpdate:NoAction)
+  status String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
+  @@index([updatedAt(sort: Desc),id],map:"hansung_demo_inbox")
+  @@map("hansung_demo_requests")
 }
