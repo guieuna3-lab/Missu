@@ -200,7 +200,10 @@ export function HomeScreen() {
                   </Text>
                   <Text style={styles.secondary}>
                     {'source' in item
-                      ? item.dateLabel + ' ' + item.date
+                      ? item.dateLabel +
+                        ' ' +
+                        item.date +
+                        (item.dateLabel === '게시일' ? ' · 습득일 미공개' : '')
                       : item.createdAt
                         ? '등록일 ' + formatFoundAt(item.createdAt).slice(0, 10)
                         : '습득일 ' + formatFoundAt(item.foundAt).slice(0, 10)}
@@ -211,7 +214,9 @@ export function HomeScreen() {
                     {'source' in item
                       ? item.lastVerifiedOn
                         ? '보관 확인 ' + item.lastVerifiedOn
-                        : '보관 중'
+                        : item.source === '한성대'
+                          ? '학교 접수'
+                          : '보관 중'
                       : item.statusLabel}
                   </Text>
                 </View>
