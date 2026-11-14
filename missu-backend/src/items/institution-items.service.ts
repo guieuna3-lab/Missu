@@ -25,16 +25,21 @@ type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
   distanceM: number;
 };
-type Result<T> = { items: T[]; notices: string[] };
+type Result<T> = { items: T[]; notices: string[]; unavailableSource?: Source };
 // 기관마다 원본 페이지와 아직 상세 확인하지 않은 후보 위치가 다릅니다.
 type Position = [page: number, offset: number] | null;
 type PageBatch = Batch & { next?: Position };
 type CountProgress = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  policeIncluded?: boolean;
 };
 type CountScan = {
   ids: Set<string>;
+  policeIds: Set<string>;
+  policeAvailable: boolean;
+  retryPoliceAt?: number;
+  baseExpires?: number;
   cursor?: string;
   expires: number;
   result: CountProgress;
@@ -348,6 +353,7 @@ export class InstitutionItemsService {
     } catch {
       return {
         items: [],
+        unavailableSource: source,
         notices: [source + ' 자료를 현재 조회할 수 없어요.'],
       };
     }
@@ -396,40 +402,81 @@ export class InstitutionItemsService {
       if (this.counts.size >= 48) return { status: 'unavailable', total: null };
       scan = {
         ids: new Set(),
+        policeIds: new Set(),
+        policeAvailable: true,
         result: { status: 'counting', total: null },
         expires: now + 120000,
       };
       this.counts.set(key, scan);
     }
-    if (scan.result.status !== 'counting') return scan.result;
     if (scan.running) return scan.running;
+    if (scan.result.status !== 'counting') {
+      if (scan.retryPoliceAt === undefined || now < scan.retryPoliceAt)
+        return scan.result;
+      // 승인 여부만 다시 확인합니다. 이미 집계한 학교·지하철 목록은 다시 읽지 않습니다.
+      scan.cursor = Buffer.from(
+        JSON.stringify(
+          sourceList.map((source) => (source === '경찰' ? [1, 0] : null)),
+        ),
+      ).toString('base64url');
+      scan.retryPoliceAt = undefined;
+      scan.policeAvailable = true;
+      scan.result = {
+        status: 'counting',
+        total: scan.ids.size,
+        policeIncluded: false,
+      };
+    }
     const current = scan;
     // 한 번에 원본 한 페이지를 확인합니다. 같은 검색은 진행 위치와 요청을 공유합니다.
     current.running = this.search(q, place, days, current.cursor, true)
       .then((page) => {
-        if (page.notices.some((notice) => notice.includes('현재 조회')))
+        if (page.unavailableSources.some((source) => source !== '경찰'))
           throw Error('Missing source');
-        for (const item of page.items) current.ids.add(item.id);
+        if (page.unavailableSources.includes('경찰')) {
+          current.policeAvailable = false;
+          current.policeIds.clear();
+        }
+        for (const item of page.items) {
+          if (item.source !== '경찰') current.ids.add(item.id);
+          else if (current.policeAvailable) current.policeIds.add(item.id);
+        }
         if (page.nextCursor) {
           if (page.nextCursor === current.cursor)
             throw Error('Repeated cursor');
           current.cursor = page.nextCursor;
         } else {
-          current.result = { status: 'complete', total: current.ids.size };
-          current.ids.clear();
+          // 경찰과 지하철에 동시에 있는 관리번호는 한 번만 셉니다.
+          if (current.policeAvailable) {
+            for (const id of current.policeIds) current.ids.add(id);
+          }
+          current.result = {
+            status: 'complete',
+            total: current.ids.size,
+            policeIncluded: current.policeAvailable,
+          };
+          current.policeIds.clear();
+          if (current.policeAvailable) current.ids.clear();
+          else {
+            current.retryPoliceAt = Date.now() + 120000;
+            current.baseExpires ??= Date.now() + 300000;
+          }
         }
         return current.result;
       })
       .catch(() => {
         current.ids.clear();
+        current.policeIds.clear();
         current.result = { status: 'unavailable', total: null };
         return current.result;
       })
       .finally(() => {
         current.running = undefined;
+        const ttl = current.result.status === 'unavailable' ? 15000 : 300000;
         current.expires =
-          Date.now() +
-          (current.result.status === 'unavailable' ? 15000 : 300000);
+          current.result.status === 'counting'
+            ? Date.now() + ttl
+            : Math.min(Date.now() + ttl, current.baseExpires ?? Infinity);
       });
     return current.running;
   }
@@ -512,7 +559,7 @@ export class InstitutionItemsService {
           !positions[i] || p.notices.some((n) => n.includes('현재 조회')),
       )
     ) {
-      if (cursor)
+      if (cursor && !strict)
         fail(
           503,
           'EXTERNAL_UNAVAILABLE',
@@ -521,6 +568,9 @@ export class InstitutionItemsService {
     }
     return {
       ...result,
+      unavailableSources: parts.flatMap((p) =>
+        p.unavailableSource ? [p.unavailableSource] : [],
+      ),
       nextCursor: next.some(Boolean)
         ? Buffer.from(JSON.stringify(next)).toString('base64url')
         : null,

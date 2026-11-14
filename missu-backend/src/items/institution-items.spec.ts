@@ -84,18 +84,22 @@ describe('기관 습득물', () => {
   });
   it('끝 페이지까지 확인하고 페이지·기관 간 같은 관리번호를 한 번만 센다', async () => {
     const api = service(() => school);
-    const item = (id: string) =>
-      ({ id }) as Awaited<ReturnType<typeof api.search>>['items'][number];
+    const item = (id: string, source: '한성대' | '경찰' | '지하철') =>
+      ({ id, source }) as Awaited<
+        ReturnType<typeof api.search>
+      >['items'][number];
     const search = jest
       .spyOn(api, 'search')
       .mockResolvedValueOnce({
-        items: [item('hansung:1'), item('lost112:1:1')],
+        items: [item('hansung:1', '한성대'), item('lost112:1:1', '경찰')],
         nextCursor: 'second',
+        unavailableSources: [],
         notices: [],
       })
       .mockResolvedValueOnce({
-        items: [item('lost112:1:1'), item('lost112:2:1')],
+        items: [item('lost112:1:1', '지하철'), item('lost112:2:1', '경찰')],
         nextCursor: null,
+        unavailableSources: [],
         notices: [],
       });
     const first = await Promise.all([
@@ -106,25 +110,96 @@ describe('기관 습득물', () => {
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
       status: 'complete',
       total: 3,
+      policeIncluded: true,
     });
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
       status: 'complete',
       total: 3,
+      policeIncluded: true,
     });
     expect(search).toHaveBeenCalledTimes(2);
   });
-  it('확인하지 못한 기관이 있으면 일부 합계를 전체로 보내지 않는다', async () => {
-    const api = service(() => school);
-    jest
-      .spyOn(api, 'search')
-      .mockResolvedValue({
+  it.each(['한성대', '지하철'] as const)(
+    '%s 조회 실패를 0건으로 계산하지 않는다',
+    async (source) => {
+      const api = service(() => school);
+      jest.spyOn(api, 'search').mockResolvedValue({
         items: [],
         nextCursor: null,
-        notices: ['경찰 자료를 현재 조회할 수 없어요.'],
+        notices: [],
+        unavailableSources: [source, '경찰'],
       });
+      expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+        status: 'unavailable',
+        total: null,
+      });
+    },
+  );
+  it('경찰 승인 전에는 학교와 지하철 전체를 세고, 승인 후에는 경찰만 다시 읽어 합산한다', async () => {
+    let approved = false;
+    const rail = { ...row, depPlace: '강남역(2호선)' };
+    let schoolReads = 0;
+    const api = service((url) => {
+      if (url.hostname === 'www.hansung.ac.kr') {
+        schoolReads++;
+        return school;
+      }
+      const police = url.pathname.includes('/LosfundInfo');
+      if (police && !approved) throw Error('pending');
+      const rows = police ? [rail, { ...row, atcId: 'F0002' }] : [rail];
+      return xml(rows).replace(
+        '<items>',
+        '<totalCount>' + rows.length + '</totalCount><items>',
+      );
+    });
+    const clock = jest.spyOn(Date, 'now');
+    try {
+      const now = Date.now();
+      clock.mockReturnValue(now);
+      const total = () => api.searchTotal('이어폰', '', 'all');
+      expect(await total()).toEqual({
+        status: 'complete',
+        total: 2,
+        policeIncluded: false,
+      });
+      approved = true;
+      expect((await total()).total).toBe(2);
+      clock.mockReturnValue(now + 120001);
+      expect(await total()).toEqual({
+        status: 'complete',
+        total: 3,
+        policeIncluded: true,
+      });
+      expect(schoolReads).toBe(1);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it('경찰 후속 페이지가 실패하면 앞서 본 경찰 단독 물품만 합계에서 뺀다', async () => {
+    const api = service(() => school);
+    const item = (id: string, source: '경찰' | '지하철') =>
+      ({ id, source }) as Awaited<
+        ReturnType<typeof api.search>
+      >['items'][number];
+    jest
+      .spyOn(api, 'search')
+      .mockResolvedValueOnce({
+        items: [item('shared', '경찰'), item('police-only', '경찰')],
+        nextCursor: 'later',
+        unavailableSources: [],
+        notices: [],
+      })
+      .mockResolvedValueOnce({
+        items: [item('shared', '지하철')],
+        nextCursor: null,
+        unavailableSources: ['경찰'],
+        notices: [],
+      });
+    expect((await api.searchTotal('지갑', '', 'all')).total).toBeNull();
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
-      status: 'unavailable',
-      total: null,
+      status: 'complete',
+      total: 1,
+      policeIncluded: false,
     });
   });
   it('지도에는 반경 안의 일치하는 보관처와 현재 보관 중인 물품만 담는다', async () => {

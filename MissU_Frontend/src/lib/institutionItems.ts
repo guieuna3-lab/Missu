@@ -60,6 +60,7 @@ export function searchInstitutions(filters: SearchFilters, cursor?: string) {
 export type InstitutionTotal = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  policeIncluded?: boolean;
 };
 export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
   return mapApi<InstitutionTotal>('/institution-items/search-total?' + institutionQuery(filters), {
