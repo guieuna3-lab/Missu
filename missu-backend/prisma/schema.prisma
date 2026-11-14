@@ -316,6 +316,41 @@ model RateLimitBucket {
   @@map("rate_limit_buckets")
 }
 
+// 전국 검색은 완료된 집계를 유지하면서 다음 집계를 별도로 작성합니다.
+model AgencyCountSnapshot {
+  query       String    @id
+  generation  Int       @default(1)
+  page        Int       @default(1)
+  listTotal   Int?      @map("list_total")
+  listed      Boolean   @default(false)
+  total       Int?
+  completedAt DateTime? @map("completed_at") @db.Timestamptz
+  retryAt     DateTime  @default(now()) @map("retry_at") @db.Timestamptz
+  candidates  AgencyCountCandidate[]
+
+  @@map("agency_count_snapshots")
+}
+
+model AgencyCountCandidate {
+  query      String
+  generation Int
+  atcId      String   @map("atc_id")
+  fdSn       String   @map("fd_sn")
+  stored     Boolean?
+  snapshot   AgencyCountSnapshot @relation(fields: [query], references: [query], onDelete: Cascade)
+
+  @@id([query, generation, atcId, fdSn])
+  @@index([query, generation, stored])
+  @@map("agency_count_candidates")
+}
+
+model AgencyCountBudget {
+  day   String @id
+  calls Int
+
+  @@map("agency_count_budgets")
+}
+
 // 동의하고 시작한 위치 기록 단위입니다. 한 사용자는 한 번에 한 기록만 진행합니다.
 model RouteRecording {
   id            String       @id @db.Uuid
