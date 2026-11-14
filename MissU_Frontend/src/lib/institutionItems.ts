@@ -7,6 +7,7 @@ export type InstitutionItem = {
   name: string;
   source: '경찰' | '지하철' | '한성대' | '포털기관';
   date: string;
+  lastVerifiedOn?: string;
   dateLabel: '게시일' | '습득일';
   storage: string;
   reference: string;
