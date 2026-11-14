@@ -5,6 +5,8 @@
 import {
   Body,
   Controller,
+  Delete,
+  HttpCode,
   Get,
   Headers,
   Param,
@@ -49,6 +51,18 @@ export class ItemsController {
     @Req() req: SessionRequest,
   ) {
     return { data: await this.items.manage(id, req.authSession!.userId!) };
+  }
+  @Delete(':id')
+  @HttpCode(204)
+  async remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: SessionRequest,
+  ) {
+    await this.items.remove(
+      id,
+      req.authSession!.userId!,
+      String(req.headers['x-request-id']),
+    );
   }
   @Put(':id')
   async edit(
