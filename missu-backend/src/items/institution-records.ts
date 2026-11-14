@@ -112,6 +112,8 @@ export function policePage(xml: string) {
   return {
     records,
     total,
+    page,
+    size,
     limited:
       total !== null &&
       records.length > 0 &&
