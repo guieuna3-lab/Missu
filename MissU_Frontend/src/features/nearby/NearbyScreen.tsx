@@ -90,11 +90,15 @@ export function NearbyScreen() {
     params: string;
     reload: number;
     rows: NearbyRow[];
-    notice: string;
+    notices: string[];
+    nextCursor: string | null;
+    loadingMore?: boolean;
   }>();
   const [message, setMessage] = useState('');
   const [reload, setReload] = useState(0);
   const locationAttempt = useRef(0);
+  const hasSearchArea = useRef(false);
+  const moreRequest = useRef<AbortController | null>(null);
   const [filters, setFilters] = useState(defaultFilters);
   const [query, setQuery] = useState('');
   const [recent, setRecent] = useState<string[]>([]);
@@ -135,7 +139,7 @@ export function NearbyScreen() {
   );
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
   const notice = [
-    agenciesReady ? agencies.notice : '기관 보관품을 확인하고 있어요.',
+    agenciesReady ? agencies.notices.join(' ') : '기관 보관품을 확인하고 있어요.',
     membersReady && items.length ? result.error : '',
   ]
     .filter(Boolean)
@@ -144,18 +148,25 @@ export function NearbyScreen() {
     if (!params) return;
     const controller = new AbortController();
     nearbyInstitutions(params, controller.signal)
-      .then(({ items, notices }) => {
+      .then(({ items, notices, nextCursor }) => {
         if (!controller.signal.aborted)
           setAgencies({
             params,
             reload,
             rows: items.map((item) => ({ ...item, foundAt: item.date, institution: item })),
-            notice: notices.join(' '),
+            notices,
+            nextCursor,
           });
       })
       .catch(() => {
         if (!controller.signal.aborted)
-          setAgencies({ params, reload, rows: [], notice: '기관 자료를 현재 조회할 수 없어요.' });
+          setAgencies({
+            params,
+            reload,
+            rows: [],
+            notices: ['기관 자료를 현재 조회할 수 없어요.'],
+            nextCursor: null,
+          });
       });
     mapApi<MapItem[]>('/items/nearby?' + params, { signal: controller.signal })
       .then((rows) => {
@@ -165,8 +176,56 @@ export function NearbyScreen() {
         if (!controller.signal.aborted)
           setResult({ params, reload, rows: [], error: '주변 습득물을 불러오지 못했어요.' });
       });
-    return () => controller.abort();
+    return () => {
+      controller.abort();
+      moreRequest.current?.abort();
+      moreRequest.current = null;
+    };
   }, [params, reload]);
+  async function loadMoreSchool() {
+    if (!agenciesReady || !agencies.nextCursor || moreRequest.current) return;
+    const controller = new AbortController();
+    moreRequest.current = controller;
+    setExpanded(true);
+    const currentPage = (state: typeof agencies) =>
+      state?.params === params &&
+      state.reload === reload &&
+      state.nextCursor === agencies.nextCursor;
+    setAgencies((prev) => (prev && currentPage(prev) ? { ...prev, loadingMore: true } : prev));
+    try {
+      const next = await nearbyInstitutions(params, controller.signal, agencies.nextCursor);
+      if (controller.signal.aborted) return;
+      setAgencies((prev) => {
+        if (!prev || !currentPage(prev)) return prev;
+        const rows = new Map(prev.rows.map((row) => [row.id, row]));
+        for (const item of next.items)
+          rows.set(item.id, { ...item, foundAt: item.date, institution: item });
+        return {
+          ...prev,
+          loadingMore: false,
+          rows: [...rows.values()],
+          nextCursor: next.nextCursor,
+          notices: [...prev.notices.filter((n) => !n.startsWith('한성대 ')), ...next.notices],
+        };
+      });
+    } catch {
+      if (!controller.signal.aborted)
+        setAgencies((prev) =>
+          prev && currentPage(prev)
+            ? {
+                ...prev,
+                loadingMore: false,
+                notices: [
+                  ...prev.notices.filter((n) => !n.startsWith('한성대 ')),
+                  '한성대 자료를 불러오지 못했어요. 더보기를 눌러 다시 시도해 주세요.',
+                ],
+              }
+            : prev,
+        );
+    } finally {
+      if (moreRequest.current === controller) moreRequest.current = null;
+    }
+  }
   const pins = useMemo(
     () => items.map((i) => ({ ...i.foundLocation, id: i.id, title: i.name })),
     [items],
@@ -185,6 +244,7 @@ export function NearbyScreen() {
   const resultLabel = filters.category === 'ALL' ? '이 주변 습득물' : category;
 
   const centerMap = useCallback((point: Coordinates, label: string) => {
+    hasSearchArea.current = true;
     locationAttempt.current++;
     setMessage('');
     setCenter({ ...point });
@@ -200,6 +260,7 @@ export function NearbyScreen() {
     setOverlay(undefined);
     setSearching(false);
     setExpanded(false);
+    hasSearchArea.current = false;
     setSearchedArea(undefined);
     setPosition(undefined);
     setMessage('현재 위치를 확인하고 있어요.');
@@ -227,7 +288,8 @@ export function NearbyScreen() {
   }, [centerMap]);
   useFocusEffect(
     useCallback(() => {
-      void locate();
+      // 상세에서 돌아오면 선택한 보관처와 펼친 페이지를 유지합니다.
+      if (!hasSearchArea.current) void locate();
       return () => {
         locationAttempt.current++;
       };
@@ -428,6 +490,8 @@ export function NearbyScreen() {
                     onPress={() => openDetail(selected)}
                   />
                 </>
+              ) : !items.length && agenciesReady && agencies.nextCursor ? (
+                <Text style={styles.caption}>다음 학교 공고를 확인할 수 있어요.</Text>
               ) : !items.length ? (
                 <View style={styles.empty}>
                   <Text style={typography.label}>
@@ -449,6 +513,14 @@ export function NearbyScreen() {
                 </>
               ) : (
                 <ItemRow item={items[0]} />
+              )}
+              {!selected && agenciesReady && !!agencies.nextCursor && (
+                <ActionButton
+                  label="한성대 물품 더보기"
+                  variant="outline"
+                  loading={agencies.loadingMore}
+                  onPress={() => void loadMoreSchool()}
+                />
               )}
             </View>
           </>

@@ -431,6 +431,85 @@ describe('기관 습득물', () => {
       ['lost112:F0001:1', '경찰', 0],
     ]);
   });
+  it('근처 더보기는 반환 페이지를 건너뛰고 6개월 경계까지 학교 접수품만 이어서 읽는다', async () => {
+    const fetched: number[] = [];
+    const site = { place_name: '한성대학교 상상관', x: '127', y: '37.5' };
+    const data = [
+      ['1', '접수', '충전기', '2026.11.13'],
+      ['2', '반환', '반환 지갑', '2026.11.10'],
+      ['3', '접수', 'LG USB(검정&흰색)', '2026.05.14'],
+      ['4', '접수', '오래된 물품', '2026.05.13'],
+    ];
+    let failUsb = true;
+    const api = new InstitutionItemsService({
+      request: async (raw: string) => {
+        const u = new URL(raw);
+        if (u.hostname === 'dapi.kakao.com')
+          return new Response(
+            JSON.stringify({
+              documents:
+                u.searchParams.get('query') === '한성대학교 상상관'
+                  ? [site]
+                  : [],
+            }),
+          );
+        if (u.pathname.endsWith('artclList.do')) {
+          const page = Number(u.searchParams.get('page'));
+          fetched.push(page);
+          const [id, state, name, day] = data[page - 1];
+          return new Response(
+            '<table><th>작성일</th><tr><td><a href="/bbs/hansung/2175/' +
+              id +
+              '/artclView.do"><span class="cate-name">' +
+              state +
+              '</span><strong>(' +
+              name +
+              ') 보관중</strong></a></td><td class="td-date">' +
+              day +
+              '</td></tr></table><a href="javascript:page_link(\'8\')">끝</a>',
+          );
+        }
+        const [id, state, name, day] =
+          data[Number(u.pathname.split('/').at(-2)) - 1];
+        if (id === '3' && failUsb) {
+          failUsb = false;
+          throw Error('temporary');
+        }
+        return new Response(
+          '<div class="title"><span class="cate-name">' +
+            state +
+            '</span><strong>(' +
+            name +
+            ') 보관중</strong><li>작성일 : ' +
+            day +
+            '</li></div>',
+        );
+      },
+    } as ExternalHttpService);
+    const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
+    const first = await api.nearby(query);
+    expect(first.items.map((i) => i.name)).toEqual(['충전기']);
+    expect(first.notices).toEqual([]);
+    query.cursor = first.nextCursor!;
+    const failed = await api.nearby(query);
+    expect(failed.nextCursor).toBe('school:3');
+    expect(failed.notices.join(' ')).toContain('불러오지 못했어요');
+    query.cursor = failed.nextCursor!;
+    const next = await api.nearby(query);
+    expect(next.items.map((i) => [i.name, i.date, i.distanceM])).toEqual([
+      ['LG USB(검정&흰색)', '2026-05-14', 0],
+    ]);
+    query.cursor = next.nextCursor!;
+    expect(await api.nearby(query)).toMatchObject({
+      items: [],
+      notices: [],
+      nextCursor: null,
+    });
+    expect(fetched).toEqual([1, 2, 3, 4]);
+    query.cursor = 'school:0';
+    await expect(api.nearby(query)).rejects.toThrow();
+  });
+
   it('홈에서 더 볼 수 있도록 첫 10건 뒤의 보관품도 최신순으로 반환한다', async () => {
     const board =
       '<table><th>작성일</th>' +

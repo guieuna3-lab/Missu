@@ -76,8 +76,13 @@ export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
     signal,
   });
 }
-export function nearbyInstitutions(params: string, signal: AbortSignal) {
-  return mapApi<Result<NearbyInstitution>>('/institution-items/nearby?' + params, { signal });
+export function nearbyInstitutions(params: string, signal: AbortSignal, cursor?: string) {
+  const query = new URLSearchParams(params);
+  if (cursor) query.set('cursor', cursor);
+  return mapApi<Result<NearbyInstitution> & { nextCursor: string | null }>(
+    '/institution-items/nearby?' + query,
+    { signal },
+  );
 }
 // 카드와 공유 링크가 같은 상세 주소를 사용합니다. 보관 상태는 서버에서 다시 확인합니다.
 export function openInstitution(item: InstitutionItem) {
