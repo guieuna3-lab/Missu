@@ -506,6 +506,25 @@ describe('기관 습득물', () => {
       nextCursor: null,
     });
     expect(fetched).toEqual([1, 2, 3, 4]);
+    // 목록을 끝까지 누르지 않은 새 검색도 독립적으로 전체를 계산합니다.
+    const fresh = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
+    expect(api.nearbyTotal(fresh)).toMatchObject({
+      status: 'counting',
+      total: null,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(api.nearbyTotal(fresh)).toEqual({
+      status: 'complete',
+      total: 2,
+      incomplete: [],
+    });
+    const filtered = { ...fresh, category: 'WALLET_BAG' as const };
+    api.nearbyTotal(filtered);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(api.nearbyTotal(filtered)).toMatchObject({
+      status: 'complete',
+      total: 0,
+    });
     query.cursor = 'school:0';
     await expect(api.nearby(query)).rejects.toThrow();
   });
