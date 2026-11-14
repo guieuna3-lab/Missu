@@ -10,11 +10,12 @@ CREATE TABLE agency_count_snapshots (
 );
 
 CREATE TABLE agency_count_candidates (
-  query text NOT NULL REFERENCES agency_count_snapshots(query) ON DELETE CASCADE,
+  query text NOT NULL REFERENCES agency_count_snapshots(query) ON DELETE CASCADE ON UPDATE CASCADE,
   generation integer NOT NULL,
   atc_id text NOT NULL,
   fd_sn text NOT NULL,
   stored boolean,
+  retry_after timestamptz,
   PRIMARY KEY (query, generation, atc_id, fd_sn)
 );
 CREATE INDEX agency_count_candidates_query_generation_stored_idx
