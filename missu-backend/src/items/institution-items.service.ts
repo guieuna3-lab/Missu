@@ -1,4 +1,10 @@
-import { Injectable, Optional, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Optional,
+  OnApplicationBootstrap,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
@@ -18,7 +24,7 @@ import {
 
 const government = {
   경찰: { base: 'LosfundInfoInqireService', prefix: 'getLosfund' },
-  지하철: { base: 'LosPtfundInfoInqireService', prefix: 'getPtLosfund' },
+  포털기관: { base: 'LosPtfundInfoInqireService', prefix: 'getPtLosfund' },
 } as const;
 type Provider = keyof typeof government;
 type Custodian = Point & { name: string; address: string; source: Source };
@@ -35,6 +41,11 @@ type CountProgress = {
   total: number | null;
   policeIncluded?: boolean;
   checkedAt?: string;
+  progress?: {
+    stage: 'listing' | 'checking';
+    checked: number;
+    candidates: number;
+  };
 };
 type CountScan = {
   ids: Set<string>;
@@ -56,10 +67,6 @@ type KakaoPlace = {
 };
 // 카카오는 '한성대입구역 4호선', 포털은 '한성대입구역(4호선)'처럼 표기합니다.
 const stationKey = (name: string) => clean(name).replace(/[()]/g, '');
-const railStorage =
-  /역(?:\s*\(|$)|호선|지하철|도시철도|교통공사|경전철|메트로|역무실|전철/u;
-const storageRank = (name: string) =>
-  railStorage.test(name) ? 2 : /유실물센터/u.test(name) ? 1 : 0;
 async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
   const results: PromiseSettledResult<T>[] = [];
   let next = 0;
@@ -79,7 +86,7 @@ async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
   );
   return results;
 }
-const sourceList: Source[] = ['한성대', '경찰', '지하철'];
+const sourceList: ('한성대' | Provider)[] = ['한성대', '경찰', '포털기관'];
 const since = (days: string) =>
   /^(7|30)$/.test(days)
     ? new Date(Date.now() + (9 * 3600 - (Number(days) - 1) * 86400) * 1000)
@@ -98,15 +105,46 @@ function combine<T extends InstitutionItem>(parts: Result<T>[]): Result<T> {
 }
 
 @Injectable()
-export class InstitutionItemsService implements OnModuleDestroy {
+export class InstitutionItemsService
+  implements OnApplicationBootstrap, OnModuleDestroy
+{
   constructor(
     private readonly http: ExternalHttpService,
     @Optional() private readonly db?: DatabaseService,
   ) {}
   private walletWorker?: Promise<void>;
   private stopping = false;
+  private timer?: ReturnType<typeof setInterval>;
+  private readonly logger = new Logger(InstitutionItemsService.name);
+  onApplicationBootstrap() {
+    if (!this.db || !process.env.DATA_GO_KR_SERVICE_KEY) return;
+    const wake = () => this.startWalletWorker();
+    this.timer = setInterval(wake, 60000);
+    this.timer.unref();
+    wake();
+  }
+  private startWalletWorker() {
+    const db = this.db;
+    if (!db || this.stopping || this.walletWorker) return;
+    this.walletWorker = (async () => {
+      const row = await db.agencyCountSnapshot.upsert({
+        where: { query: '지갑' },
+        create: { query: '지갑' },
+        update: {},
+      });
+      if (row.retryAt.getTime() <= Date.now())
+        await this.updateWalletSnapshot(db);
+    })()
+      .catch(() => {
+        this.logger.warn('전국 습득물 집계를 잠시 후 다시 시도합니다.');
+      })
+      .finally(() => {
+        this.walletWorker = undefined;
+      });
+  }
   onModuleDestroy() {
     this.stopping = true;
+    clearInterval(this.timer);
   }
   private readonly counts = new Map<string, CountScan>();
   // 동일 기관 상세 요청을 합치고, 만료 시 원본 보관 상태를 다시 읽습니다.
@@ -167,7 +205,8 @@ export class InstitutionItemsService implements OnModuleDestroy {
         '$1($2)',
       );
     try {
-      return (await this.list('지하철', 'InfoAccTpNmCstdyPlace', params)).total;
+      return (await this.list('포털기관', 'InfoAccTpNmCstdyPlace', params))
+        .total;
     } catch {
       return null;
     }
@@ -199,7 +238,8 @@ export class InstitutionItemsService implements OnModuleDestroy {
     strict = false,
   ): Promise<PageBatch> {
     const [pageNo, offset] = position;
-    const station = source === '지하철' && site?.name.match(/^(.+역)\s+(.+)$/u);
+    const station =
+      source === '포털기관' && site?.name.match(/^(.+역)\s+(.+)$/u);
     // 다른 도시의 동명·동일 호선 역은 기관 이름만으로 지도에 배치할 수 없습니다.
     if (station && site && !(await this.uniqueStation(site)))
       return { items: [], limited: true };
@@ -222,50 +262,17 @@ export class InstitutionItemsService implements OnModuleDestroy {
         /[가-힣A-Za-z0-9·.]+(?:로|길|대로)\s+(?:지하\s*)?\d+(?:-\d+)?/u,
       )![0];
     } else if (place) filters.DEP_PLACE = place;
-    // 포털 첫 페이지에는 공항과 상점도 섞여 있어, 장소를 입력하지 않은
-    // 검색에서는 역과 유실물센터 목록도 함께 읽고 같은 관리번호를 합칩니다.
-    const globalRail = source === '지하철' && !place && !site;
-    const requests = [() => this.list(source, operation, filters)];
-    if (globalRail) {
-      // 명칭 조회는 기관별로 결과가 몰릴 수 있어 노선과 센터 목록을 함께 순회합니다.
-      for (const venue of [
-        '역',
-        '유실물센터',
-        '호선',
-        ...Array.from({ length: 9 }, (_, i) => i + 1 + '호선'),
-      ]) {
-        requests.push(() =>
-          this.list(source, 'InfoAccTpNmCstdyPlace', {
-            ...(q ? { PRDT_NM: q } : {}),
-            DEP_PLACE: venue,
-            numOfRows: '40',
-            pageNo: String(pageNo),
-          }),
-        );
-      }
-    }
-    // 공급자가 동시 호출을 지연시키더라도 핵심 목록 요청이 먼저 처리되게 합니다.
-    const settled = await readBatches(requests, 4);
-    const pages = settled.flatMap((p) =>
-      p.status === 'fulfilled' ? [p.value] : [],
-    );
-    if (!pages.length) throw Error('Source unavailable');
-    // 목록에서는 일부 결과를 제공할 수 있지만 전체 건수에는 누락된 응답을 허용하지 않습니다.
+    // 통합 명칭 검색은 공항·상점·지하철을 모두 포함하므로 포털 원본 한 목록만 조회합니다.
+    const list = await this.list(source, operation, filters);
     if (
       strict &&
-      (pages.length !== requests.length ||
-        pages.some(
-          (p) =>
-            p.total === null ||
-            (p.limited && pageNo >= 9999) ||
-            (p.total > 0 && !p.records.length && pageNo === 1),
-        ))
+      (list.total === null ||
+        (list.limited && pageNo >= 9999) ||
+        (list.total > 0 && !list.records.length && pageNo === 1))
     )
       throw Error('Incomplete agency list');
     const records = [
-      ...new Map(
-        pages.flatMap((p) => p.records).map((r) => [r.atcId + ':' + r.fdSn, r]),
-      ).values(),
+      ...new Map(list.records.map((r) => [r.atcId + ':' + r.fdSn, r])).values(),
     ];
     const cutoff = since(days);
     const candidates = records.filter((row) => {
@@ -287,29 +294,11 @@ export class InstitutionItemsService implements OnModuleDestroy {
           (storage.length >= 3 && name.includes(storage)))
       );
     });
-    candidates.sort((a, b) => {
-      const byDate = (b.fdYmd || '')
+    const shortlist = candidates.sort((a, b) =>
+      (b.fdYmd || '')
         .replaceAll('-', '')
-        .localeCompare((a.fdYmd || '').replaceAll('-', ''));
-      if (!globalRail) return byDate;
-      const byStorage = storageRank(b.depPlace) - storageRank(a.depPlace);
-      return recent ? byDate || byStorage : byStorage || byDate;
-    });
-    const shortlist = globalRail
-      ? candidates.filter((r) => storageRank(r.depPlace) > 0)
-      : candidates;
-    if (globalRail && !recent) {
-      // 같은 보관처의 두 번째 물품보다 다른 보관처의 첫 물품을 먼저 확인합니다.
-      const seen = new Map<string, number>();
-      const ranks = new Map<Record<string, string>, number>();
-      for (const row of shortlist) {
-        const storage = clean(row.depPlace);
-        const rank = seen.get(storage) || 0;
-        ranks.set(row, rank);
-        seen.set(storage, rank + 1);
-      }
-      shortlist.sort((a, b) => ranks.get(a)! - ranks.get(b)!);
-    }
+        .localeCompare((a.fdYmd || '').replaceAll('-', '')),
+    );
     const limit = site ? 12 : 24;
     const checked = await readBatches(
       shortlist.slice(offset, offset + limit).map((row) => async () => {
@@ -330,9 +319,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
     const items = checked.flatMap((r) =>
       r.status === 'fulfilled' && r.value ? [r.value] : [],
     );
-    const loadFailed =
-      pages.length < requests.length ||
-      checked.some((r) => r.status === 'rejected');
+    const loadFailed = checked.some((r) => r.status === 'rejected');
     if (strict && loadFailed) throw Error('Incomplete agency details');
     return {
       items,
@@ -340,13 +327,10 @@ export class InstitutionItemsService implements OnModuleDestroy {
       next:
         offset + limit < shortlist.length
           ? [pageNo, offset + limit]
-          : pages.some((p) => p.limited) && pageNo < 9999
+          : list.limited && pageNo < 9999
             ? [pageNo + 1, 0]
             : null,
-      limited:
-        loadFailed ||
-        pages.some((p) => p.limited) ||
-        shortlist.length > offset + limit,
+      limited: loadFailed || list.limited || shortlist.length > offset + limit,
     };
   }
   // 이미 승인된 포털 키를 사용하며, 이용자의 조회를 위해 일일 상세 호출 여유를 남깁니다.
@@ -375,79 +359,74 @@ export class InstitutionItemsService implements OnModuleDestroy {
           };
           if (!job.listed) {
             // 전국 명칭 목록에 모든 보관처가 들어 있어 역·호선별 중복 목록은 추가로 읽지 않습니다.
-            const getPage = (n: number) =>
-              this.list('지하철', 'InfoAccTpNmCstdyPlace', {
-                PRDT_NM: query,
-                numOfRows: '1000',
-                pageNo: String(n),
-              });
-            const pageNumbers = Array.from(
-              {
-                length:
-                  job.listTotal === null
-                    ? 1
-                    : Math.min(
-                        3,
-                        Math.ceil(job.listTotal / 1000) - job.page + 1,
-                      ),
-              },
-              (_, i) => job.page + i,
-            );
-            const responses = await Promise.allSettled(
-              pageNumbers.map(getPage),
-            );
-            for (const [index, response] of responses.entries()) {
-              if (response.status === 'rejected') return defer(30000);
-              const p = response.value,
-                page = pageNumbers[index];
-              if (
-                p.total === null ||
-                p.page !== page ||
-                p.size !== 1000 ||
-                p.records.length !==
-                  Math.max(0, Math.min(1000, p.total - (page - 1) * 1000))
-              )
-                return defer(60000);
-              // 원본 건수가 바뀌어 페이지 경계가 밀렸을 때 기존 확인 결과는 두고 목록만 다시 읽습니다.
-              if (job.listTotal !== null && p.total !== job.listTotal) {
-                await tx.agencyCountCandidate.deleteMany({ where: scope });
-                await tx.agencyCountSnapshot.update({
-                  where: { query },
-                  data: { page: 1, listTotal: null },
-                });
-                return true;
-              }
-              const candidates = p.records.filter(
-                (r) => r.atcId && r.fdSn && storageRank(r.depPlace || '') > 0,
-              );
-              if (candidates.length)
-                await tx.agencyCountCandidate.createMany({
-                  data: candidates.map((r) => ({
-                    ...scope,
-                    atcId: r.atcId,
-                    fdSn: r.fdSn,
-                  })),
-                  skipDuplicates: true,
-                });
+            const page = job.page;
+            const p = await this.list('포털기관', 'InfoAccTpNmCstdyPlace', {
+              PRDT_NM: query,
+              numOfRows: '500',
+              pageNo: String(page),
+            }).catch(() => null);
+            if (
+              !p ||
+              p.total === null ||
+              p.page !== page ||
+              p.size <= 0 ||
+              p.records.length !==
+                Math.max(0, Math.min(p.size, p.total - (page - 1) * p.size))
+            )
+              return defer(60000);
+            // 원본 건수가 바뀌어 페이지 경계가 밀렸을 때 기존 확인 결과는 두고 목록만 다시 읽습니다.
+            if (job.listTotal !== null && p.total !== job.listTotal) {
+              await tx.agencyCountCandidate.deleteMany({ where: scope });
               await tx.agencyCountSnapshot.update({
                 where: { query },
-                data: {
-                  listTotal: p.total,
-                  page: page + 1,
-                  listed: !p.limited,
-                },
+                data: { page: 1, listTotal: null },
               });
-              if (!p.limited) break;
+              return true;
             }
+            const candidates = p.records.filter((r) => r.atcId && r.fdSn);
+            if (candidates.length)
+              await tx.agencyCountCandidate.createMany({
+                data: candidates.map((r) => ({
+                  ...scope,
+                  atcId: r.atcId,
+                  fdSn: r.fdSn,
+                })),
+                skipDuplicates: true,
+              });
+            await tx.agencyCountSnapshot.update({
+              where: { query },
+              data: {
+                listTotal: p.total,
+                page: page + 1,
+                listed: !p.limited,
+              },
+            });
+
             return true;
           }
           const candidates = await tx.agencyCountCandidate.findMany({
-            where: { ...scope, stored: null },
+            where: {
+              ...scope,
+              stored: null,
+              OR: [{ retryAfter: null }, { retryAfter: { lte: new Date() } }],
+            },
             select: { atcId: true, fdSn: true },
             orderBy: [{ atcId: 'asc' }, { fdSn: 'asc' }],
             take: 24,
           });
           if (!candidates.length) {
+            const pending = await tx.agencyCountCandidate.findFirst({
+              where: { ...scope, stored: null },
+              orderBy: { retryAfter: 'asc' },
+              select: { retryAfter: true },
+            });
+            if (pending)
+              return defer(
+                Math.max(
+                  60000,
+                  (pending.retryAfter?.getTime() ?? Date.now()) - Date.now(),
+                ),
+              );
             const total = await tx.agencyCountCandidate.count({
               where: { ...scope, stored: true },
             });
@@ -484,21 +463,15 @@ export class InstitutionItemsService implements OnModuleDestroy {
           });
           const checks = await readBatches(
             candidates.map(({ atcId, fdSn }) => async () => {
-              const response = await this.list('지하철', 'DetailInfo', {
+              const response = await this.list('포털기관', 'DetailInfo', {
                 ATC_ID: atcId,
                 FD_SN: fdSn,
               });
               const row = response.records.find(
                 (r) => r.atcId === atcId && r.fdSn === fdSn,
               );
-              if (
-                !row?.csteSteNm ||
-                !row.depPlace ||
-                !row.fdPrdtNm ||
-                !row.fdYmd
-              )
-                throw Error('Incomplete custody record');
-              return { atcId, fdSn, stored: !!governmentItem(row, '지하철') };
+              if (!row?.csteSteNm) throw Error('Incomplete custody record');
+              return { atcId, fdSn, stored: !!governmentItem(row, '포털기관') };
             }),
             8,
           );
@@ -511,10 +484,19 @@ export class InstitutionItemsService implements OnModuleDestroy {
             if (rows.length)
               await tx.agencyCountCandidate.updateMany({
                 where: { ...scope, OR: rows },
-                data: { stored },
+                data: { stored, retryAfter: null },
               });
           }
-          if (checks.some((c) => c.status === 'rejected')) return defer(30000);
+          const failed = candidates.filter(
+            (_, index) => checks[index].status === 'rejected',
+          );
+          if (failed.length) {
+            await tx.agencyCountCandidate.updateMany({
+              where: { ...scope, OR: failed },
+              data: { retryAfter: pause(3600000) },
+            });
+            if (failed.length === candidates.length) return defer(60000);
+          }
           return true;
         },
         { timeout: 60000 },
@@ -587,15 +569,27 @@ export class InstitutionItemsService implements OnModuleDestroy {
         create: { query: '지갑' },
         update: {},
       });
-      if (row.retryAt.getTime() <= Date.now() && !this.walletWorker) {
-        this.walletWorker = this.updateWalletSnapshot(this.db)
-          .catch(() => undefined)
-          .finally(() => {
-            this.walletWorker = undefined;
-          });
+      if (row.retryAt.getTime() <= Date.now()) this.startWalletWorker();
+      if (!row.completedAt || row.total === null) {
+        const scope = { query: '지갑', generation: row.generation };
+        const parts = await this.db.agencyCountCandidate.groupBy({
+          by: ['stored'],
+          where: scope,
+          _count: { _all: true },
+        });
+        return {
+          status: 'counting',
+          total: null,
+          progress: {
+            stage: row.listed ? 'checking' : 'listing',
+            checked: parts.reduce(
+              (n, p) => n + (p.stored === null ? 0 : p._count._all),
+              0,
+            ),
+            candidates: parts.reduce((n, p) => n + p._count._all, 0),
+          },
+        };
       }
-      if (!row.completedAt || row.total === null)
-        return { status: 'counting', total: null };
       snapshot = {
         total: row.total,
         generation: row.generation - 1,
@@ -634,7 +628,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
     if (scan.result.status !== 'counting') {
       if (scan.retryPoliceAt === undefined || now < scan.retryPoliceAt)
         return scan.result;
-      // 승인 여부만 다시 확인합니다. 이미 집계한 학교·지하철 목록은 다시 읽지 않습니다.
+      // 승인 여부만 다시 확인합니다. 이미 집계한 학교·포털기관 목록은 다시 읽지 않습니다.
       scan.cursor = Buffer.from(
         JSON.stringify(
           sourceList.map((source) => (source === '경찰' ? [1, 0] : null)),
@@ -659,7 +653,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
           current.policeIds.clear();
         }
         const police = page.items.filter((i) => i.source === '경찰');
-        // 두 기관의 관리번호가 겹치면 지하철 집계에서 이미 센 물품입니다.
+        // 두 기관의 관리번호가 겹치면 포털기관 집계에서 이미 센 물품입니다.
         const overlaps =
           snapshot && police.length && this.db
             ? await this.db.agencyCountCandidate.findMany({
@@ -675,12 +669,12 @@ export class InstitutionItemsService implements OnModuleDestroy {
                 select: { atcId: true, fdSn: true },
               })
             : [];
-        const railIds = new Set(
+        const portalIds = new Set(
           overlaps.map((i) => 'lost112:' + i.atcId + ':' + i.fdSn),
         );
         for (const item of page.items) {
           if (item.source !== '경찰') current.ids.add(item.id);
-          else if (current.policeAvailable && !railIds.has(item.id))
+          else if (current.policeAvailable && !portalIds.has(item.id))
             current.policeIds.add(item.id);
         }
         if (page.nextCursor) {
@@ -688,7 +682,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
             throw Error('Repeated cursor');
           current.cursor = page.nextCursor;
         } else {
-          // 경찰과 지하철에 동시에 있는 관리번호는 한 번만 셉니다.
+          // 경찰과 포털기관에 동시에 있는 관리번호는 한 번만 셉니다.
           if (current.policeAvailable) {
             for (const id of current.policeIds) current.ids.add(id);
           }
@@ -862,7 +856,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
     const groups = await Promise.allSettled(
       terms.map(async (term) => {
         // 지도 제공자에는 반올림한 중심만 전달하고 최종 거리는 실제 중심에서 계산합니다.
-        const stations = source === '지하철' && term === '지하철역';
+        const stations = source === '포털기관' && term === '지하철역';
         const url = new URL(
           'https://dapi.kakao.com/v2/local/search/' +
             (stations ? 'category' : 'keyword') +
@@ -895,7 +889,7 @@ export class InstitutionItemsService implements OnModuleDestroy {
           )
             continue;
           if (
-            source === '지하철' &&
+            source === '포털기관' &&
             doc.category_group_code !== 'SW8' &&
             !/유실물센터/u.test(doc.place_name)
           )
