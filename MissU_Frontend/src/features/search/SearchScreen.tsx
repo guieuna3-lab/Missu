@@ -139,7 +139,8 @@ export default function SearchScreen() {
         const reply = await institutionTotal(countFilters!, controller.signal);
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
-        if (reply.status === 'counting') timer = setTimeout(() => void check(), reply.progress ? 60000 : 3500);
+        if (reply.status === 'counting')
+          timer = setTimeout(() => void check(), reply.progress ? 60000 : 3500);
         else if (reply.policeIncluded === false || reply.status === 'unavailable')
           timer = setTimeout(() => void check(), 120000);
       } catch {
@@ -307,7 +308,9 @@ export default function SearchScreen() {
               ? '총 습득물 ' +
                 (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
                 '건'
-              : agencyCount?.progress ? '전국 지갑의 보관 상태를 처음 집계하고 있어요' : '전체 습득물 건수를 확인하고 있어요'}
+              : agencyCount?.progress
+                ? '전국 지갑의 보관 상태를 처음 집계하고 있어요'
+                : '전체 습득물 건수를 확인하고 있어요'}
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&
