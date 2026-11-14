@@ -61,6 +61,7 @@ export type InstitutionTotal = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
   policeIncluded?: boolean;
+  checkedAt?: string;
 };
 export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
   return mapApi<InstitutionTotal>('/institution-items/search-total?' + institutionQuery(filters), {
