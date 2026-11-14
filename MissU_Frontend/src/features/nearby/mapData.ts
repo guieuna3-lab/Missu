@@ -44,7 +44,7 @@ export type MapItem = {
   distanceM: number;
   foundLocation: Coordinates & { label: string };
 };
-export async function mapApi<T>(
+async function mapResponse<T>(
   path: string,
   options: { token?: string; method?: string; body?: object; signal?: AbortSignal } = {},
 ) {
@@ -62,5 +62,14 @@ export async function mapApi<T>(
   });
   const result = await response.json();
   if (!response.ok) throw new Error(result.error?.message ?? '지도 정보를 가져오지 못했어요.');
-  return result.data as T;
+  return result as T;
+}
+
+export async function mapApi<T>(path: string, options?: Parameters<typeof mapResponse>[1]) {
+  return (await mapResponse<{ data: T }>(path, options)).data;
+}
+export function nearbyMembers(params: string, signal: AbortSignal) {
+  return mapResponse<{ data: MapItem[]; meta: { total: number } }>('/items/nearby?' + params, {
+    signal,
+  });
 }
