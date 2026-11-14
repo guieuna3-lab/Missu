@@ -34,7 +34,7 @@ import { usePreview } from '@/lib/preview/PreviewProvider';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
 const periods = [
-  { value: 'all', label: '전체 기간' },
+  { value: 'all', label: '최근 6개월' },
   { value: '7', label: '최근 7일' },
   { value: '30', label: '최근 30일' },
 ] as const;
@@ -428,6 +428,7 @@ export default function SearchScreen() {
                   {item.source} · 보관처 {item.storage}
                   {'\n'}
                   {item.dateLabel} {item.date} · {item.reference}
+                  {item.lastVerifiedOn && '\n마지막 보관 확인 ' + item.lastVerifiedOn}
                   {'\n'}기관 원문 보기
                 </Card>
               ) : (
