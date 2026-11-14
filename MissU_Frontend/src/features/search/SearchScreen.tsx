@@ -127,8 +127,13 @@ export default function SearchScreen() {
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
         if (reply.status === 'counting') timer = setTimeout(() => void check(), 3500);
+        else if (reply.policeIncluded === false || reply.status === 'unavailable')
+          timer = setTimeout(() => void check(), 120000);
       } catch {
-        if (!controller.signal.aborted) setAgencyCount({ status: 'unavailable', total: null });
+        if (!controller.signal.aborted) {
+          setAgencyCount({ status: 'unavailable', total: null });
+          timer = setTimeout(() => void check(), 120000);
+        }
       }
     }
     void check();
@@ -280,13 +285,22 @@ export default function SearchScreen() {
         >
           {agencyCount?.status === 'unavailable' || state.memberTotal === undefined
             ? '전체 습득물 건수를 확인할 수 없어요'
-            : agencyCount?.status === 'complete' && agencyCount.total !== null
+            : agencyCount?.total != null
               ? '총 습득물 ' +
                 (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
                 '건'
               : '전체 습득물 건수를 확인하고 있어요'}
         </Text>
       )}
+      {state.status === 'success' &&
+        state.memberTotal !== undefined &&
+        agencyCount?.total != null && (
+          <Text style={typography.body}>
+            {agencyCount.policeIncluded
+              ? '미슈 · 한성대 · 지하철 · 경찰 합계'
+              : '미슈 · 한성대 · 지하철 합계'}
+          </Text>
+        )}
       {!!(state.memberNotice || state.agencyNotice) && (
         <Text accessibilityLiveRegion="polite" style={typography.body}>
           {[state.memberNotice, state.agencyNotice].filter(Boolean).join(' ')}
