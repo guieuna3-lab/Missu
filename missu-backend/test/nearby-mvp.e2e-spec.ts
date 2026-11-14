@@ -104,6 +104,8 @@ describe('근처 지도·장소 검색 계약', () => {
     ).toBe(100);
     expect(second.body.meta.nextCursor).toBeNull();
     expect(first.body.meta.truncated).toBe(true);
+    expect(first.body.meta.total).toBe(103);
+    expect(second.body.meta.total).toBe(103);
     await keeper.agent
       .get('/api/v1/items/nearby')
       .query({ ...query, radiusM: 500, cursor: first.body.meta.nextCursor })
@@ -263,16 +265,14 @@ describe('근처 지도·장소 검색 계약', () => {
         .expect(503);
       const point = { lat: 37.5666, lng: 126.9784 };
       const reverse = () => h.post(keeper, '/places/reverse').send(point);
-      call
-        .mockClear()
-        .mockImplementation(async () =>
-          payload([
-            {
-              road_address: rawAddress.road_address,
-              address: { address_name: rawAddress.address_name },
-            },
-          ]),
-        );
+      call.mockClear().mockImplementation(async () =>
+        payload([
+          {
+            road_address: rawAddress.road_address,
+            address: { address_name: rawAddress.address_name },
+          },
+        ]),
+      );
       const resolved = await reverse().expect(200);
       expect(resolved.headers['cache-control']).toBe('no-store');
       expect(resolved.body.data.address).toBe('서울 중구 세종대로 110');
