@@ -22,7 +22,6 @@ import { ClaimsController } from './claims/claims.controller';
 import { ClaimsService } from './claims/claims.service';
 import { NearbyService } from './items/nearby.service';
 import { PlacesController } from './items/places.controller';
-import { HansungDemoController } from './items/hansung-demo.controller';
 import { InstitutionItemsController } from './items/institution-items.controller';
 import { InstitutionItemsService } from './items/institution-items.service';
 import { RateLimitService } from './common/rate-limit.service';
@@ -46,7 +45,6 @@ import { RoutesService } from './routes/routes.service';
     ClaimsController,
     PlacesController,
     InstitutionItemsController,
-    HansungDemoController,
     RoutesController,
   ],
   providers: [
