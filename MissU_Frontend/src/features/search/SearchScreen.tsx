@@ -59,6 +59,7 @@ async function loadResults(
   filters: SearchFilters,
   previous: SearchState,
   searchTime: number,
+  onMemberTotal?: (total: number) => void,
 ): Promise<SearchState> {
   const rows = new Map(previous.items.map((item) => [item.id, item]));
   const target = previous.visible + pageSize;
@@ -71,7 +72,10 @@ async function loadResults(
     const [member, agency] = await Promise.allSettled([
       memberCursor === null
         ? undefined
-        : itemRepository.searchPage(filters, memberCursor, searchTime),
+        : itemRepository.searchPage(filters, memberCursor, searchTime).then((page) => {
+            if (page.total !== undefined) onMemberTotal?.(page.total);
+            return page;
+          }),
       agencyCursor === null ? undefined : searchInstitutions(filters, agencyCursor),
     ]);
     if (member.status === 'fulfilled' && member.value) {
@@ -186,7 +190,9 @@ export default function SearchScreen() {
     setCountFilters({ ...values });
     searchTime.current = Date.now();
     try {
-      const result = await loadResults(values, initialState, searchTime.current);
+      const result = await loadResults(values, initialState, searchTime.current, (memberTotal) => {
+        if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
+      });
       if (id === requestId.current) setState(result);
     } catch {
       if (id === requestId.current) setState({ ...initialState, status: 'error' });
@@ -286,7 +292,10 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {state.status === 'success' && (
+      {(state.status === 'success' ||
+        (state.status === 'loading' &&
+          state.memberTotal !== undefined &&
+          agencyCount?.total != null)) && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
@@ -301,13 +310,18 @@ export default function SearchScreen() {
               : '전체 습득물 건수를 확인하고 있어요'}
         </Text>
       )}
-      {state.status === 'success' &&
+      {(state.status === 'success' || state.status === 'loading') &&
         state.memberTotal !== undefined &&
         agencyCount?.total != null && (
           <Text style={typography.body}>
             {agencyCount.policeIncluded
               ? '미슈 · 한성대 · 지하철 · 경찰 합계'
               : '미슈 · 한성대 · 지하철 합계'}
+            {agencyCount.checkedAt &&
+              ' · 지하철 집계 ' +
+                new Date(agencyCount.checkedAt).toLocaleDateString('ko-KR', {
+                  timeZone: 'Asia/Seoul',
+                })}
           </Text>
         )}
       {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (
