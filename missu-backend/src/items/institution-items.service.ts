@@ -838,7 +838,11 @@ export class InstitutionItemsService
         (this.exhaustedOperations.get('포털기관/' + op) ?? 0) > Date.now(),
     );
   }
-  private refreshPortal(keyParts: unknown[], run: () => Promise<PageBatch>) {
+  private refreshPortal(
+    keyParts: unknown[],
+    saved: InstitutionItem[],
+    run: () => Promise<PageBatch>,
+  ) {
     const key = JSON.stringify(keyParts);
     if (this.portalOffline() || (this.background.get(key) ?? 0) > Date.now())
       return;
@@ -846,7 +850,36 @@ export class InstitutionItemsService
       if (until <= Date.now()) this.background.delete(k);
     if (this.background.size >= 32) return;
     this.background.set(key, Date.now() + 120000);
-    void run().catch(() => undefined);
+    void (async () => {
+      const page = await run();
+      if (this.portalOffline() || page.loadFailed) return;
+      // 원본 첫 페이지에서 빠진 기존 보관품도 관리번호로 재확인합니다. 매 조회당 최대 3건입니다.
+      const fresh = new Set(page.items.map((item) => item.id));
+      const stale = saved
+        .filter(
+          (item) =>
+            item.lastVerifiedOn &&
+            item.lastVerifiedOn < koreaDay() &&
+            !fresh.has(item.id),
+        )
+        .sort((a, b) => a.lastVerifiedOn!.localeCompare(b.lastVerifiedOn!))
+        .slice(0, 3);
+      await readBatches(
+        stale.map((item) => async () => {
+          const [, atcId, fdSn] = item.id.split(':');
+          const res = await this.list('포털기관', 'DetailInfo', {
+            ATC_ID: atcId,
+            FD_SN: fdSn,
+          });
+          const row = res.records.find(
+            (r) => r.atcId === atcId && r.fdSn === fdSn,
+          );
+          if (row?.csteSteNm?.trim())
+            await this.verifiedItem(row, '포털기관', res.observedAt);
+        }),
+        2,
+      );
+    })().catch(() => undefined);
   }
   private async savedPage(
     q: string,
@@ -963,7 +996,11 @@ export class InstitutionItemsService
             const saved = await this.savedPage(q, place, days, 0, next, i);
             if (saved.items.length) {
               // 화면은 DB에서 응답하고, 사용자가 실제 검색한 조건만 백그라운드에서 재확인합니다.
-              this.refreshPortal([q, place, days, recent], fetchLive);
+              this.refreshPortal(
+                [q, place, days, recent],
+                saved.items,
+                fetchLive,
+              );
               // 저장 목록을 본 후 '더보기'에서 포털 원본의 다음 결과도 확인할 수 있습니다.
               next[i] ??= this.portalOffline() ? null : [1, liveFirstOffset];
               return saved;
@@ -1162,6 +1199,7 @@ export class InstitutionItemsService
                 if (saved.items.length) {
                   this.refreshPortal(
                     ['nearby', site.name, query.q, query.registeredDays],
+                    saved.items,
                     () =>
                       this.records(
                         '포털기관',
