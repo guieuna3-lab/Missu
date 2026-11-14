@@ -75,7 +75,7 @@ export class NearbyService {
     const pattern = '%' + (query.q ?? '').replace(/[\\%_]/g, '\\$&') + '%';
     // SQL 본문은 고정이며 모든 입력은 바인딩합니다. 비공개 특징은 검색하지 않습니다.
     const rows = await this.db.$queryRawUnsafe<
-      { id: string; distance: number }[]
+      { id: string; distance: number; total: number }[]
     >(
       'WITH candidates AS (' +
         ' SELECT id, 6371000.0 * 2 * asin(sqrt(least(1.0,greatest(0.0,' +
@@ -87,7 +87,7 @@ export class NearbyService {
         ' AND ($10::timestamptz IS NULL OR created_at >= $10)' +
         " AND ($11::text='' OR name ILIKE $12 OR public_features ILIKE $12)" +
         ' AND found_at BETWEEN $14 AND CURRENT_TIMESTAMP' +
-        ') SELECT id, distance FROM candidates WHERE distance <= $13 ORDER BY distance,id LIMIT 101',
+        ') SELECT id, distance, (count(*) OVER ())::int AS total FROM candidates WHERE distance <= $13 ORDER BY distance,id LIMIT 101',
       query.lat,
       query.lng,
       minLat,
@@ -140,6 +140,7 @@ export class NearbyService {
           : [];
       }),
       meta: {
+        total: rows[0]?.total ?? 0,
         nextCursor,
         truncated: rows.length > 100,
         ...(rows.length > 100
