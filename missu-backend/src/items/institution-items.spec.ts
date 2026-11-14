@@ -1,6 +1,7 @@
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import type { DatabaseService } from '../database/database.service';
 
 const school =
   '<table><th>작성일</th><tr><td><a href="/bbs/onestop/1718/1/artclView.do"><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.01.22</td></tr><tr><td><a href="/bbs/onestop/1718/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.01.22</td></tr></table>';
@@ -49,6 +50,66 @@ describe('기관 습득물', () => {
     new InstitutionItemsService({
       request: async (url: string) => new Response(read(new URL(url))),
     } as ExternalHttpService);
+  it('장소 없는 지갑 검색은 완료된 전국 집계와 학교 건수를 합치고 경찰 중복을 제외한다', async () => {
+    const institution = (id: string, source: '한성대' | '경찰') =>
+      ({ id, source }) as Awaited<
+        ReturnType<InstitutionItemsService['search']>
+      >['items'][number];
+    const completedAt = new Date();
+    const snapshot = {
+      total: 100,
+      completedAt,
+      generation: 3,
+      retryAt: new Date(Date.now() + 60000),
+    };
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([{ atcId: 'shared', fdSn: '1' }]);
+    const db = {
+      agencyCountSnapshot: { upsert: jest.fn().mockResolvedValue(snapshot) },
+      agencyCountCandidate: { findMany },
+    } as unknown as DatabaseService;
+    const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    const search = jest.spyOn(api, 'search').mockResolvedValue({
+      items: [
+        institution('hansung:1', '한성대'),
+        institution('lost112:shared:1', '경찰'),
+        institution('lost112:other:1', '경찰'),
+      ],
+      notices: [],
+      unavailableSources: [],
+      nextCursor: null,
+    });
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'complete',
+      total: 102,
+      policeIncluded: true,
+      checkedAt: completedAt.toISOString(),
+    });
+    const cursor = search.mock.calls[0][3]!;
+    expect(JSON.parse(Buffer.from(cursor, 'base64url').toString())).toEqual([
+      [1, 0],
+      [1, 0],
+      null,
+    ]);
+    expect(findMany.mock.calls[0][0].where.generation).toBe(2);
+  });
+  it('전국 첫 집계가 끝나기 전에는 중간 건수나 포털 등록 건수를 표시하지 않는다', async () => {
+    const db = {
+      agencyCountSnapshot: {
+        upsert: async () => ({
+          total: null,
+          completedAt: null,
+          retryAt: new Date(Date.now() + 60000),
+        }),
+      },
+    } as unknown as DatabaseService;
+    const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'counting',
+      total: null,
+    });
+  });
   it('키가 없어도 학교 보관 공고와 불러오지 못한 기관을 구분한다', async () => {
     delete process.env.DATA_GO_KR_SERVICE_KEY;
     const result = await service(() => school).search('이어폰', '', 'all');
