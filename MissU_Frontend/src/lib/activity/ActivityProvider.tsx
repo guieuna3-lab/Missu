@@ -49,6 +49,10 @@ import type {
 
 // 로그인한 회원의 반환 내역은 서버에서 읽고, 개발용 예시 세션은 기존 데이터를 사용합니다.
 type ActivityValue = ActivityState & {
+  foundError?: string;
+  foundLoading: boolean;
+  retryFound: () => void;
+  deleteFoundItem: (id: string) => Promise<void>;
   reportsError?: string;
   retryReports: () => void;
   /** 'loading' while the activity is being fetched after sign-in (Figma 01.05-L). */
@@ -96,6 +100,9 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     error?: string;
   }>();
   const [reloadReports, setReloadReports] = useState(0);
+  const [foundLoad, setFoundLoad] = useState<{ session: number; error?: string }>();
+  const [reloadFound, setReloadFound] = useState(0);
+  const foundRevision = useRef(0);
   const reportsRevision = useRef(0);
   const activeClient = useRef(claimClient);
   const revision = useRef(0);
@@ -125,6 +132,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     if (!signedIn) return;
     if (accessToken) {
       let active = true;
+      const version = foundRevision.current;
       const initialItems = new Map(stateRef.current.foundItems.map((item) => [item.id, item]));
       const headers = { Authorization: 'Bearer ' + accessToken };
       void (async () => {
@@ -143,7 +151,11 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           rows.map(async (row) => {
             const { data } = await api<{
               data: ServerItem & { privateFeatures?: string; appCategory?: FoundItem['category'] };
-            }>('/items/' + row.id + '/manage', { headers });
+            }>('/items/' + row.id + '/manage', { headers }).catch((e: unknown) => {
+              if (e instanceof ApiError && e.status === 404) return { data: null };
+              throw e;
+            });
+            if (!data) return null;
             return {
               id: row.id,
               name: data.name,
@@ -169,7 +181,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
             };
           }),
         );
-        if (active) {
+        if (active && version === foundRevision.current) {
           // 조회 도중 등록하거나 수정한 물품은 서버의 이전 응답으로 덮지 않습니다.
           const updated = stateRef.current.foundItems.filter(
             (item) => initialItems.get(item.id) !== item,
@@ -177,13 +189,18 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           const ids = new Set(updated.map((item) => item.id));
           const next = {
             ...stateRef.current,
-            foundItems: [...updated, ...foundItems.filter((item) => !ids.has(item.id))],
+            foundItems: [
+              ...updated,
+              ...foundItems.filter((item) => item !== null).filter((item) => !ids.has(item.id)),
+            ],
           };
           stateRef.current = next;
           setLoaded({ session: sessionId, state: next });
+          setFoundLoad({ session: sessionId });
         }
       })().catch(() => {
-        /* 반환 요청 동기화는 물품 목록과 독립적으로 진행됩니다. */
+        if (active && version === foundRevision.current)
+          setFoundLoad({ session: sessionId, error: '등록한 습득물을 불러오지 못했어요.' });
       });
       return () => {
         active = false;
@@ -196,7 +213,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       });
     }, LOAD_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [signedIn, sessionId, activityPreset, accessToken]);
+  }, [signedIn, sessionId, activityPreset, accessToken, reloadFound]);
 
   useEffect(() => {
     if (!reportsClient) return;
@@ -353,6 +370,40 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         reportsClient
           ? reportsClient.remove(id).then(() => changeReport(id))
           : apply((current) => deleteLostReport(current, id)),
+      deleteFoundItem: async (id: string) => {
+        const removeFromList = (current: ActivityState): ActivityState => ({
+          ...current,
+          foundItems: current.foundItems.filter((item) => item.id !== id),
+          requests: current.requests.map((r) =>
+            r.itemId === id && r.status === 'pending'
+              ? { ...r, status: 'rejected', closedReason: '보관자가 습득물 글을 삭제했어요.' }
+              : r,
+          ),
+        });
+        if (!accessToken) {
+          if (
+            stateRef.current.requests.some(
+              (r) => r.itemId === id && ['approved', 'scheduled', 'handed'].includes(r.status),
+            )
+          )
+            throw new ApiError(409, '반환 중인 물품은 수령 확인이 끝난 뒤 삭제할 수 있어요.');
+          return apply(removeFromList);
+        }
+        await api<void>('/items/' + id, {
+          method: 'DELETE',
+          headers: { Authorization: 'Bearer ' + accessToken },
+        }).catch((e: unknown) => {
+          if (!(e instanceof ApiError && e.status === 404)) throw e;
+        });
+        if (activeClient.current !== claimClient) throw new ApiError(401, '다시 로그인해 주세요.');
+        // 삭제 전에 시작한 목록·반환 요청 조회가 삭제된 항목을 다시 표시하지 않게 합니다.
+        foundRevision.current++;
+        revision.current++;
+        const next = removeFromList(stateRef.current);
+        stateRef.current = next;
+        setLoaded({ session: sessionId, state: next });
+        setReloadFound((n) => n + 1);
+      },
       registerFoundItem: async (input: FoundItemInput) => {
         if (!accessToken) throw new ApiError(401, '로그인이 필요합니다.');
         if (!input.photoIds?.length || input.place.lat == null || input.place.lng == null)
@@ -525,11 +576,17 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       ...state,
       status:
         reportsClient && reportsLoad?.client !== reportsClient ? ('loading' as const) : status,
+      foundLoading: accessToken ? foundLoad?.session !== sessionId : status === 'loading',
+      foundError: foundLoad?.session === sessionId ? foundLoad.error : undefined,
+      retryFound: () => {
+        setFoundLoad(undefined);
+        setReloadFound((n) => n + 1);
+      },
       reportsError: reportsLoad?.client === reportsClient ? reportsLoad?.error : undefined,
       retryReports: () => setReloadReports((n) => n + 1),
       ...actions,
     }),
-    [state, status, actions, reportsClient, reportsLoad],
+    [state, status, actions, reportsClient, reportsLoad, accessToken, foundLoad, sessionId],
   );
   return <ActivityContext.Provider value={value}>{children}</ActivityContext.Provider>;
 }
