@@ -1,6 +1,7 @@
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import type { DatabaseService } from '../database/database.service';
 
 const school =
   '<table><th>작성일</th><tr><td><a href="/bbs/onestop/1718/1/artclView.do"><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.01.22</td></tr><tr><td><a href="/bbs/onestop/1718/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.01.22</td></tr></table>';
@@ -49,13 +50,80 @@ describe('기관 습득물', () => {
     new InstitutionItemsService({
       request: async (url: string) => new Response(read(new URL(url))),
     } as ExternalHttpService);
+  it('장소 없는 지갑 검색은 완료된 전국 집계와 학교 건수를 합치고 경찰 중복을 제외한다', async () => {
+    const institution = (id: string, source: '한성대' | '경찰') =>
+      ({ id, source }) as Awaited<
+        ReturnType<InstitutionItemsService['search']>
+      >['items'][number];
+    const completedAt = new Date();
+    const snapshot = {
+      total: 100,
+      completedAt,
+      generation: 3,
+      retryAt: new Date(Date.now() + 60000),
+    };
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([{ atcId: 'shared', fdSn: '1' }]);
+    const db = {
+      agencyCountSnapshot: { upsert: jest.fn().mockResolvedValue(snapshot) },
+      agencyCountCandidate: { findMany },
+    } as unknown as DatabaseService;
+    const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    const search = jest.spyOn(api, 'search').mockResolvedValue({
+      items: [
+        institution('hansung:1', '한성대'),
+        institution('lost112:shared:1', '경찰'),
+        institution('lost112:other:1', '경찰'),
+      ],
+      notices: [],
+      unavailableSources: [],
+      nextCursor: null,
+    });
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'complete',
+      total: 102,
+      policeIncluded: true,
+      checkedAt: completedAt.toISOString(),
+    });
+    const cursor = search.mock.calls[0][3]!;
+    expect(JSON.parse(Buffer.from(cursor, 'base64url').toString())).toEqual([
+      [1, 0],
+      [1, 0],
+      null,
+    ]);
+    expect(findMany.mock.calls[0][0].where.generation).toBe(2);
+  });
+  it('전국 첫 집계가 끝나기 전에는 중간 건수나 포털 등록 건수를 표시하지 않는다', async () => {
+    const db = {
+      agencyCountCandidate: {
+        groupBy: async () => [
+          { stored: null, _count: { _all: 6 } },
+          { stored: false, _count: { _all: 1 } },
+        ],
+      },
+      agencyCountSnapshot: {
+        upsert: async () => ({
+          total: null,
+          completedAt: null,
+          retryAt: new Date(Date.now() + 60000),
+        }),
+      },
+    } as unknown as DatabaseService;
+    const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
+      status: 'counting',
+      total: null,
+      progress: { stage: 'listing', checked: 1, candidates: 7 },
+    });
+  });
   it('키가 없어도 학교 보관 공고와 불러오지 못한 기관을 구분한다', async () => {
     delete process.env.DATA_GO_KR_SERVICE_KEY;
     const result = await service(() => school).search('이어폰', '', 'all');
     expect(result.items.map((x) => x.id)).toEqual(['hansung:1']);
     expect(result.notices).toEqual([
       '경찰 자료를 현재 조회할 수 없어요.',
-      '지하철 자료를 현재 조회할 수 없어요.',
+      '포털기관 자료를 현재 조회할 수 없어요.',
     ]);
   });
   it('포털 전체 등록 수는 상세 카드 수나 역별 합계가 아닌 원본 totalCount로 읽는다', async () => {
@@ -122,7 +190,7 @@ describe('기관 습득물', () => {
     });
     expect(search).toHaveBeenCalledTimes(2);
   });
-  it.each(['한성대', '지하철'] as const)(
+  it.each(['한성대', '포털기관'] as const)(
     '%s 조회 실패를 0건으로 계산하지 않는다',
     async (source) => {
       const api = service(() => school);
@@ -300,35 +368,31 @@ describe('기관 습득물', () => {
       ['한성대입구역(4호선)', 0],
     ]);
   });
-  it('장소 없이 지갑을 찾아도 다른 포털기관에 밀린 역 보관품을 한 번만 표시한다', async () => {
-    const wallet = {
+  it('전국 검색에서 지하철·공항·상점의 보관품만 한 번씩 표시한다', async () => {
+    const venues = ['강남역(2호선)', '공항 고객센터', '백화점 안내소', '상점'];
+    const entries = venues.map((depPlace, i) => ({
       ...row,
-      fdPrdtNm: '카드지갑',
-      depPlace: '한성대입구역(4호선)',
-    };
-    let details = 0;
+      depPlace,
+      atcId: 'V' + i,
+      csteSteNm: i === 3 ? '반환완료' : '보관중',
+    }));
     const api = service((u) => {
-      if (u.host === 'www.hansung.ac.kr') return school;
+      if (u.host === 'www.hansung.ac.kr')
+        return '<table><th>작성일</th></table>';
       if (!u.pathname.includes('LosPtfund')) return xml([]);
-      if (u.pathname.endsWith('DetailInfo')) {
-        details++;
-        return xml([wallet]);
-      }
-      expect(u.searchParams.get('PRDT_NM')).toBe('지갑');
-      if (u.searchParams.has('DEP_PLACE')) return xml([wallet]);
-      return xml(
-        Array.from({ length: 40 }, (_, i) => ({
-          ...wallet,
-          atcId: 'SHOP' + i,
-          depPlace: '쇼핑몰 안내센터',
-        })),
-      );
+      if (u.pathname.endsWith('DetailInfo'))
+        return xml(
+          entries.filter((r) => r.atcId === u.searchParams.get('ATC_ID')),
+        );
+      expect(u.searchParams.has('DEP_PLACE')).toBe(false);
+      return xml([...entries, entries[0]]);
     });
-    const result = await api.search('지갑', '', 'all');
-    expect(
-      result.items.filter((i) => i.source === '지하철').map((i) => i.name),
-    ).toEqual(['카드지갑']);
-    expect(details).toBe(1);
+    const page = await api.search('지갑', '', 'all');
+    expect(page.items.map((i) => [i.storage, i.source])).toEqual([
+      [venues[0], '지하철'],
+      [venues[1], '포털기관'],
+      [venues[2], '포털기관'],
+    ]);
   });
   it('홈과 검색이 같은 원본 페이지의 나머지 물품부터 확인한 뒤 실제 다음 페이지를 읽는다', async () => {
     const wallets = Array.from({ length: 43 }, (_, n) => ({
@@ -345,7 +409,7 @@ describe('기관 습득물', () => {
         return xml(
           wallets.filter((w) => w.atcId === u.searchParams.get('ATC_ID')),
         );
-      if (u.searchParams.get('DEP_PLACE') !== '2호선') return xml([]);
+      expect(u.searchParams.has('DEP_PLACE')).toBe(false);
       const page = Number(u.searchParams.get('pageNo'));
       const size = Number(u.searchParams.get('numOfRows'));
       return xml(wallets.slice((page - 1) * size, page * size)).replace(
@@ -361,20 +425,19 @@ describe('기관 습득물', () => {
       (cursor?: string) => api.recent(cursor),
       (cursor?: string) => api.search('지갑', '', 'all', cursor),
     ]) {
-      const a = await fetch(),
-        b = await fetch(a.nextCursor!),
-        c = await fetch(b.nextCursor!);
-      expect([a.items.length, b.items.length, c.items.length]).toEqual([
-        24, 16, 3,
-      ]);
-      expect(
-        new Set([...a.items, ...b.items, ...c.items].map((i) => i.id)).size,
-      ).toBe(43);
-      expect(c.nextCursor).toBeNull();
-      for (const page of [a, b, c]) expect(page.notices).toEqual([]);
+      const pages = [await fetch()];
+      while (pages.at(-1)!.nextCursor && pages.length < 5) {
+        pages.push(await fetch(pages.at(-1)!.nextCursor!));
+      }
+      expect(pages[0].items).toHaveLength(24);
+      const ids = pages.flatMap((page) => page.items.map((item) => item.id));
+      expect(ids).toHaveLength(43);
+      expect(new Set(ids).size).toBe(43);
+      expect(pages.at(-1)!.nextCursor).toBeNull();
+      for (const page of pages) expect(page.notices).toEqual([]);
     }
   });
-  it.each(['목록', '상세', '상세 누락'] as const)(
+  it.each(['상세', '상세 누락'] as const)(
     '지하철 %s 조회 실패만 알리고 읽은 물품은 유지한다',
     async (failure) => {
       const rail = { ...row, depPlace: '강남역(2호선)' };
@@ -386,15 +449,11 @@ describe('기관 습득물', () => {
           if (failure === '상세') throw Error('detail unavailable');
           return xml([]);
         }
-        if (failure === '목록' && url.searchParams.get('DEP_PLACE') === '2호선')
-          throw Error('list unavailable');
-        return xml(
-          failure === '목록' ? [rail] : [rail, { ...rail, fdSn: '2' }],
-        );
+        return xml([rail, { ...rail, fdSn: '2' }]);
       });
       const page = await api.search('이어폰', '', 'all');
       expect(page.items.map((i) => i.id)).toContain('lost112:F0001:1');
-      expect(page.notices).toEqual(['지하철 자료 일부를 불러오지 못했어요.']);
+      expect(page.notices).toEqual(['포털기관 자료 일부를 불러오지 못했어요.']);
     },
   );
   it('다음 지하철 페이지 전체가 실패하면 같은 위치에서 다시 조회할 수 있다', async () => {
@@ -408,7 +467,7 @@ describe('기관 습득물', () => {
       'base64url',
     );
     const failed = await api.search('이어폰', '강남역', 'all', cursor);
-    expect(failed.notices).toEqual(['지하철 자료를 현재 조회할 수 없어요.']);
+    expect(failed.notices).toEqual(['포털기관 자료를 현재 조회할 수 없어요.']);
     expect(failed.nextCursor).toBe(cursor);
     offline = false;
     const recovered = await api.search(

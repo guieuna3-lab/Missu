@@ -59,6 +59,7 @@ async function loadResults(
   filters: SearchFilters,
   previous: SearchState,
   searchTime: number,
+  onMemberTotal?: (total: number) => void,
 ): Promise<SearchState> {
   const rows = new Map(previous.items.map((item) => [item.id, item]));
   const target = previous.visible + pageSize;
@@ -71,7 +72,10 @@ async function loadResults(
     const [member, agency] = await Promise.allSettled([
       memberCursor === null
         ? undefined
-        : itemRepository.searchPage(filters, memberCursor, searchTime),
+        : itemRepository.searchPage(filters, memberCursor, searchTime).then((page) => {
+            if (page.total !== undefined) onMemberTotal?.(page.total);
+            return page;
+          }),
       agencyCursor === null ? undefined : searchInstitutions(filters, agencyCursor),
     ]);
     if (member.status === 'fulfilled' && member.value) {
@@ -135,7 +139,8 @@ export default function SearchScreen() {
         const reply = await institutionTotal(countFilters!, controller.signal);
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
-        if (reply.status === 'counting') timer = setTimeout(() => void check(), 3500);
+        if (reply.status === 'counting')
+          timer = setTimeout(() => void check(), reply.progress ? 60000 : 3500);
         else if (reply.policeIncluded === false || reply.status === 'unavailable')
           timer = setTimeout(() => void check(), 120000);
       } catch {
@@ -186,7 +191,9 @@ export default function SearchScreen() {
     setCountFilters({ ...values });
     searchTime.current = Date.now();
     try {
-      const result = await loadResults(values, initialState, searchTime.current);
+      const result = await loadResults(values, initialState, searchTime.current, (memberTotal) => {
+        if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
+      });
       if (id === requestId.current) setState(result);
     } catch {
       if (id === requestId.current) setState({ ...initialState, status: 'error' });
@@ -286,7 +293,10 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {state.status === 'success' && (
+      {(state.status === 'success' ||
+        (state.status === 'loading' &&
+          state.memberTotal !== undefined &&
+          agencyCount?.total != null)) && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
@@ -298,16 +308,23 @@ export default function SearchScreen() {
               ? '총 습득물 ' +
                 (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
                 '건'
-              : '전체 습득물 건수를 확인하고 있어요'}
+              : agencyCount?.progress
+                ? '전국 지갑의 보관 상태를 처음 집계하고 있어요'
+                : '전체 습득물 건수를 확인하고 있어요'}
         </Text>
       )}
-      {state.status === 'success' &&
+      {(state.status === 'success' || state.status === 'loading') &&
         state.memberTotal !== undefined &&
         agencyCount?.total != null && (
           <Text style={typography.body}>
             {agencyCount.policeIncluded
-              ? '미슈 · 한성대 · 지하철 · 경찰 합계'
-              : '미슈 · 한성대 · 지하철 합계'}
+              ? '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰 합계'
+              : '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) 합계'}
+            {agencyCount.checkedAt &&
+              ' · 포털기관 집계 완료 ' +
+                new Date(agencyCount.checkedAt).toLocaleDateString('ko-KR', {
+                  timeZone: 'Asia/Seoul',
+                })}
           </Text>
         )}
       {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (

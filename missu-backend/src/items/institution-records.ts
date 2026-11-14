@@ -1,6 +1,6 @@
 import { DomUtils, parseDocument } from 'htmlparser2';
 
-export type Source = '한성대' | '경찰' | '지하철';
+export type Source = '한성대' | '경찰' | '지하철' | '포털기관';
 export type Point = { lat: number; lng: number };
 export type InstitutionItem = {
   id: string;
@@ -112,6 +112,8 @@ export function policePage(xml: string) {
   return {
     records,
     total,
+    page,
+    size,
     limited:
       total !== null &&
       records.length > 0 &&
@@ -120,7 +122,7 @@ export function policePage(xml: string) {
 }
 export function governmentItem(
   row: Record<string, string>,
-  source: '경찰' | '지하철',
+  source: '경찰' | '포털기관',
 ): InstitutionItem | undefined {
   const reference = row.atcId,
     sn = row.fdSn,
@@ -136,17 +138,15 @@ export function governmentItem(
   )
     return;
   if (clean(row.csteSteNm || '') !== '보관중') return;
-  if (
-    source === '지하철' &&
-    !/지하철|도시철도|교통공사|메트로|경전철|호선|역무실|역유실물|전철|철도공사/u.test(
+  // 지하철과 그 밖의 포털기관 모두 같은 보관 상태 기준을 적용합니다.
+  const rail =
+    /지하철|도시철도|교통공사|메트로|경전철|호선|역무실|역유실물|전철|철도공사/u.test(
       [row.fndKeepOrgnSeNm, row.orgNm, storage].join(' '),
-    )
-  )
-    return;
+    );
   return {
     id: 'lost112:' + reference + ':' + sn,
     reference: reference + ' / ' + sn,
-    source,
+    source: source === '포털기관' && rail ? '지하철' : source,
     name,
     date,
     dateLabel: '습득일',

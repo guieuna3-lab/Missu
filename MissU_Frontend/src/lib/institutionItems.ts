@@ -5,7 +5,7 @@ import type { SearchFilters } from './items';
 export type InstitutionItem = {
   id: string;
   name: string;
-  source: '경찰' | '지하철' | '한성대';
+  source: '경찰' | '지하철' | '한성대' | '포털기관';
   date: string;
   dateLabel: '게시일' | '습득일';
   storage: string;
@@ -32,7 +32,11 @@ function firstPage(path: string, cursor?: string) {
     if (pages.get(path)?.value === value) pages.delete(path);
   };
   void value.then((page) => {
-    if (!page.items.length || page.notices.some((n) => n.startsWith('지하철 '))) forget();
+    if (
+      !page.items.length ||
+      page.notices.some((n) => n.startsWith('포털기관 ') || n.startsWith('지하철 '))
+    )
+      forget();
   }, forget);
   return value;
 }
@@ -61,6 +65,8 @@ export type InstitutionTotal = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
   policeIncluded?: boolean;
+  checkedAt?: string;
+  progress?: { stage: 'listing' | 'checking'; checked: number; candidates: number };
 };
 export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
   return mapApi<InstitutionTotal>('/institution-items/search-total?' + institutionQuery(filters), {
