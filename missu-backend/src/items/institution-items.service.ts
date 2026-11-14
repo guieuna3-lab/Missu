@@ -191,9 +191,13 @@ export class InstitutionItemsService
       url.searchParams.set('findWord', q);
     }
     if (since(days)) url.searchParams.set('rgsBgndeStr', since(days));
-    const batch = schoolPage((await this.text(url.href, url)).body, page);
     const cutoff = since(days),
       today = koreaDay();
+    const batch = schoolPage(
+      (await this.text(url.href, url)).body,
+      page,
+      cutoff,
+    );
     const results = await readBatches(
       batch.items
         .filter((i) => i.date >= cutoff)
@@ -1224,90 +1228,142 @@ export class InstitutionItemsService
         groups.some((g) => g.status === 'rejected' || g.value.limited),
     };
   }
+  private async nearbySchool(query: NearbyDto, startPage: number) {
+    // 다음 페이지에서 실패해도 같은 위치에서 재시도할 수 있게 합니다.
+    let page = startPage;
+    let nextCursor: string | null = 'school:' + page;
+    const part = await this.part<Located>('한성대', async () => {
+      const { sites } = await this.places('한성대', query);
+      const site = sites[0];
+      if (!site) {
+        nextCursor = null;
+        return { items: [] };
+      }
+      const distanceM = Math.round(distance(query, site));
+      // 전부 반환됐거나 분류가 다른 페이지는 건너뜁니다. 한 요청에 읽는 페이지 수를 제한합니다.
+      for (let step = 0; ; step++) {
+        nextCursor = 'school:' + page;
+        const batch = await this.school(
+          query.q || '',
+          query.registeredDays,
+          page,
+        );
+        const items = batch.items
+          .filter(
+            (item) =>
+              query.category === 'ALL' || item.category === query.category,
+          )
+          .map((item) => ({
+            ...item,
+            distanceM,
+            foundLocation: {
+              lat: site.lat,
+              lng: site.lng,
+              label: '보관처 · ' + item.storage,
+            },
+          }));
+        if (batch.loadFailed) return { items, loadFailed: true };
+        page++;
+        nextCursor = batch.limited ? 'school:' + page : null;
+        if (items.length || !nextCursor || step === 2) return { items };
+      }
+    });
+    return { part, nextCursor };
+  }
   async nearby(query: NearbyDto) {
+    if (query.cursor && !/^school:[1-9]\d{0,5}$/.test(query.cursor))
+      fail(400, 'VALIDATION_ERROR', '다음 페이지 정보가 올바르지 않습니다.');
+    const page = query.cursor ? Number(query.cursor.slice(7)) : 1;
+    const school = this.nearbySchool(query, page);
+    if (query.cursor) {
+      const { part, nextCursor } = await school;
+      return { ...part, nextCursor };
+    }
     const parts = await Promise.all(
-      sourceList.map((source) =>
-        this.part<Located>(source, async () => {
-          if (source === '경찰' && !process.env.DATA_GO_KR_SERVICE_KEY)
-            throw Error('Agency access pending');
-          const { sites, limited } = await this.places(source, query);
-          const pages = await Promise.allSettled(
-            sites.map(async (site) => {
-              const live = async () =>
-                source === '한성대'
-                  ? await this.school(query.q || '', query.registeredDays)
-                  : await this.records(
-                      source,
-                      query.q || '',
-                      '',
-                      query.registeredDays,
-                      site,
-                    );
-              let batch: Awaited<ReturnType<typeof live>>;
-              const station =
-                source === '포털기관' && /역\s+.+선$/u.test(site.name);
-              if (station && this.db && (await this.uniqueStation(site))) {
-                const saved = await this.savedPage(
-                  query.q || '',
-                  site.name,
-                  query.registeredDays,
-                  0,
-                  [],
-                  0,
-                  true,
-                  query.category,
-                );
-                if (saved.items.length) {
-                  this.refreshPortal(
-                    ['nearby', site.name, query.q, query.registeredDays],
-                    saved.items,
-                    () =>
-                      this.records(
-                        '포털기관',
-                        query.q || '',
-                        '',
-                        query.registeredDays,
-                        site,
-                      ),
+      sourceList
+        .filter((source) => source !== '한성대')
+        .map((source) =>
+          this.part<Located>(source, async () => {
+            if (source === '경찰' && !process.env.DATA_GO_KR_SERVICE_KEY)
+              throw Error('Agency access pending');
+            const { sites, limited } = await this.places(source, query);
+            const pages = await Promise.allSettled(
+              sites.map(async (site) => {
+                const live = async () =>
+                  this.records(
+                    source,
+                    query.q || '',
+                    '',
+                    query.registeredDays,
+                    site,
                   );
-                  batch = { items: saved.items, limited: false };
+                let batch: Awaited<ReturnType<typeof live>>;
+                const station =
+                  source === '포털기관' && /역\s+.+선$/u.test(site.name);
+                if (station && this.db && (await this.uniqueStation(site))) {
+                  const saved = await this.savedPage(
+                    query.q || '',
+                    site.name,
+                    query.registeredDays,
+                    0,
+                    [],
+                    0,
+                    true,
+                    query.category,
+                  );
+                  if (saved.items.length) {
+                    this.refreshPortal(
+                      ['nearby', site.name, query.q, query.registeredDays],
+                      saved.items,
+                      () =>
+                        this.records(
+                          '포털기관',
+                          query.q || '',
+                          '',
+                          query.registeredDays,
+                          site,
+                        ),
+                    );
+                    batch = { items: saved.items, limited: false };
+                  } else batch = await live();
                 } else batch = await live();
-              } else batch = await live();
-              const items = batch.items
-                .filter(
-                  (i) =>
-                    i.date >= since(query.registeredDays) &&
-                    (query.category === 'ALL' || i.category === query.category),
-                )
-                .map((i) => ({
-                  ...i,
-                  distanceM: Math.round(distance(query, site)),
-                  foundLocation: {
-                    lat: site.lat,
-                    lng: site.lng,
-                    label: '보관처 · ' + i.storage,
-                  },
-                }));
-              return { items, limited: batch.limited };
-            }),
-          );
-          if (pages.length && pages.every((p) => p.status === 'rejected'))
-            throw Error('Source unavailable');
-          return {
-            items: pages.flatMap((p) =>
-              p.status === 'fulfilled' ? p.value.items : [],
-            ),
-            limited:
-              limited ||
-              pages.some((p) => p.status === 'rejected' || p.value.limited),
-          };
-        }),
-      ),
+                const items = batch.items
+                  .filter(
+                    (i) =>
+                      i.date >= since(query.registeredDays) &&
+                      (query.category === 'ALL' ||
+                        i.category === query.category),
+                  )
+                  .map((i) => ({
+                    ...i,
+                    distanceM: Math.round(distance(query, site)),
+                    foundLocation: {
+                      lat: site.lat,
+                      lng: site.lng,
+                      label: '보관처 · ' + i.storage,
+                    },
+                  }));
+                return { items, limited: batch.limited };
+              }),
+            );
+            if (pages.length && pages.every((p) => p.status === 'rejected'))
+              throw Error('Source unavailable');
+            return {
+              items: pages.flatMap((p) =>
+                p.status === 'fulfilled' ? p.value.items : [],
+              ),
+              limited:
+                limited ||
+                pages.some((p) => p.status === 'rejected' || p.value.limited),
+            };
+          }),
+        ),
     );
-    const result = combine(parts);
+    const { part, nextCursor } = await school;
+    const result = combine([part, ...parts]);
     result.items.sort(
       (a, b) => a.distanceM - b.distanceM || b.date.localeCompare(a.date),
     );
-    return result;
+    return { ...result, nextCursor };
   }
 }
