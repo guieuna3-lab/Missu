@@ -126,6 +126,32 @@ describe('기관 습득물', () => {
       '포털기관 자료를 현재 조회할 수 없어요.',
     ]);
   });
+  it('포털 일일 한도는 같은 기능만 중단하고 한국 날짜가 바뀌면 조회를 재개한다', async () => {
+    let quota = true;
+    let portalCalls = 0;
+    const api = service((url) => {
+      if (url.host === 'www.hansung.ac.kr') return school;
+      if (!url.pathname.includes('LosPtfund')) return xml([]);
+      if (url.pathname.endsWith('DetailInfo')) return xml([row]);
+      portalCalls++;
+      if (quota)
+        return '<OpenAPI_ServiceResponse><returnReasonCode>22</returnReasonCode></OpenAPI_ServiceResponse>';
+      return xml([row]).replace('<items>', '<totalCount>1</totalCount><items>');
+    });
+    const clock = jest.spyOn(Date, 'now');
+    try {
+      clock.mockReturnValue(Date.parse('2026-11-14T23:59:50+09:00'));
+      expect(await api.portalRegistrations('지갑', '')).toBeNull();
+      quota = false;
+      expect(await api.portalRegistrations('가방', '')).toBeNull();
+      expect(portalCalls).toBe(1);
+      clock.mockReturnValue(Date.parse('2026-11-15T00:00:01+09:00'));
+      expect(await api.portalRegistrations('지갑', '')).toBe(1);
+      expect(portalCalls).toBe(2);
+    } finally {
+      clock.mockRestore();
+    }
+  });
   it('포털 전체 등록 수는 상세 카드 수나 역별 합계가 아닌 원본 totalCount로 읽는다', async () => {
     let calls = 0;
     const api = service((url) => {
