@@ -1287,6 +1287,114 @@
             "mobileBearer": []
           }
         ]
+      },
+      "delete": {
+        "operationId": "ItemsController_remove",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-CSRF-Token",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "웹 쿠키 인증에서만 필수. 모바일 Bearer 요청에는 생략합니다."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "성공, 응답 본문 없음"
+          },
+          "400": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "입력·권한·상태 또는 외부 서비스 오류",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MissuError"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Items"
+        ],
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "mobileBearer": []
+          }
+        ]
       }
     },
     "/api/v1/items/{id}/manage": {

@@ -61,8 +61,12 @@ export async function harness() {
   await app.init();
   const db = app.get(DatabaseService);
   async function capture(response: request.Response) {
-    const cookies = response.headers['set-cookie'] as string[] | undefined;
-    for (const value of cookies ?? []) {
+    const cookies = response.headers['set-cookie'];
+    for (const value of Array.isArray(cookies)
+      ? cookies
+      : cookies
+        ? [cookies]
+        : []) {
       const raw = /mishu_session=([a-f0-9]{64})/.exec(value)?.[1];
       if (raw) {
         const session = await db.session.findUnique({

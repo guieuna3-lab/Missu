@@ -161,6 +161,38 @@ export class ItemsService {
         : null,
     };
   }
+  async remove(id: string, userId: string, requestId: string) {
+    await transaction(this.db, async (tx) => {
+      // 승인·전달과 같은 물품 행을 잠가, 반환이 진행되는 도중에 글이 사라지는 것을 막습니다.
+      const [item] = await tx.$queryRaw<
+        { status: string }[]
+      >`SELECT status FROM found_items WHERE id=${id}::uuid AND keeper_id=${userId}::uuid AND NOT archived FOR UPDATE`;
+      if (!item) fail(404, 'RESOURCE_NOT_FOUND', '물품을 찾을 수 없습니다.');
+      if (item.status === 'RESERVED')
+        fail(
+          409,
+          'RETURN_IN_PROGRESS',
+          '반환 중인 물품은 수령 확인이 끝난 뒤 삭제할 수 있어요.',
+        );
+      await tx.foundItem.update({ where: { id }, data: { archived: true } });
+      await tx.claim.updateMany({
+        where: { itemId: id, status: 'PENDING' },
+        data: {
+          status: 'CLOSED',
+          decisionReason: '보관자가 습득물 글을 삭제했어요.',
+        },
+      });
+      await tx.auditEvent.create({
+        data: {
+          actorId: userId,
+          entityType: 'found_items',
+          entityId: id,
+          action: 'ITEM_DELETED',
+          requestId,
+        },
+      });
+    });
+  }
   async edit(
     id: string,
     userId: string,

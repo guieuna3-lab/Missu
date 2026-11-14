@@ -18,7 +18,7 @@ import type { HistoryTab } from './HistoryListScreen';
 import { ProfileModal } from './ProfileModal';
 
 // Figma 01.05 with its loading (01.05-L), empty (01.05-E), logout confirmation (01.05-C)
-// and session-expired (01.04-S) states. A card with two or more entries opens the 01.09 list.
+// and session-expired (01.04-S) states.
 export function HistoryScreen() {
   const { profile, accessToken, sessionExpired, updateProfile, exitMemberPreview, startLogin } =
     usePreview();
@@ -71,35 +71,14 @@ export function HistoryScreen() {
               </View>
             ))}
           </>
-        ) : empty ? (
-          <>
-            <Text accessibilityRole="header" style={typography.heading}>
-              아직 활동 내역이 없어요
-            </Text>
-            <Text style={typography.body}>신고하거나 반환을 요청한 물품이 여기에 표시됩니다.</Text>
-            <ActionButton label="분실 신고하기" onPress={() => router.replace('/report')} />
-            <ActionButton
-              label="습득물 검색하기"
-              variant="outline"
-              onPress={() => router.push('/search')}
-              style={styles.blueOutline}
-            />
-          </>
         ) : (
           <>
             <Text accessibilityRole="header" style={typography.heading}>
-              내 활동
+              {empty && !activity.foundError && !activity.foundLoading && !activity.reportsError
+                ? '아직 활동 내역이 없어요'
+                : '내 활동'}
             </Text>
-            <Card
-              title="내 분실 신고"
-              disabled={reports.length === 0}
-              onPress={
-                reports.length === 1
-                  ? () =>
-                      router.push({ pathname: '/my-reports/[id]', params: { id: reports[0].id } })
-                  : () => openList('lost')
-              }
-            >
+            <Card title="내 분실 신고" onPress={() => openList('lost')}>
               {reports.length
                 ? `${plural(reports[0].name, reports.length)} · 신고됨`
                 : '신고한 물품이 없어요'}
@@ -117,21 +96,27 @@ export function HistoryScreen() {
                 ? `${plural(sent[0].itemName, sent.length)} · 진행 상태 보기`
                 : '진행 중인 반환 요청이 없어요'}
             </Card>
-            <Card
-              title="내가 등록한 습득물"
-              disabled={items.length === 0}
-              onPress={
-                items.length === 1
-                  ? () => router.push({ pathname: '/my-items/[id]', params: { id: items[0].id } })
-                  : () => openList('found')
-              }
-            >
+            <Card title="내가 등록한 습득물" onPress={() => openList('found')}>
               {items.length
                 ? `${plural(items[0].name, items.length)} · 받은 요청 ${
                     receivedRequests(activity).filter((r) => r.itemId === items[0].id).length
                   }건`
-                : '등록한 물품이 없어요'}
+                : activity.foundError ||
+                  (activity.foundLoading
+                    ? '등록한 물품을 불러오고 있어요'
+                    : '등록한 물품이 없어요')}
             </Card>
+            {empty && (
+              <>
+                <ActionButton label="분실 신고하기" onPress={() => router.replace('/report')} />
+                <ActionButton
+                  label="습득물 검색하기"
+                  variant="outline"
+                  onPress={() => router.push('/search')}
+                  style={styles.blueOutline}
+                />
+              </>
+            )}
           </>
         )}
       </ScrollView>

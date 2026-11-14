@@ -320,6 +320,7 @@ export function completeOpenApi(document: OpenAPIObject) {
     ],
     'put /api/v1/lost-reports/{id}': [200, envelope(ref('LostReport'))],
     'delete /api/v1/lost-reports/{id}': [204, null],
+    'delete /api/v1/items/{id}': [204, null],
     'put /api/v1/items/{id}': [
       200,
       envelope({

@@ -174,7 +174,11 @@ export class UsersController {
       query.type === 'MY_ITEMS'
         ? await this.db.foundItem.findMany({
             ...options,
-            where: { keeperId: userId, AND: olderThan(cursor) },
+            where: {
+              keeperId: userId,
+              archived: false,
+              AND: olderThan(cursor),
+            },
             select: {
               id: true,
               name: true,

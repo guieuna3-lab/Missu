@@ -88,8 +88,20 @@ export class UploadsService {
       !equal(sign(id + ':' + expires), signature)
     )
       fail(404, 'RESOURCE_NOT_FOUND', '사진을 찾을 수 없습니다.');
-    const photo = await this.db.itemPhoto.findUnique({ where: { id } });
-    if (!photo || (!photo.itemId && photo.uploaderId !== userId))
+    const photo = await this.db.itemPhoto.findUnique({
+      where: { id },
+      select: {
+        objectKey: true,
+        uploaderId: true,
+        itemId: true,
+        item: { select: { archived: true } },
+      },
+    });
+    if (
+      !photo ||
+      photo.item?.archived ||
+      (!photo.itemId && photo.uploaderId !== userId)
+    )
       fail(404, 'RESOURCE_NOT_FOUND', '사진을 찾을 수 없습니다.');
     return this.storage.get(photo.objectKey);
   }

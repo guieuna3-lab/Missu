@@ -101,6 +101,67 @@ describe('팀 화면의 회원 활동 API', () => {
     ).toEqual([]);
   });
 
+  it('작성자가 선택한 습득물 글과 사진만 숨기고 대기 요청을 종료한다', async () => {
+    const keeper = await h.user('delete-keeper'),
+      other = await h.user('delete-other');
+    const selected = await h.item(keeper),
+      keep = await h.item(keeper);
+    const path = '/items/' + selected.id;
+    const attached = await photo(keeper);
+    await h.db.itemPhoto.update({
+      where: { id: attached.id },
+      data: { state: 'ATTACHED', itemId: selected.id, sortOrder: 0 },
+    });
+    const detail = await other.agent.get('/api/v1' + path).expect(200);
+    const claim = await h
+      .post(other, path + '/claims')
+      .send(claimBody())
+      .expect(201);
+    await write(other, 'delete', path).expect(404);
+    await write(keeper, 'delete', path).expect(204);
+    await other.agent.get('/api/v1' + path).expect(404);
+    await keeper.agent.get('/api/v1' + path + '/manage').expect(404);
+    await other.agent.get(detail.body.data.photos[0].url).expect(404);
+    const history = await keeper.agent
+      .get('/api/v1/me/history?type=MY_ITEMS')
+      .expect(200);
+    expect(history.body.data.map((r: { id: string }) => r.id)).toEqual([
+      keep.id,
+    ]);
+    const request = await other.agent
+      .get('/api/v1/claims/' + claim.body.data.claimId)
+      .expect(200);
+    expect(request.body.data.status).toBe('CLOSED');
+    await h
+      .post(other, path + '/claims')
+      .send(claimBody())
+      .expect(404);
+  });
+
+  it('승인된 물품은 수령 확인 후 글을 삭제하고 완료한 반환 내역은 유지한다', async () => {
+    const keeper = await h.user('return-keeper'),
+      other = await h.user('return-other');
+    const item = await h.item(keeper),
+      path = '/items/' + item.id;
+    const claim = await h
+      .post(other, path + '/claims')
+      .send(claimBody())
+      .expect(201);
+    const c = '/claims/' + claim.body.data.claimId;
+    await h
+      .post(keeper, c + '/decision')
+      .send({ decision: 'APPROVE' })
+      .expect(200);
+    await write(keeper, 'delete', path).expect(409);
+    await h.post(keeper, c + '/handover').expect(200);
+    await write(keeper, 'delete', path).expect(409);
+    await h.post(other, c + '/receipt').expect(200);
+    await write(keeper, 'delete', path).expect(204);
+    expect(
+      (await other.agent.get('/api/v1' + c).expect(200)).body.data.status,
+    ).toBe('RETURNED');
+  });
+
   it('습득물 사진 재정렬과 실패한 수정은 원자적으로 처리한다', async () => {
     const keeper = await h.user('edit-keeper'),
       other = await h.user('edit-other');
