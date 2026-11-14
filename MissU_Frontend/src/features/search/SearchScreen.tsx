@@ -49,6 +49,7 @@ type SearchState = {
   agencyCursor?: string | null;
   memberNotice?: string;
   agencyNotice?: string;
+  agencyPageIssues?: string[];
 };
 const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
 const resultTime = (item: SearchItem) =>
@@ -62,6 +63,7 @@ async function loadResults(
   const rows = new Map(previous.items.map((item) => [item.id, item]));
   const target = previous.visible + pageSize;
   let { memberCursor, agencyCursor, memberNotice, agencyNotice, memberTotal } = previous;
+  const agencyPageIssues = new Set(previous.agencyPageIssues);
   let status: SearchState['status'] = 'success';
   // 두 출처가 응답할 때까지 카드를 공개하지 않고, 넘치는 결과는 다음 더보기에 사용합니다.
   while (rows.size < target && (memberCursor !== null || agencyCursor !== null)) {
@@ -82,8 +84,14 @@ async function loadResults(
     }
     if (agency.status === 'fulfilled' && agency.value) {
       for (const item of agency.value.items) rows.set(item.id, item);
+      // 넘어간 페이지에서 누락된 자료는 뒤 페이지가 성공해도 누락된 상태입니다.
+      if (agency.value.nextCursor && agency.value.nextCursor === agencyCursor) {
+        agencyNotice = agency.value.notices.join(' ');
+      } else {
+        for (const notice of agency.value.notices) agencyPageIssues.add(notice);
+        agencyNotice = undefined;
+      }
       agencyCursor = agency.value.nextCursor;
-      agencyNotice = agency.value.notices.join(' ');
     } else if (agency.status === 'rejected') {
       agencyNotice = '기관 자료를 불러오지 못했어요. 다시 시도해 주세요.';
     }
@@ -103,6 +111,7 @@ async function loadResults(
     agencyCursor,
     memberNotice,
     agencyNotice,
+    agencyPageIssues: [...agencyPageIssues],
   };
 }
 
@@ -301,9 +310,11 @@ export default function SearchScreen() {
               : '미슈 · 한성대 · 지하철 합계'}
           </Text>
         )}
-      {!!(state.memberNotice || state.agencyNotice) && (
+      {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (
         <Text accessibilityLiveRegion="polite" style={typography.body}>
-          {[state.memberNotice, state.agencyNotice].filter(Boolean).join(' ')}
+          {[state.memberNotice, ...(state.agencyPageIssues ?? []), state.agencyNotice]
+            .filter(Boolean)
+            .join(' ')}
         </Text>
       )}
       {state.status === 'success' && !state.items.length && (

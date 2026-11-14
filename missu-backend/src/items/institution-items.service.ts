@@ -28,7 +28,7 @@ type Located = InstitutionItem & {
 type Result<T> = { items: T[]; notices: string[]; unavailableSource?: Source };
 // 기관마다 원본 페이지와 아직 상세 확인하지 않은 후보 위치가 다릅니다.
 type Position = [page: number, offset: number] | null;
-type PageBatch = Batch & { next?: Position };
+type PageBatch = Batch & { next?: Position; loadFailed?: boolean };
 type CountProgress = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
@@ -310,11 +310,8 @@ export class InstitutionItemsService {
         const current = detail.records.find(
           (x) => x.atcId === row.atcId && x.fdSn === row.fdSn,
         );
-        if (!current && strict) throw Error('Missing detail');
-        if (
-          !current ||
-          (site && clean(current.depPlace || '') !== clean(row.depPlace))
-        )
+        if (!current) throw Error('Missing detail');
+        if (site && clean(current.depPlace || '') !== clean(row.depPlace))
           return;
         return governmentItem({ ...row, ...current }, source);
       }),
@@ -323,10 +320,13 @@ export class InstitutionItemsService {
     const items = checked.flatMap((r) =>
       r.status === 'fulfilled' && r.value ? [r.value] : [],
     );
-    if (strict && checked.some((r) => r.status === 'rejected'))
-      throw Error('Incomplete agency details');
+    const loadFailed =
+      pages.length < requests.length ||
+      checked.some((r) => r.status === 'rejected');
+    if (strict && loadFailed) throw Error('Incomplete agency details');
     return {
       items,
+      loadFailed,
       next:
         offset + limit < shortlist.length
           ? [pageNo, offset + limit]
@@ -334,21 +334,24 @@ export class InstitutionItemsService {
             ? [pageNo + 1, 0]
             : null,
       limited:
-        pages.length < requests.length ||
+        loadFailed ||
         pages.some((p) => p.limited) ||
-        shortlist.length > offset + limit ||
-        checked.some((r) => r.status === 'rejected'),
+        shortlist.length > offset + limit,
     };
   }
   private async part<T extends InstitutionItem>(
     source: Source,
-    run: () => Promise<{ items: T[]; limited: boolean }>,
+    run: () => Promise<{ items: T[]; limited?: boolean; loadFailed?: boolean }>,
   ): Promise<Result<T>> {
     try {
-      const { items, limited } = await run();
+      const { items, limited, loadFailed } = await run();
       return {
         items,
-        notices: limited ? [source + ' 자료는 일부만 표시해요.'] : [],
+        notices: loadFailed
+          ? [source + ' 자료 일부를 불러오지 못했어요.']
+          : limited
+            ? [source + ' 자료는 일부만 표시해요.']
+            : [],
       };
     } catch {
       return {
@@ -528,13 +531,13 @@ export class InstitutionItemsService {
       sourceList.map((source, i) =>
         this.part(source, async () => {
           const pos = positions[i];
-          if (!pos) return { items: [], limited: false };
+          if (!pos) return { items: [] };
           if (source === '한성대') {
             const batch = await this.school(q, days, pos[0]);
             if (strict && batch.limited && pos[0] >= 9999)
               throw Error('Incomplete school board');
             next[i] = batch.limited && pos[0] < 9999 ? [pos[0] + 1, 0] : null;
-            return batch;
+            return { items: batch.items };
           }
           const batch = await this.records(
             source,
@@ -547,33 +550,36 @@ export class InstitutionItemsService {
             strict,
           );
           next[i] = batch.next ?? null;
-          return batch;
+          // 남은 물품은 다음 페이지로 넘기고, 조회 실패만 검색 안내로 보냅니다.
+          return { items: batch.items, loadFailed: batch.loadFailed };
         }),
       ),
     );
     const result = combine(parts);
+    let nextCursor = next.some(Boolean)
+      ? Buffer.from(JSON.stringify(next)).toString('base64url')
+      : null;
     if (
-      !result.items.length &&
-      parts.every(
-        (p, i) =>
-          !positions[i] || p.notices.some((n) => n.includes('현재 조회')),
-      )
+      cursor &&
+      !strict &&
+      positions.some(Boolean) &&
+      parts.every((p, i) => !positions[i] || p.unavailableSource)
     ) {
-      if (cursor && !strict)
+      if (recent)
         fail(
           503,
           'EXTERNAL_UNAVAILABLE',
           '기관 자료를 불러오지 못했어요. 다시 시도해 주세요.',
         );
+      // 후속 페이지 조회 실패도 기관명을 표시하고, 더보기로 같은 페이지를 재시도합니다.
+      nextCursor = cursor;
     }
     return {
       ...result,
       unavailableSources: parts.flatMap((p) =>
         p.unavailableSource ? [p.unavailableSource] : [],
       ),
-      nextCursor: next.some(Boolean)
-        ? Buffer.from(JSON.stringify(next)).toString('base64url')
-        : null,
+      nextCursor,
     };
   }
   private async uniqueStation(site: Custodian) {
