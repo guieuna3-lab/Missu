@@ -1,10 +1,11 @@
+import { sinceFound, schoolFoundDay } from './institution-records';
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import type { DatabaseService } from '../database/database.service';
 
 const school =
-  '<table><th>작성일</th><tr><td><a href="/bbs/onestop/1718/1/artclView.do"><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.01.22</td></tr><tr><td><a href="/bbs/onestop/1718/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.01.22</td></tr></table>';
+  '<table><th>작성일</th><tr><td><a href="/bbs/onestop/1718/1/artclView.do"><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.11.22</td></tr><tr><td><a href="/bbs/onestop/1718/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.11.22</td></tr></table>';
 function xml(rows: Record<string, string>[]) {
   return (
     '<response><resultCode>00</resultCode><items>' +
@@ -34,10 +35,14 @@ describe('기관 습득물', () => {
   const key = process.env.DATA_GO_KR_SERVICE_KEY,
     kakao = process.env.KAKAO_REST_API_KEY;
   beforeEach(() => {
+    jest
+      .spyOn(Date, 'now')
+      .mockReturnValue(Date.parse('2026-11-14T12:00:00+09:00'));
     process.env.DATA_GO_KR_SERVICE_KEY = 'test';
     process.env.KAKAO_REST_API_KEY = 'test';
   });
   afterEach(() => {
+    jest.restoreAllMocks();
     for (const [k, v] of [
       ['DATA_GO_KR_SERVICE_KEY', key],
       ['KAKAO_REST_API_KEY', kakao],
@@ -48,7 +53,20 @@ describe('기관 습득물', () => {
   });
   const service = (read: (u: URL) => string) =>
     new InstitutionItemsService({
-      request: async (url: string) => new Response(read(new URL(url))),
+      request: async (url: string) => {
+        if (
+          url.startsWith('https://www.hansung.ac.kr/') &&
+          url.endsWith('/artclView.do')
+        ) {
+          const id = Number(url.split('/').at(-2));
+          return new Response(
+            '<div class="txt">습득일: 2026.11.' +
+              String(id).padStart(2, '0') +
+              '</div>',
+          );
+        }
+        return new Response(read(new URL(url)));
+      },
     } as ExternalHttpService);
   it('장소 없는 지갑 검색은 완료된 전국 집계와 학교 건수를 합치고 경찰 중복을 제외한다', async () => {
     const institution = (id: string, source: '한성대' | '경찰') =>
@@ -62,12 +80,13 @@ describe('기관 습득물', () => {
       generation: 3,
       retryAt: new Date(Date.now() + 60000),
     };
-    const findMany = jest
+    const raw = jest
       .fn()
-      .mockResolvedValue([{ atcId: 'shared', fdSn: '1' }]);
+      .mockResolvedValueOnce([{ n: 100 }])
+      .mockResolvedValueOnce([{ id: 'lost112:shared:1' }]);
     const db = {
+      $queryRaw: raw,
       agencyCountSnapshot: { upsert: jest.fn().mockResolvedValue(snapshot) },
-      agencyCountCandidate: { findMany },
     } as unknown as DatabaseService;
     const api = new InstitutionItemsService({} as ExternalHttpService, db);
     const search = jest.spyOn(api, 'search').mockResolvedValue({
@@ -92,7 +111,59 @@ describe('기관 습득물', () => {
       [1, 0],
       null,
     ]);
-    expect(findMany.mock.calls[0][0].where.generation).toBe(2);
+    expect(raw.mock.calls[0]).toContain(2);
+  });
+  it('한국 달력의 최근 6개월과 학교 원문의 실제 습득일을 적용한다', () => {
+    expect(sinceFound('all', Date.parse('2024-08-31T00:00:00+09:00'))).toBe(
+      '2024-02-29',
+    );
+    expect(sinceFound('all', Date.parse('2026-11-14T00:00:00+09:00'))).toBe(
+      '2026-05-14',
+    );
+    expect(
+      schoolFoundDay('<div class="txt">작성일: 2026.11.12</div>'),
+    ).toBeUndefined();
+    expect(
+      schoolFoundDay('<div class="txt">습득일: 2026.02.31</div>'),
+    ).toBeUndefined();
+  });
+  it('포털이 닫혀도 이름·기간·장소가 일치한 저장 보관품을 날짜와 함께 바로 전달한다', async () => {
+    const checkedAt = new Date('2026-11-13T23:00:00+09:00');
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([
+        {
+          id: 'lost112:V111:2',
+          source: '지하철',
+          name: '카드지갑',
+          storage: '가상역(2호선)',
+          day: '2026-05-14',
+          category: 'WALLET_BAG',
+          checkedAt,
+        },
+      ]);
+    const api = new InstitutionItemsService(
+      {
+        request: async () => {
+          throw Error('offline');
+        },
+      } as unknown as ExternalHttpService,
+      { verifiedPortalItem: { findMany } } as unknown as DatabaseService,
+    );
+    const cursor = Buffer.from(JSON.stringify([null, null, [0, 0]])).toString(
+      'base64url',
+    );
+    const result = await api.search('지갑', '가상역 2호선', 'all', cursor);
+    expect(result.items[0]).toMatchObject({
+      reference: 'V111 / 2',
+      lastVerifiedOn: '2026-11-13',
+    });
+    expect(findMany.mock.calls[0][0].where).toMatchObject({
+      stored: true,
+      name: { contains: '지갑' },
+      day: { gte: '2026-05-14', lte: '2026-11-14' },
+      placeKey: { contains: '가상역2호선' },
+    });
   });
   it('전국 첫 집계가 끝나기 전에는 중간 건수나 포털 등록 건수를 표시하지 않는다', async () => {
     const db = {
@@ -352,7 +423,7 @@ describe('기관 습득물', () => {
         (_, i) =>
           '<tr><td><a href="/bbs/onestop/1718/' +
           (i + 1) +
-          '/artclView.do">물품 보관중</a></td><td class="td-date">2026.01.' +
+          '/artclView.do">물품 보관중</a></td><td class="td-date">2026.11.' +
           String(i + 1).padStart(2, '0') +
           '</td></tr>',
       ).join('') +
