@@ -1,4 +1,4 @@
-import { Linking } from 'react-native';
+import { router } from 'expo-router';
 import { mapApi, type Coordinates } from '../features/nearby/mapData';
 import type { SearchFilters } from './items';
 
@@ -13,6 +13,8 @@ export type InstitutionItem = {
   reference: string;
   url: string;
   category: string;
+  phone?: string;
+  foundPlace?: string;
 };
 type NearbyInstitution = InstitutionItem & {
   foundLocation: Coordinates & { label: string };
@@ -77,7 +79,10 @@ export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
 export function nearbyInstitutions(params: string, signal: AbortSignal) {
   return mapApi<Result<NearbyInstitution>>('/institution-items/nearby?' + params, { signal });
 }
-// 기관 물건은 원문으로 연결합니다. 미슈 회원용 확인 요청에는 기관 관리번호를 보내지 않습니다.
+// 카드와 공유 링크가 같은 상세 주소를 사용합니다. 보관 상태는 서버에서 다시 확인합니다.
 export function openInstitution(item: InstitutionItem) {
-  void Linking.openURL(item.url).catch(() => {});
+  router.push({ pathname: '/items/[id]', params: { id: item.id } });
+}
+export function institutionDetail(id: string) {
+  return mapApi<InstitutionItem>('/institution-items/detail/' + encodeURIComponent(id));
 }
