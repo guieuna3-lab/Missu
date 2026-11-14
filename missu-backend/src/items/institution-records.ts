@@ -13,6 +13,8 @@ export type InstitutionItem = {
   reference: string;
   lastVerifiedOn?: string;
   category: string;
+  phone?: string;
+  foundPlace?: string;
 };
 export type Batch = { items: InstitutionItem[]; limited: boolean };
 
@@ -33,6 +35,30 @@ function category(text: string) {
   if (/지갑|가방|백팩|파우치/u.test(text)) return 'WALLET_BAG';
   return 'OTHER';
 }
+const schoolBoard = '/bbs/hansung/2175/';
+export const schoolList = 'https://www.hansung.ac.kr' + schoolBoard + 'artclList.do';
+export const schoolArticle = (id: string) => 'https://www.hansung.ac.kr' + schoolBoard + id + '/artclView.do';
+function schoolRecord(id: string, title: string, state: string, date: string): InstitutionItem | undefined {
+  // 학교는 반환한 뒤에도 제목의 ‘보관중’을 남깁니다. 게시물 분류를 우선합니다.
+  if (state !== '접수' || /반환|폐기|수령\s*완료/u.test(title) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+  const name = title.match(/\((.+)\)\s*보관/u)?.[1] ?? title;
+  if (!name) return;
+  return { id: 'hansung:' + id, reference: id, source: '한성대', name, category: category(name),
+    date, dateLabel: '게시일', storage: school, url: schoolArticle(id), phone: '02-760-8000',
+    foundPlace: title.match(/^(.+?)에서\s*습득/u)?.[1] };
+}
+export function schoolDetail(html: string, id: string) {
+  const dom = parseDocument(html);
+  const header = DomUtils.findOne(el => el.attribs.class?.split(/\s+/).includes('title') && byTag('span',el.children).some(s=>s.attribs.class?.includes('cate-name')), dom.children);
+  if (!header) throw Error('Unknown school article');
+  const state = byTag('span',header.children).find(s=>s.attribs.class?.includes('cate-name'));
+  const title = byTag('strong',header.children)[0];
+  const date = plain(header).match(/작성일\s*:\s*(\d{4}\.\d{2}\.\d{2})/)?.[1].replaceAll('.','-');
+  const item = title && state && date ? schoolRecord(id,plain(title).trim(),plain(state).trim(),date) : undefined;
+  const found = schoolFoundDay(html);
+  if(item && found) return {...item, date:found,dateLabel:'습득일' as const};
+  return item;
+}
 export function schoolPage(html: string, page = 1): Batch {
   const dom = parseDocument(html);
   if (
@@ -41,37 +67,14 @@ export function schoolPage(html: string, page = 1): Batch {
     throw Error('Unknown board layout');
   const items: InstitutionItem[] = [];
   for (const row of byTag('tr', dom.children)) {
-    const link = byTag('a', row.children).find((node) =>
-      /^\/bbs\/onestop\/1718\/\d+\/artclView\.do$/.test(
-        node.attribs.href ?? '',
-      ),
-    );
+    const link = byTag('a',row.children).find(a=>/^\/bbs\/hansung\/2175\/\d+\/artclView\.do$/.test(a.attribs.href || ''));
     if (!link) continue;
-    const title = plain(link).trim();
-    const cell = byTag('td', row.children).find((node) =>
-      node.attribs.class?.split(/\s+/).includes('td-date'),
-    );
-    const date = cell && plain(cell).trim().replaceAll('.', '-');
-    if (
-      !date ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
-      !/보관\s*중/u.test(title) ||
-      /반환|폐기|수령\s*완료/u.test(title)
-    )
-      continue;
-    const id = link.attribs.href.split('/')[4];
-    const name = title.match(/\((.+)\)\s*보관/u)?.[1] || title;
-    items.push({
-      id: 'hansung:' + id,
-      source: '한성대',
-      name,
-      category: category(name),
-      date,
-      dateLabel: '게시일',
-      storage: school,
-      reference: id,
-      url: 'https://www.hansung.ac.kr' + link.attribs.href,
-    });
+    const state=byTag('span',link.children).find(n=>n.attribs.class?.split(/\s+/).includes('cate-name'));
+    const title=byTag('strong',link.children)[0];
+    const cell=byTag('td',row.children).find(n=>n.attribs.class?.split(/\s+/).includes('td-date'));
+    if(!state || !title || !cell) continue;
+    const item=schoolRecord(link.attribs.href.split('/')[4],plain(title).trim(),plain(state).trim(),plain(cell).trim().replaceAll('.','-'));
+    if(item) items.push(item);
   }
   const count = plain(dom).match(/총\s*([\d,]+)\s*개의?\s*게시물/u);
   const pageLinks = byTag('a', dom.children).map((a) =>
@@ -154,6 +157,7 @@ export function governmentItem(
     storage,
     category: category((row.prdtClNm || '') + ' ' + name),
     url: policeSite,
+    phone: /^(?:0[0-9 -]{7,15}|1[0-9 -]{7,9})$/.test(row.tel || '') ? row.tel.trim() : undefined,
   };
 }
 export function distance(a: Point, b: Point) {
