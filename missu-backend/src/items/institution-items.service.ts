@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Optional, OnModuleDestroy } from '@nestjs/common';
+import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
@@ -33,6 +34,7 @@ type CountProgress = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
   policeIncluded?: boolean;
+  checkedAt?: string;
 };
 type CountScan = {
   ids: Set<string>;
@@ -96,8 +98,16 @@ function combine<T extends InstitutionItem>(parts: Result<T>[]): Result<T> {
 }
 
 @Injectable()
-export class InstitutionItemsService {
-  constructor(private readonly http: ExternalHttpService) {}
+export class InstitutionItemsService implements OnModuleDestroy {
+  constructor(
+    private readonly http: ExternalHttpService,
+    @Optional() private readonly db?: DatabaseService,
+  ) {}
+  private walletWorker?: Promise<void>;
+  private stopping = false;
+  onModuleDestroy() {
+    this.stopping = true;
+  }
   private readonly counts = new Map<string, CountScan>();
   // 동일 기관 상세 요청을 합치고, 만료 시 원본 보관 상태를 다시 읽습니다.
   private cache = new Map<string, { until: number; value: Promise<string> }>();
@@ -339,6 +349,180 @@ export class InstitutionItemsService {
         shortlist.length > offset + limit,
     };
   }
+  // 이미 승인된 포털 키를 사용하며, 이용자의 조회를 위해 일일 상세 호출 여유를 남깁니다.
+  private async updateWalletSnapshot(db: DatabaseService) {
+    const query = '지갑';
+    const pause = (ms: number) => new Date(Date.now() + ms);
+    while (!this.stopping) {
+      const step = await db.$transaction(
+        async (tx) => {
+          const [lock] = await tx.$queryRaw<
+            { locked: boolean }[]
+          >`SELECT pg_try_advisory_xact_lock(hashtext('missu-wallet-count')::bigint) AS locked`;
+          if (!lock.locked) return false;
+          const job = await tx.agencyCountSnapshot.findUniqueOrThrow({
+            where: { query },
+          });
+          if (job.retryAt.getTime() > Date.now()) return false;
+          const generation = job.generation;
+          const scope = { query, generation };
+          const defer = async (ms: number) => {
+            await tx.agencyCountSnapshot.update({
+              where: { query },
+              data: { retryAt: pause(ms) },
+            });
+            return false;
+          };
+          if (!job.listed) {
+            // 전국 명칭 목록에 모든 보관처가 들어 있어 역·호선별 중복 목록은 추가로 읽지 않습니다.
+            const getPage = (n: number) =>
+              this.list('지하철', 'InfoAccTpNmCstdyPlace', {
+                PRDT_NM: query,
+                numOfRows: '1000',
+                pageNo: String(n),
+              });
+            const pageNumbers = Array.from(
+              {
+                length:
+                  job.listTotal === null
+                    ? 1
+                    : Math.min(
+                        3,
+                        Math.ceil(job.listTotal / 1000) - job.page + 1,
+                      ),
+              },
+              (_, i) => job.page + i,
+            );
+            const responses = await Promise.allSettled(
+              pageNumbers.map(getPage),
+            );
+            for (const [index, response] of responses.entries()) {
+              if (response.status === 'rejected') return defer(30000);
+              const p = response.value,
+                page = pageNumbers[index];
+              if (
+                p.total === null ||
+                p.page !== page ||
+                p.size !== 1000 ||
+                p.records.length !==
+                  Math.max(0, Math.min(1000, p.total - (page - 1) * 1000))
+              )
+                return defer(60000);
+              // 원본 건수가 바뀌어 페이지 경계가 밀렸을 때 기존 확인 결과는 두고 목록만 다시 읽습니다.
+              if (job.listTotal !== null && p.total !== job.listTotal) {
+                await tx.agencyCountCandidate.deleteMany({ where: scope });
+                await tx.agencyCountSnapshot.update({
+                  where: { query },
+                  data: { page: 1, listTotal: null },
+                });
+                return true;
+              }
+              const candidates = p.records.filter(
+                (r) => r.atcId && r.fdSn && storageRank(r.depPlace || '') > 0,
+              );
+              if (candidates.length)
+                await tx.agencyCountCandidate.createMany({
+                  data: candidates.map((r) => ({
+                    ...scope,
+                    atcId: r.atcId,
+                    fdSn: r.fdSn,
+                  })),
+                  skipDuplicates: true,
+                });
+              await tx.agencyCountSnapshot.update({
+                where: { query },
+                data: {
+                  listTotal: p.total,
+                  page: page + 1,
+                  listed: !p.limited,
+                },
+              });
+              if (!p.limited) break;
+            }
+            return true;
+          }
+          const candidates = await tx.agencyCountCandidate.findMany({
+            where: { ...scope, stored: null },
+            select: { atcId: true, fdSn: true },
+            orderBy: [{ atcId: 'asc' }, { fdSn: 'asc' }],
+            take: 24,
+          });
+          if (!candidates.length) {
+            const total = await tx.agencyCountCandidate.count({
+              where: { ...scope, stored: true },
+            });
+            await tx.agencyCountSnapshot.update({
+              where: { query },
+              data: {
+                total,
+                completedAt: new Date(),
+                generation: generation + 1,
+                page: 1,
+                listTotal: null,
+                listed: false,
+                retryAt: pause(86400000),
+              },
+            });
+            // 이전 세대는 진행 중인 경찰 중복 검사에 쓸 수 있게 한 세대 더 보관합니다.
+            await tx.agencyCountCandidate.deleteMany({
+              where: { query, generation: { lt: generation - 1 } },
+            });
+            return false;
+          }
+          const day = new Date(Date.now() + 9 * 3600000)
+            .toISOString()
+            .slice(0, 10);
+          const budget = await tx.agencyCountBudget.upsert({
+            where: { day },
+            create: { day, calls: 0 },
+            update: {},
+          });
+          if (budget.calls + candidates.length > 8000) return defer(15 * 60000);
+          await tx.agencyCountBudget.update({
+            where: { day },
+            data: { calls: { increment: candidates.length } },
+          });
+          const checks = await readBatches(
+            candidates.map(({ atcId, fdSn }) => async () => {
+              const response = await this.list('지하철', 'DetailInfo', {
+                ATC_ID: atcId,
+                FD_SN: fdSn,
+              });
+              const row = response.records.find(
+                (r) => r.atcId === atcId && r.fdSn === fdSn,
+              );
+              if (
+                !row?.csteSteNm ||
+                !row.depPlace ||
+                !row.fdPrdtNm ||
+                !row.fdYmd
+              )
+                throw Error('Incomplete custody record');
+              return { atcId, fdSn, stored: !!governmentItem(row, '지하철') };
+            }),
+            8,
+          );
+          for (const stored of [true, false]) {
+            const rows = checks.flatMap((c) =>
+              c.status === 'fulfilled' && c.value.stored === stored
+                ? [{ atcId: c.value.atcId, fdSn: c.value.fdSn }]
+                : [],
+            );
+            if (rows.length)
+              await tx.agencyCountCandidate.updateMany({
+                where: { ...scope, OR: rows },
+                data: { stored },
+              });
+          }
+          if (checks.some((c) => c.status === 'rejected')) return defer(30000);
+          return true;
+        },
+        { timeout: 60000 },
+      );
+      if (!step) return;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
   private async part<T extends InstitutionItem>(
     source: Source,
     run: () => Promise<{ items: T[]; limited?: boolean; loadFailed?: boolean }>,
@@ -395,7 +579,36 @@ export class InstitutionItemsService {
     place: string,
     days: string,
   ): Promise<CountProgress> {
-    const key = JSON.stringify([q, place, days, since(days)]);
+    let snapshot:
+      { total: number; generation: number; checkedAt: string } | undefined;
+    if (this.db && q.trim() === '지갑' && !place && days === 'all') {
+      const row = await this.db.agencyCountSnapshot.upsert({
+        where: { query: '지갑' },
+        create: { query: '지갑' },
+        update: {},
+      });
+      if (row.retryAt.getTime() <= Date.now() && !this.walletWorker) {
+        this.walletWorker = this.updateWalletSnapshot(this.db)
+          .catch(() => undefined)
+          .finally(() => {
+            this.walletWorker = undefined;
+          });
+      }
+      if (!row.completedAt || row.total === null)
+        return { status: 'counting', total: null };
+      snapshot = {
+        total: row.total,
+        generation: row.generation - 1,
+        checkedAt: row.completedAt.toISOString(),
+      };
+    }
+    const key = JSON.stringify([
+      q,
+      place,
+      days,
+      since(days),
+      snapshot?.generation,
+    ]);
     const now = Date.now();
     for (const [k, scan] of this.counts) {
       if (!scan.running && scan.expires <= now) this.counts.delete(k);
@@ -407,6 +620,11 @@ export class InstitutionItemsService {
         ids: new Set(),
         policeIds: new Set(),
         policeAvailable: true,
+        cursor: snapshot
+          ? Buffer.from(JSON.stringify([[1, 0], [1, 0], null])).toString(
+              'base64url',
+            )
+          : undefined,
         result: { status: 'counting', total: null },
         expires: now + 120000,
       };
@@ -426,23 +644,44 @@ export class InstitutionItemsService {
       scan.policeAvailable = true;
       scan.result = {
         status: 'counting',
-        total: scan.ids.size,
+        total: scan.ids.size + (snapshot?.total ?? 0),
         policeIncluded: false,
       };
     }
     const current = scan;
     // 한 번에 원본 한 페이지를 확인합니다. 같은 검색은 진행 위치와 요청을 공유합니다.
     current.running = this.search(q, place, days, current.cursor, true)
-      .then((page) => {
+      .then(async (page) => {
         if (page.unavailableSources.some((source) => source !== '경찰'))
           throw Error('Missing source');
         if (page.unavailableSources.includes('경찰')) {
           current.policeAvailable = false;
           current.policeIds.clear();
         }
+        const police = page.items.filter((i) => i.source === '경찰');
+        // 두 기관의 관리번호가 겹치면 지하철 집계에서 이미 센 물품입니다.
+        const overlaps =
+          snapshot && police.length && this.db
+            ? await this.db.agencyCountCandidate.findMany({
+                where: {
+                  query: '지갑',
+                  generation: snapshot.generation,
+                  stored: true,
+                  OR: police.map((i) => {
+                    const [, atcId, fdSn] = i.id.split(':');
+                    return { atcId, fdSn };
+                  }),
+                },
+                select: { atcId: true, fdSn: true },
+              })
+            : [];
+        const railIds = new Set(
+          overlaps.map((i) => 'lost112:' + i.atcId + ':' + i.fdSn),
+        );
         for (const item of page.items) {
           if (item.source !== '경찰') current.ids.add(item.id);
-          else if (current.policeAvailable) current.policeIds.add(item.id);
+          else if (current.policeAvailable && !railIds.has(item.id))
+            current.policeIds.add(item.id);
         }
         if (page.nextCursor) {
           if (page.nextCursor === current.cursor)
@@ -455,8 +694,9 @@ export class InstitutionItemsService {
           }
           current.result = {
             status: 'complete',
-            total: current.ids.size,
+            total: current.ids.size + (snapshot?.total ?? 0),
             policeIncluded: current.policeAvailable,
+            ...(snapshot && { checkedAt: snapshot.checkedAt }),
           };
           current.policeIds.clear();
           if (current.policeAvailable) current.ids.clear();
