@@ -208,7 +208,11 @@ export function HomeScreen() {
                 </View>
                 <View style={styles.status}>
                   <Text style={[typography.label, { color: colors.green }]}>
-                    {'source' in item ? '보관 중' : item.statusLabel}
+                    {'source' in item
+                      ? item.lastVerifiedOn
+                        ? '보관 확인 ' + item.lastVerifiedOn
+                        : '보관 중'
+                      : item.statusLabel}
                   </Text>
                 </View>
               </Pressable>
