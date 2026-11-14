@@ -53,7 +53,10 @@ describe('기관 습득물', () => {
     delete process.env.DATA_GO_KR_SERVICE_KEY;
     const result = await service(() => school).search('이어폰', '', 'all');
     expect(result.items.map((x) => x.id)).toEqual(['hansung:1']);
-    expect(result.notices).toHaveLength(2);
+    expect(result.notices).toEqual([
+      '경찰 자료를 현재 조회할 수 없어요.',
+      '지하철 자료를 현재 조회할 수 없어요.',
+    ]);
   });
   it('포털 전체 등록 수는 상세 카드 수나 역별 합계가 아닌 원본 totalCount로 읽는다', async () => {
     let calls = 0;
@@ -368,6 +371,54 @@ describe('기관 습득물', () => {
         new Set([...a.items, ...b.items, ...c.items].map((i) => i.id)).size,
       ).toBe(43);
       expect(c.nextCursor).toBeNull();
+      for (const page of [a, b, c]) expect(page.notices).toEqual([]);
     }
+  });
+  it.each(['목록', '상세', '상세 누락'] as const)(
+    '지하철 %s 조회 실패만 알리고 읽은 물품은 유지한다',
+    async (failure) => {
+      const rail = { ...row, depPlace: '강남역(2호선)' };
+      const api = service((url) => {
+        if (url.hostname === 'www.hansung.ac.kr') return school;
+        if (!url.pathname.includes('LosPtfund')) return xml([]);
+        if (url.pathname.endsWith('DetailInfo')) {
+          if (url.searchParams.get('FD_SN') === '1') return xml([rail]);
+          if (failure === '상세') throw Error('detail unavailable');
+          return xml([]);
+        }
+        if (failure === '목록' && url.searchParams.get('DEP_PLACE') === '2호선')
+          throw Error('list unavailable');
+        return xml(
+          failure === '목록' ? [rail] : [rail, { ...rail, fdSn: '2' }],
+        );
+      });
+      const page = await api.search('이어폰', '', 'all');
+      expect(page.items.map((i) => i.id)).toContain('lost112:F0001:1');
+      expect(page.notices).toEqual(['지하철 자료 일부를 불러오지 못했어요.']);
+    },
+  );
+  it('다음 지하철 페이지 전체가 실패하면 같은 위치에서 다시 조회할 수 있다', async () => {
+    let offline = true;
+    const rail = { ...row, depPlace: '강남역(2호선)' };
+    const api = service(() => {
+      if (offline) throw Error('source unavailable');
+      return xml([rail]);
+    });
+    const cursor = Buffer.from(JSON.stringify([null, null, [2, 0]])).toString(
+      'base64url',
+    );
+    const failed = await api.search('이어폰', '강남역', 'all', cursor);
+    expect(failed.notices).toEqual(['지하철 자료를 현재 조회할 수 없어요.']);
+    expect(failed.nextCursor).toBe(cursor);
+    offline = false;
+    const recovered = await api.search(
+      '이어폰',
+      '강남역',
+      'all',
+      failed.nextCursor!,
+    );
+    expect(recovered.nextCursor).toBeNull();
+    expect(recovered.notices).toEqual([]);
+    expect(recovered.items).toHaveLength(1);
   });
 });
