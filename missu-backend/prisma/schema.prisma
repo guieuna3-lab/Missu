@@ -337,6 +337,7 @@ model AgencyCountCandidate {
   atcId      String   @map("atc_id")
   fdSn       String   @map("fd_sn")
   stored     Boolean?
+  retryAfter DateTime? @map("retry_after") @db.Timestamptz
   snapshot   AgencyCountSnapshot @relation(fields: [query], references: [query], onDelete: Cascade)
 
   @@id([query, generation, atcId, fdSn])
