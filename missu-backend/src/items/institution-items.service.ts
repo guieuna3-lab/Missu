@@ -27,6 +27,11 @@ const government = {
   포털기관: { base: 'LosPtfundInfoInqireService', prefix: 'getPtLosfund' },
 } as const;
 type Provider = keyof typeof government;
+class DailyPortalLimit extends Error {}
+function nextPortalDay() {
+  const date = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+  return Date.parse(date + 'T00:00:00+09:00') + 86400000;
+}
 type Custodian = Point & { name: string; address: string; source: Source };
 type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
@@ -146,6 +151,7 @@ export class InstitutionItemsService
     this.stopping = true;
     clearInterval(this.timer);
   }
+  private readonly exhaustedOperations = new Map<string, number>();
   private readonly counts = new Map<string, CountScan>();
   // 동일 기관 상세 요청을 합치고, 만료 시 원본 보관 상태를 다시 읽습니다.
   private cache = new Map<string, { until: number; value: Promise<string> }>();
@@ -225,7 +231,19 @@ export class InstitutionItemsService
     url.search = new URLSearchParams(params).toString();
     const cacheId = url.href;
     url.searchParams.set('ServiceKey', key);
-    return policePage(await this.text(cacheId, url));
+    const method = source + '/' + operation;
+    if ((this.exhaustedOperations.get(method) ?? 0) > Date.now())
+      throw new DailyPortalLimit();
+    const xml = await this.text(cacheId, url);
+    if (
+      /<(?:returnReasonCode|resultCode)>\s*22\s*<\//u.test(xml) ||
+      xml.includes('LIMITED_NUMBER_OF_SERVICE_REQUESTS_EXCEEDS_ERROR')
+    ) {
+      this.exhaustedOperations.set(method, nextPortalDay());
+      this.cache.delete(cacheId);
+      throw new DailyPortalLimit();
+    }
+    return policePage(xml);
   }
   private async records(
     source: Provider,
@@ -364,7 +382,11 @@ export class InstitutionItemsService
               PRDT_NM: query,
               numOfRows: '500',
               pageNo: String(page),
-            }).catch(() => null);
+            }).catch((error: unknown) =>
+              error instanceof DailyPortalLimit ? error : null,
+            );
+            if (p instanceof DailyPortalLimit)
+              return defer(nextPortalDay() - Date.now());
             if (
               !p ||
               p.total === null ||
@@ -456,7 +478,8 @@ export class InstitutionItemsService
             create: { day, calls: 0 },
             update: {},
           });
-          if (budget.calls + candidates.length > 8000) return defer(15 * 60000);
+          if (budget.calls + candidates.length > 8000)
+            return defer(nextPortalDay() - Date.now());
           await tx.agencyCountBudget.update({
             where: { day },
             data: { calls: { increment: candidates.length } },
@@ -486,6 +509,15 @@ export class InstitutionItemsService
                 where: { ...scope, OR: rows },
                 data: { stored, retryAfter: null },
               });
+          }
+          // 일일 한도는 개별 물품 재시도로 해결되지 않으므로, 이미 확인된 자료만 보존하고 다음 날 재개합니다.
+          if (
+            checks.some(
+              (c) =>
+                c.status === 'rejected' && c.reason instanceof DailyPortalLimit,
+            )
+          ) {
+            return defer(nextPortalDay() - Date.now());
           }
           const failed = candidates.filter(
             (_, index) => checks[index].status === 'rejected',
