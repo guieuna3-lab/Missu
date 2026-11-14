@@ -1,6 +1,9 @@
+import { useRef, useState } from 'react';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { TextLink } from '@/components/FormField';
+import { ConfirmDialog } from '@/components/Dialog';
+import { FormMessage, TextLink } from '@/components/FormField';
+import { requestErrorMessage } from '@/lib/mockRequest';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ChoiceRow } from '@/components/ChoiceRow';
 import { Header } from '@/components/Header';
@@ -31,15 +34,47 @@ const categoryIcons: Record<ItemCategory, IconName> = {
   OTHER: 'box',
 };
 
-// Figma 01.09: the list behind a 01.05 card that has two or more entries.
+type Selection = { id: string; name: string; type: 'lost' | 'found' };
 export function HistoryListScreen() {
-  const { profile } = usePreview();
+  const { profile, sessionId } = usePreview();
+  return profile ? (
+    <MemberHistoryList key={sessionId} memberName={profile.name} />
+  ) : (
+    <LoginGateScreen kind="history" />
+  );
+}
+
+function MemberHistoryList({ memberName }: { memberName: string }) {
+  const [selection, setSelection] = useState<Selection>();
+  const [deleting, setDeleting] = useState(false);
+  const [error, setError] = useState<string>();
+  const busy = useRef(false);
   const activity = useActivity();
   const params = useLocalSearchParams<{ tab?: string }>();
   const tab: HistoryTab = tabs.some((t) => t.key === params.tab)
     ? (params.tab as HistoryTab)
     : 'lost';
-  if (!profile) return <LoginGateScreen kind="history" />;
+  const listError =
+    tab === 'found' ? activity.foundError : tab === 'lost' ? activity.reportsError : undefined;
+  const loading =
+    tab === 'found' ? activity.foundLoading : tab === 'lost' && activity.status === 'loading';
+
+  async function remove() {
+    if (!selection || busy.current) return;
+    busy.current = true;
+    setDeleting(true);
+    setError(undefined);
+    try {
+      if (selection.type === 'lost') await activity.deleteLostReport(selection.id);
+      else await activity.deleteFoundItem(selection.id);
+    } catch (e) {
+      setError(requestErrorMessage(e));
+    } finally {
+      busy.current = false;
+      setDeleting(false);
+      setSelection(undefined);
+    }
+  }
 
   const rows =
     tab === 'lost'
@@ -51,7 +86,7 @@ export function HistoryListScreen() {
           onPress: () => router.push({ pathname: '/my-reports/[id]', params: { id: report.id } }),
         }))
       : tab === 'requests'
-        ? sentRequests(activity, profile.name).map((request) => ({
+        ? sentRequests(activity, memberName).map((request) => ({
             key: request.id,
             icon: 'search' as IconName,
             title: request.itemName,
@@ -84,7 +119,10 @@ export function HistoryListScreen() {
                 key={t.key}
                 accessibilityRole="tab"
                 accessibilityState={{ selected: active }}
-                onPress={() => router.setParams({ tab: t.key })}
+                onPress={() => {
+                  setError(undefined);
+                  router.setParams({ tab: t.key });
+                }}
                 style={[styles.tab, active && styles.activeTab]}
               >
                 <Text style={[styles.tabLabel, active && styles.activeTabLabel]}>{t.label}</Text>
@@ -92,33 +130,80 @@ export function HistoryListScreen() {
             );
           })}
         </View>
-        {tab === 'lost' && activity.reportsError ? (
+        {error && <FormMessage>{error}</FormMessage>}
+        {listError ? (
           <>
-            <Text style={typography.body}>{activity.reportsError}</Text>
-            <TextLink label="다시 불러오기" onPress={activity.retryReports} />
+            <Text style={typography.body}>{listError}</Text>
+            <TextLink
+              label="다시 불러오기"
+              onPress={tab === 'found' ? activity.retryFound : activity.retryReports}
+            />
           </>
-        ) : tab === 'lost' && activity.status === 'loading' ? (
-          <Text style={typography.body}>분실 신고를 불러오고 있어요.</Text>
+        ) : loading ? (
+          <Text style={typography.body}>목록을 불러오고 있어요.</Text>
         ) : rows.length === 0 ? (
-          <Text style={typography.body}>아직 표시할 항목이 없어요.</Text>
+          <Text style={typography.body}>
+            {tab === 'found'
+              ? '등록한 습득물이 없어요.'
+              : tab === 'lost'
+                ? '등록한 분실 신고가 없어요.'
+                : '아직 표시할 항목이 없어요.'}
+          </Text>
         ) : (
           rows.map((row) => (
-            <ChoiceRow
-              key={row.key}
-              icon={row.icon}
-              title={row.title}
-              description={row.description}
-              onPress={row.onPress}
-            />
+            <View style={styles.row} key={row.key}>
+              <View style={styles.item}>
+                <ChoiceRow
+                  icon={row.icon}
+                  title={row.title}
+                  description={row.description}
+                  onPress={row.onPress}
+                />
+              </View>
+              {tab !== 'requests' && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={row.title + ' 삭제'}
+                  style={styles.deleteButton}
+                  onPress={() => {
+                    setError(undefined);
+                    setSelection({ id: row.key, name: row.title, type: tab });
+                  }}
+                >
+                  <Text style={styles.deleteText}>삭제</Text>
+                </Pressable>
+              )}
+            </View>
           ))
         )}
       </ScrollView>
       <BottomNavigation selected="history" />
+      {selection && (
+        <ConfirmDialog
+          title={selection.type === 'found' ? '습득물 글을 삭제할까요?' : '분실 신고를 삭제할까요?'}
+          message={
+            '‘' +
+            selection.name +
+            '’ 글을 삭제합니다.' +
+            (selection.type === 'found' ? ' 승인 대기 중인 반환 요청이 있으면 함께 종료돼요.' : '')
+          }
+          confirmLabel="삭제"
+          loading={deleting}
+          onCancel={() => {
+            if (!busy.current) setSelection(undefined);
+          }}
+          onConfirm={remove}
+        />
+      )}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  item: { flex: 1, minWidth: 0 },
+  deleteButton: { minWidth: 48, minHeight: 48, alignItems: 'center', justifyContent: 'center' },
+  deleteText: { ...typography.label, color: colors.danger },
   content: { paddingHorizontal: 20, paddingVertical: 24, gap: 12 },
   tabs: { flexDirection: 'row', gap: 8, marginBottom: 4 },
   tab: {
