@@ -96,7 +96,7 @@ export function schoolDetail(html: string, id: string) {
     return { ...item, date: found, dateLabel: '습득일' as const };
   return item;
 }
-export function schoolPage(html: string, page = 1): Batch {
+export function schoolPage(html: string, page = 1, cutoff?: string): Batch {
   const dom = parseDocument(html);
   if (
     !byTag('th', dom.children).some((node) => plain(node).trim() === '작성일')
@@ -128,16 +128,19 @@ export function schoolPage(html: string, page = 1): Batch {
   const pageLinks = byTag('a', dom.children).map((a) =>
     Number(a.attribs.href?.match(/page_link\(['"](\d+)['"]\)/)?.[1] || 0),
   );
-  const rows = byTag('td', dom.children).filter(
-    (x) => x.attribs.class === 'td-date',
-  ).length;
+  const dates = byTag('td', dom.children)
+    .filter((x) => x.attribs.class?.split(/\s+/).includes('td-date'))
+    .map((x) => plain(x).trim().replaceAll('.', '-'));
+  // 학교 목록은 게시일 역순입니다. 학교가 기간 필터를 무시해도 오래된 페이지를 계속 요청하지 않습니다.
+  const inRange = dates.some((day) => !cutoff || day >= cutoff);
   return {
     items,
     limited:
-      pageLinks.some((n) => n > page) ||
-      (!!count &&
-        rows > 0 &&
-        Number(count[1].replaceAll(',', '')) > (page - 1) * 10 + rows),
+      inRange &&
+      (pageLinks.some((n) => n > page) ||
+        (!!count &&
+          Number(count[1].replaceAll(',', '')) >
+            (page - 1) * 10 + dates.length)),
   };
 }
 export function policePage(xml: string) {
