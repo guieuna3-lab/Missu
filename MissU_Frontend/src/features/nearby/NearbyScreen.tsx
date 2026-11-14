@@ -58,7 +58,9 @@ function ItemRow({ item }: { item: NearbyRow }) {
         </Text>
         {item.institution && (
           <Text style={styles.caption}>
-            {item.institution.dateLabel} {item.institution.date} · {item.institution.reference}
+            {item.institution.dateLabel} {item.institution.date}
+            {item.institution.dateLabel === '게시일' && ' · 습득일 미공개'} ·{' '}
+            {item.institution.reference}
             {item.institution.lastVerifiedOn &&
               ' · 마지막 보관 확인 ' + item.institution.lastVerifiedOn}
           </Text>
@@ -422,7 +424,7 @@ export function NearbyScreen() {
                 <>
                   <ItemRow item={selected} />
                   <ActionButton
-                    label={selected.institution ? '기관 원문 보기' : '물품 상세 보기'}
+                    label={selected.institution ? '기관 물품 상세 보기' : '물품 상세 보기'}
                     onPress={() => openDetail(selected)}
                   />
                 </>
