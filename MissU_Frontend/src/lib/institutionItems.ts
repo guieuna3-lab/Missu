@@ -32,7 +32,7 @@ function firstPage(path: string, cursor?: string) {
     if (pages.get(path)?.value === value) pages.delete(path);
   };
   void value.then((page) => {
-    if (!page.items.length || page.notices.some((n) => n.includes('지하철 자료를 현재'))) forget();
+    if (!page.items.length || page.notices.some((n) => n.startsWith('지하철 '))) forget();
   }, forget);
   return value;
 }
