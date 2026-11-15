@@ -20,6 +20,7 @@ import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import {
   clean,
+  custodianPhone,
   distance,
   governmentItem,
   koreaDay,
@@ -520,7 +521,7 @@ export class InstitutionItemsService
       url: policeSite,
       reference: r.id.slice(8).replace(':', ' / '),
       lastVerifiedOn: koreaDay(r.checkedAt.getTime()),
-      phone: r.phone ?? undefined,
+      phone: custodianPhone(r.storage, r.phone),
     };
   }
   async preview(q: string, place: string, days: string) {
