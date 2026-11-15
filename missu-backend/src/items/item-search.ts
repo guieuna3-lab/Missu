@@ -1,3 +1,5 @@
+import type { Prisma } from '../generated/prisma/client';
+import { sinceFound } from './institution-records';
 // 왼쪽은 같은 검색어, 오른쪽은 포괄어로도 찾을 수 있는 세부 품목입니다.
 // 세부 이름으로 검색할 때는 같은 계열의 다른 제품까지 확장하지 않습니다.
 const vocabulary: [string, string?][] = [
@@ -200,4 +202,56 @@ export function brandNameFilter(search: ItemSearch) {
       OR: [...search.brand.map(inName), { NOT: search.otherBrand.map(inName) }],
     },
   ];
+}
+
+// 회원 목록과 전체 집계가 같은 공개·기간·검색 조건을 공유합니다.
+export function publicFoundWhere(
+  search: ItemSearch,
+  from?: Date,
+  to?: Date,
+  now = Date.now(),
+) {
+  const contains = (word: string) => ({
+    contains: likeLiteral(word),
+    mode: 'insensitive' as const,
+  });
+  const keywords: Prisma.FoundItemWhereInput[] = search.terms.map((group) => ({
+    OR: group.flatMap((word) => [
+      { name: contains(word) },
+      { publicFeatures: contains(word) },
+    ]),
+  }));
+  keywords.push(...brandNameFilter(search));
+  if (search.excludedEndings.length)
+    keywords.push({
+      NOT: search.excludedEndings.map((word) => ({
+        name: { endsWith: word, mode: 'insensitive' },
+      })),
+    });
+  if (search.place) {
+    const places = [
+      search.place,
+      search.place.replace(/^(.+역)\s+(.+선)$/u, '$1($2)'),
+    ];
+    keywords.push({
+      OR: [...new Set(places)].flatMap((place) => [
+        { foundLabel: contains(place) },
+        { storagePlace: contains(place) },
+      ]),
+    });
+  }
+  return {
+    archived: false,
+    status: { in: ['AVAILABLE', 'RESERVED'] },
+    foundAt: {
+      gte: new Date(
+        Math.max(
+          from?.getTime() ?? 0,
+          Date.parse(sinceFound('all', now) + 'T00:00:00+09:00'),
+        ),
+      ),
+      lte: new Date(Math.min(to?.getTime() ?? Infinity, now)),
+    },
+    AND: keywords,
+  } satisfies Prisma.FoundItemWhereInput;
 }
