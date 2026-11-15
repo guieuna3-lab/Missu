@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   itemSearch,
+  brandNameFilter,
   likeLiteral,
   matchesName,
   matchesPlace,
@@ -748,6 +749,16 @@ export class InstitutionItemsService
           source,
           detail.observedAt,
         );
+        if (
+          q &&
+          item &&
+          !matchesName(
+            search,
+            item.name,
+            current.prdtClNm || row.prdtClNm || '',
+          )
+        )
+          return;
         if (site && clean(current.depPlace || '') !== clean(row.depPlace))
           return;
         return item && item.date >= cutoff && item.date <= koreaDay()
@@ -1348,7 +1359,8 @@ export class InstitutionItemsService
     exact = false,
     category = 'ALL',
   ): Prisma.VerifiedPortalItemWhereInput {
-    const { terms, excludedEndings } = itemSearch(q);
+    const search = itemSearch(q);
+    const { terms, excludedEndings } = search;
     return {
       stored: true,
       day: { gte: since(days), lte: koreaDay() },
@@ -1357,11 +1369,14 @@ export class InstitutionItemsService
           name: { endsWith: word, mode: 'insensitive' },
         })),
       }),
-      AND: terms.map((group) => ({
-        OR: group.map((word) => ({
-          name: { contains: likeLiteral(word), mode: 'insensitive' },
+      AND: [
+        ...brandNameFilter(search),
+        ...terms.map((group) => ({
+          OR: group.map((word) => ({
+            name: { contains: likeLiteral(word), mode: 'insensitive' },
+          })),
         })),
-      })),
+      ],
       placeKey: exact
         ? stationKey(place)
         : { contains: likeLiteral(stationKey(place)) },
