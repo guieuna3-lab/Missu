@@ -58,6 +58,8 @@ type PageBatch = Batch & { next?: Position; loadFailed?: boolean };
 type CountProgress = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  confirmedPortal?: number;
+  confirmedTotal?: number;
   policeIncluded?: boolean;
   checkedAt?: string;
   progress?: {
@@ -881,6 +883,19 @@ export class InstitutionItemsService
     place: string,
     days: string,
   ): Promise<CountProgress> {
+    const result = await this.countSources(q, place, days);
+    if (!this.db || result.status === 'complete') return result;
+    // 집계 중에도 현재 검색 조건으로 DB에서 보관이 확인된 전체 건수를 제공합니다.
+    const confirmedPortal = await this.db.verifiedPortalItem.count({
+      where: this.portalWhere(q, place, days),
+    });
+    return { ...result, confirmedPortal };
+  }
+  private async countSources(
+    q: string,
+    place: string,
+    days: string,
+  ): Promise<CountProgress> {
     let snapshot:
       { total: number; generation: number; checkedAt: string } | undefined;
     if (this.db && q.trim() === '지갑' && !place && days === 'all') {
@@ -1003,6 +1018,10 @@ export class InstitutionItemsService
           if (page.nextCursor === current.cursor)
             throw Error('Repeated cursor');
           current.cursor = page.nextCursor;
+          let confirmedTotal = current.ids.size + (snapshot?.total ?? 0);
+          for (const id of current.policeIds)
+            if (!current.ids.has(id)) confirmedTotal++;
+          current.result = { ...current.result, confirmedTotal };
         } else {
           // 경찰과 포털기관에 동시에 있는 관리번호는 한 번만 셉니다.
           if (current.policeAvailable) {
@@ -1096,6 +1115,25 @@ export class InstitutionItemsService
       );
     })().catch(() => undefined);
   }
+  private portalWhere(
+    q: string,
+    place: string,
+    days: string,
+    exact = false,
+    category = 'ALL',
+  ): Prisma.VerifiedPortalItemWhereInput {
+    const escape = (s: string) =>
+      s.replace(/[\\%_]/g, '\\  private async savedPage(');
+    return {
+      stored: true,
+      day: { gte: since(days), lte: koreaDay() },
+      name: { contains: escape(q), mode: 'insensitive' },
+      placeKey: exact
+        ? stationKey(place)
+        : { contains: escape(stationKey(place)) },
+      ...(category !== 'ALL' && { category }),
+    };
+  }
   private async savedPage(
     q: string,
     place: string,
@@ -1106,17 +1144,8 @@ export class InstitutionItemsService
     exact = false,
     category = 'ALL',
   ) {
-    const escape = (s: string) => s.replace(/[\\%_]/g, '\\$&');
     const rows = await this.db!.verifiedPortalItem.findMany({
-      where: {
-        stored: true,
-        day: { gte: since(days), lte: koreaDay() },
-        name: { contains: escape(q), mode: 'insensitive' },
-        placeKey: exact
-          ? stationKey(place)
-          : { contains: escape(stationKey(place)) },
-        ...(category !== 'ALL' && { category }),
-      },
+      where: this.portalWhere(q, place, days, exact, category),
       orderBy: [{ day: 'desc' }, { id: 'asc' }],
       skip: offset,
       take: 26,

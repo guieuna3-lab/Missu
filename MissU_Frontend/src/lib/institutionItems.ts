@@ -24,12 +24,18 @@ type Result<T> = { items: T[]; notices: string[] };
 type InstitutionPage = Result<InstitutionItem> & { nextCursor: string | null };
 // 같은 화면을 다시 열 때만 짧게 재사용합니다. 오류 응답은 다음 조회에서 다시 확인합니다.
 const pages = new Map<string, { until: number; value: Promise<InstitutionPage> }>();
+// 경찰 조회 상태는 총건수에 반영하고, 개별 오류 문구는 목록에서 생략합니다.
+async function institutionPage<T extends Result<unknown>>(path: string, signal?: AbortSignal) {
+  const page = await mapApi<T>(path, { signal });
+  return { ...page, notices: page.notices.filter((notice) => !notice.startsWith('경찰 자료')) };
+}
+
 function firstPage(path: string, cursor?: string) {
-  if (cursor) return mapApi<InstitutionPage>(path);
+  if (cursor) return institutionPage<InstitutionPage>(path);
   const entry = pages.get(path);
   if (entry && Date.now() < entry.until) return entry.value;
   if (pages.size >= 16) pages.delete(pages.keys().next().value!);
-  const value = mapApi<InstitutionPage>(path);
+  const value = institutionPage<InstitutionPage>(path);
   pages.set(path, { until: Date.now() + 30000, value });
   const forget = () => {
     if (pages.get(path)?.value === value) pages.delete(path);
@@ -67,6 +73,8 @@ export function searchInstitutions(filters: SearchFilters, cursor?: string) {
 export type InstitutionTotal = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  confirmedPortal?: number;
+  confirmedTotal?: number;
   policeIncluded?: boolean;
   checkedAt?: string;
   progress?: { stage: 'listing' | 'checking'; checked: number; candidates: number };
@@ -79,9 +87,9 @@ export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
 export function nearbyInstitutions(params: string, signal: AbortSignal, cursor?: string) {
   const query = new URLSearchParams(params);
   if (cursor) query.set('cursor', cursor);
-  return mapApi<Result<NearbyInstitution> & { nextCursor: string | null }>(
+  return institutionPage<Result<NearbyInstitution> & { nextCursor: string | null }>(
     '/institution-items/nearby?' + query,
-    { signal },
+    signal,
   );
 }
 // 카드와 공유 링크가 같은 상세 주소를 사용합니다. 보관 상태는 서버에서 다시 확인합니다.
