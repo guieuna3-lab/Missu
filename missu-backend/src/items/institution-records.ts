@@ -199,6 +199,7 @@ export function portalDetail(html: string, atcId: string, fdSn: string) {
     fdPrdtNm: name || '',
     fdYmd: fields.get('습득일')?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || '',
     depPlace: fields.get('보관장소') || '',
+    fdPlace: fields.get('습득 장소') || '',
     csteSteNm: fields.get('유실물 상태')!,
     prdtClNm: fields.get('물품 분류') || '',
     tel: fields.get('보관장소 연락처') || '',
@@ -231,6 +232,7 @@ export function governmentItem(
   return {
     id: 'lost112:' + reference + ':' + sn,
     reference: reference + ' / ' + sn,
+    foundPlace: row.fdPlace || undefined,
     source: source === '포털기관' && rail ? '지하철' : source,
     name,
     date,
