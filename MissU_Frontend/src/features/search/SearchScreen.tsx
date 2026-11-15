@@ -314,7 +314,7 @@ export default function SearchScreen() {
           {agencyCount?.status === 'unavailable' || state.memberTotal === undefined
             ? '전체 습득물 건수를 확인할 수 없어요'
             : agencyCount?.total != null
-              ? '총 습득물 ' +
+              ? (agencyCount.policeIncluded === false ? '확인된 습득물 총 ' : '총 습득물 ') +
                 (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
                 '건'
               : agencyCount?.progress
