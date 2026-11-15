@@ -55,13 +55,6 @@ const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
 const resultTime = (item: SearchItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
-function confirmedSearchCount(state: SearchState, agencies: InstitutionTotal | null) {
-  if (agencies?.lastComplete) return agencies.lastComplete.total;
-  if (state.memberTotal === undefined || agencies?.status !== 'complete' || agencies.total == null)
-    return null;
-  return state.memberTotal + agencies.total;
-}
-
 async function loadResults(
   filters: SearchFilters,
   previous: SearchState,
@@ -155,8 +148,8 @@ export default function SearchScreen() {
         const reply = await institutionTotal(countFilters!, controller.signal);
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
-        // 직전 확정값도 이 검색에서는 고정하고 다음 검색에서 갱신합니다.
-        if (reply.lastComplete) return;
+        // 검색 시점의 보관 확인 건수를 고정합니다. 새로 검색할 때 최신 수를 읽습니다.
+        if (reply.confirmedTotal !== undefined || reply.lastComplete) return;
         if (reply.status === 'counting')
           timer = setTimeout(
             () => void check(),
@@ -254,7 +247,16 @@ export default function SearchScreen() {
     else if (router.canGoBack()) router.back();
     else router.replace('/home');
   }
-  const confirmedCount = confirmedSearchCount(state, agencyCount);
+  const snapshot =
+    agencyCount?.status === 'complete' || agencyCount?.confirmedTotal === undefined
+      ? agencyCount?.lastComplete
+      : undefined;
+  const institutions = agencyCount?.confirmedTotal ?? agencyCount?.total;
+  const confirmedCount =
+    snapshot?.total ??
+    (state.memberTotal !== undefined && institutions != null
+      ? state.memberTotal + institutions
+      : null);
   // 목록과 건수는 따로 도착하므로 검색을 시작한 시점부터 건수 상태를 표시합니다.
   let countLabel = '확인된 습득물 건수 조회 중';
   if (confirmedCount !== null)
@@ -334,12 +336,12 @@ export default function SearchScreen() {
         confirmedCount !== null &&
         agencyCount && (
           <Text style={typography.body}>
-            {(agencyCount.lastComplete?.policeIncluded ?? agencyCount.policeIncluded)
+            {(snapshot?.policeIncluded ?? agencyCount.policeIncluded)
               ? '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰 합계'
               : '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) 합계'}
-            {agencyCount.lastComplete &&
+            {snapshot &&
               ' · ' +
-                new Date(agencyCount.lastComplete.checkedAt).toLocaleDateString('ko-KR', {
+                new Date(snapshot.checkedAt).toLocaleDateString('ko-KR', {
                   timeZone: 'Asia/Seoul',
                 }) +
                 ' 기준'}
