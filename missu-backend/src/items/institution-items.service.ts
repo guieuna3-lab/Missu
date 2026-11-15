@@ -1373,7 +1373,7 @@ export class InstitutionItemsService
         ...brandNameFilter(search),
         ...terms.map((group) => ({
           OR: group.map((word) => ({
-            name: { contains: likeLiteral(word), mode: 'insensitive' },
+            name: { contains: likeLiteral(word), mode: 'insensitive' as const },
           })),
         })),
       ],
