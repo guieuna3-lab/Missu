@@ -36,6 +36,7 @@ export type LostReport = {
 };
 
 export type FoundItem = {
+  returned?: boolean;
   attachments?: { id: string; preview: string }[];
   id: string;
   category: ItemCategory;
@@ -116,5 +117,5 @@ export const foundItemStatusLabel: Record<FoundItemStatus, string> = {
   storing: '보관 중',
   returning: '반환 진행 중',
   handed: '전달 완료',
-  returned: '반환 완료',
+  returned: '반환완료',
 };
