@@ -56,28 +56,9 @@ const resultTime = (item: SearchItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
 function confirmedSearchCount(state: SearchState, agencies: InstitutionTotal | null) {
-  // 서버 전체 집계와 이미 받은 카드는 겹칠 수 있습니다. 출처별로 큰 값만 취합니다.
-  let members = 0,
-    school = 0,
-    government = 0;
-  for (const item of state.items) {
-    if (!('source' in item)) members++;
-    else if (item.source === '한성대') school++;
-    else government++;
-  }
-  const institutions = Math.max(
-    agencies?.total ?? 0,
-    agencies?.confirmedTotal ?? 0,
-    school + Math.max(government, agencies?.confirmedPortal ?? 0),
-  );
-  const count = Math.max(members, state.memberTotal ?? 0) + institutions;
-  if (
-    count > 0 ||
-    (state.memberTotal !== undefined && agencies?.total != null) ||
-    state.status === 'success'
-  )
-    return count;
-  return null;
+  if (state.memberTotal === undefined || !agencies) return null;
+  const institutions = agencies.total ?? agencies.confirmedTotal;
+  return institutions == null ? null : state.memberTotal + institutions;
 }
 
 async function loadResults(
@@ -174,7 +155,10 @@ export default function SearchScreen() {
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
         if (reply.status === 'counting')
-          timer = setTimeout(() => void check(), reply.progress ? 60000 : 3500);
+          timer = setTimeout(
+            () => void check(),
+            reply.refreshAfterMs ?? (reply.progress ? 60000 : 3500),
+          );
         else if (reply.policeIncluded === false || reply.status === 'unavailable')
           timer = setTimeout(() => void check(), 120000);
       } catch {
@@ -334,7 +318,7 @@ export default function SearchScreen() {
           accessibilityLiveRegion="polite"
           style={typography.heading}
         >
-          확인된 총 {confirmedCount.toLocaleString('ko-KR')}건
+          총 습득물 {confirmedCount.toLocaleString('ko-KR')}건
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&

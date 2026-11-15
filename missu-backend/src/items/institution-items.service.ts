@@ -1,3 +1,4 @@
+import { CatalogSync, DailyPortalLimit, nextPortalDay } from './catalog-sync';
 import { createHash } from 'node:crypto';
 import {
   itemSearch,
@@ -45,11 +46,6 @@ const government = {
   포털기관: { base: 'LosPtfundInfoInqireService', prefix: 'getPtLosfund' },
 } as const;
 type Provider = keyof typeof government;
-class DailyPortalLimit extends Error {}
-function nextPortalDay() {
-  const date = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
-  return Date.parse(date + 'T00:00:00+09:00') + 86400000;
-}
 type NearbyCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
@@ -72,6 +68,7 @@ type CountProgress = {
   confirmedTotal?: number;
   policeIncluded?: boolean;
   checkedAt?: string;
+  refreshAfterMs?: number;
   progress?: {
     stage: 'listing' | 'checking';
     checked: number;
@@ -120,7 +117,6 @@ async function readBatches<T>(jobs: (() => Promise<T>)[], concurrency: number) {
 }
 // 페이지 0은 저장된 결과, 이 표식은 저장 목록을 본 후 돌아갈 원본 첫 페이지입니다.
 const liveFirstOffset = 1000;
-const walletSnapshot = '지갑:6개월';
 const sourceList: ('한성대' | Provider)[] = ['한성대', '경찰', '포털기관'];
 function combine<T extends InstitutionItem>(parts: Result<T>[]): Result<T> {
   return {
@@ -141,39 +137,64 @@ export class InstitutionItemsService
     private readonly http: ExternalHttpService,
     @Optional() private readonly db?: DatabaseService,
   ) {}
-  private walletWorker?: Promise<void>;
-  private stopping = false;
+  private catalog?: CatalogSync;
   private timer?: ReturnType<typeof setInterval>;
   private readonly logger = new Logger(InstitutionItemsService.name);
   onApplicationBootstrap() {
     if (!this.db || !process.env.DATA_GO_KR_SERVICE_KEY) return;
-    const wake = () => this.startWalletWorker();
+    this.catalog = new CatalogSync(
+      this.db,
+      (source, op, params) => this.list(source, op, params),
+      (row, source, at, tx) => this.verifiedItem(row, source, at, tx),
+    );
+    const wake = () =>
+      void this.catalog
+        ?.run()
+        ?.catch(() =>
+          this.logger.warn(
+            '기관 보관 상태 수집을 다음 주기에 다시 시도합니다.',
+          ),
+        );
     this.timer = setInterval(wake, 60000);
     this.timer.unref();
     wake();
   }
-  private startWalletWorker() {
-    const db = this.db;
-    if (!db || this.stopping || this.walletWorker) return;
-    this.walletWorker = (async () => {
-      const row = await db.agencyCountSnapshot.upsert({
-        where: { query: walletSnapshot },
-        create: { query: walletSnapshot },
-        update: {},
-      });
-      if (row.retryAt.getTime() <= Date.now())
-        await this.updateWalletSnapshot(db);
-    })()
-      .catch(() => {
-        this.logger.warn('전국 습득물 집계를 잠시 후 다시 시도합니다.');
-      })
-      .finally(() => {
-        this.walletWorker = undefined;
-      });
+  async syncStatus() {
+    if (!this.catalog) return { enabled: false, providers: [] };
+    return { enabled: true, providers: await this.catalog.status() };
   }
   onModuleDestroy() {
-    this.stopping = true;
     clearInterval(this.timer);
+    this.catalog?.stop();
+  }
+  async inventoryTotal() {
+    if (!this.db)
+      return fail(503, 'EXTERNAL_UNAVAILABLE', '집계를 불러올 수 없어요.');
+    const from = since();
+    const [members, school, institutions] = await Promise.all([
+      this.db.foundItem.count({
+        where: {
+          archived: false,
+          status: { in: ['AVAILABLE', 'RESERVED'] },
+          foundAt: { gte: new Date(from + 'T00:00:00+09:00'), lte: new Date() },
+        },
+      }),
+      Promise.resolve()
+        .then(() => this.schoolInventory('', 'all'))
+        .then((rows) => rows.size)
+        .catch(() => null),
+      this.db.verifiedPortalItem.count({
+        where: { stored: true, day: { gte: from, lte: koreaDay() } },
+      }),
+    ]);
+    return {
+      from,
+      through: koreaDay(),
+      members,
+      school,
+      institutions,
+      total: school === null ? null : members + school + institutions,
+    };
   }
   private readonly exhaustedOperations = new Map<string, number>();
   private readonly counts = new Map<string, CountScan>();
@@ -466,7 +487,13 @@ export class InstitutionItemsService
       where: { id },
     });
     if (saved && !saved.stored) return missing();
-    const source = m[1].startsWith('V') || saved ? '포털기관' : '경찰';
+    const source = saved
+      ? saved.source === '경찰'
+        ? '경찰'
+        : '포털기관'
+      : m[1].startsWith('V')
+        ? '포털기관'
+        : '경찰';
     const result = await this.list(source, 'DetailInfo', {
       ATC_ID: m[1],
       FD_SN: m[2],
@@ -510,12 +537,19 @@ export class InstitutionItemsService
     day: string;
     checkedAt: Date;
     phone?: string | null;
+    foundPlace?: string | null;
   }): InstitutionItem {
     return {
       id: r.id,
       name: r.name,
       storage: r.storage,
-      source: r.source === '지하철' ? '지하철' : '포털기관',
+      foundPlace: r.foundPlace ?? undefined,
+      source:
+        r.source === '경찰'
+          ? '경찰'
+          : r.source === '지하철'
+            ? '지하철'
+            : '포털기관',
       category: r.category,
       date: r.day,
       dateLabel: '습득일',
@@ -591,17 +625,18 @@ export class InstitutionItemsService
     db: Pick<Prisma.TransactionClient, '$executeRaw'> | undefined = this.db,
   ) {
     const item = governmentItem(row, source);
-    if (source === '포털기관' && db && row.csteSteNm?.trim()) {
+    if (db && row.csteSteNm?.trim()) {
       const stored = clean(row.csteSteNm) === '보관중';
       if (stored && !item) throw Error('Incomplete custody details');
       const id = 'lost112:' + row.atcId + ':' + row.fdSn;
       // 늦게 도착한 이전 보관 응답이 더 최근의 반환 확인을 덮어쓰지 않게 합니다.
       await db.$executeRaw`INSERT INTO verified_portal_items AS old
-        (id,name,source,storage,place_key,day,category,stored,checked_at,phone)
+        (id,name,source,storage,place_key,day,category,stored,checked_at,phone,kind_name,found_place)
         VALUES (${id},${item?.name ?? ''},${item?.source ?? source},${item?.storage ?? ''},
-          ${stationKey(item?.storage ?? '')},${item?.date ?? ''},${item?.category ?? ''},${stored},${observedAt},${item?.phone ?? null})
+          ${stationKey(item?.storage ?? '')},${item?.date ?? (row.fdYmd || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')},${item?.category ?? ''},${stored},${observedAt},${item?.phone ?? null},${row.prdtClNm || null},${row.fdPlace || null})
         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,source=EXCLUDED.source,storage=EXCLUDED.storage,
-        place_key=EXCLUDED.place_key,day=EXCLUDED.day,category=EXCLUDED.category,stored=EXCLUDED.stored,checked_at=EXCLUDED.checked_at,phone=EXCLUDED.phone
+        place_key=EXCLUDED.place_key,day=EXCLUDED.day,category=EXCLUDED.category,stored=EXCLUDED.stored,checked_at=EXCLUDED.checked_at,phone=EXCLUDED.phone,
+        kind_name=COALESCE(EXCLUDED.kind_name,old.kind_name),found_place=COALESCE(EXCLUDED.found_place,old.found_place)
         WHERE old.checked_at < EXCLUDED.checked_at OR (old.checked_at = EXCLUDED.checked_at AND NOT EXCLUDED.stored)`;
     }
     return item;
@@ -615,7 +650,6 @@ export class InstitutionItemsService
     recent = false,
     position: Exclude<Position, null> = [1, 0],
     strict = false,
-    supplementWallet = false,
   ): Promise<PageBatch> {
     const [pageNo, offset] = position;
     const station =
@@ -647,13 +681,9 @@ export class InstitutionItemsService
     // 장소가 지정되어 있으면 그 보관처의 모든 이름을 대조합니다. 전국 조회는 같은 이름들을 합쳐 읽습니다.
     const lookup =
       [...search.terms].sort((a, b) => a.length - b.length)[0] ?? [];
-    const expanded =
-      supplementWallet && source === '포털기관'
-        ? lookup.filter((word) => word !== '지갑')
-        : lookup;
-    const variants = expanded.filter(
+    const variants = lookup.filter(
       (word) =>
-        !expanded.some(
+        !lookup.some(
           (other) =>
             other !== word && word.toLowerCase().includes(other.toLowerCase()),
         ),
@@ -784,206 +814,6 @@ export class InstitutionItemsService
       limited: loadFailed || list.limited || shortlist.length > offset + limit,
     };
   }
-  // 이미 승인된 포털 키를 사용하며, 이용자의 조회를 위해 일일 상세 호출 여유를 남깁니다.
-  private async updateWalletSnapshot(db: DatabaseService) {
-    const query = walletSnapshot;
-    const pause = (ms: number) => new Date(Date.now() + ms);
-    while (!this.stopping) {
-      const step = await db.$transaction(
-        async (tx) => {
-          const [lock] = await tx.$queryRaw<
-            { locked: boolean }[]
-          >`SELECT pg_try_advisory_xact_lock(hashtext('missu-wallet-count')::bigint) AS locked`;
-          if (!lock.locked) return false;
-          const job = await tx.agencyCountSnapshot.findUniqueOrThrow({
-            where: { query },
-          });
-          if (job.retryAt.getTime() > Date.now()) return false;
-          const generation = job.generation;
-          const scope = { query, generation };
-          const defer = async (ms: number) => {
-            await tx.agencyCountSnapshot.update({
-              where: { query },
-              data: { retryAt: pause(ms) },
-            });
-            return false;
-          };
-          if (!job.listed) {
-            // 전국 명칭 목록에 모든 보관처가 들어 있어 역·호선별 중복 목록은 추가로 읽지 않습니다.
-            const page = job.page;
-            const p = await this.list('포털기관', 'InfoAccTpNmCstdyPlace', {
-              PRDT_NM: '지갑',
-              numOfRows: '500',
-              pageNo: String(page),
-            }).catch((error: unknown) =>
-              error instanceof DailyPortalLimit ? error : null,
-            );
-            if (p instanceof DailyPortalLimit)
-              return defer(nextPortalDay() - Date.now());
-            if (
-              !p ||
-              p.total === null ||
-              p.page !== page ||
-              p.size <= 0 ||
-              p.records.length !==
-                Math.max(0, Math.min(p.size, p.total - (page - 1) * p.size))
-            )
-              return defer(60000);
-            // 원본 건수가 바뀌어 페이지 경계가 밀렸을 때 기존 확인 결과는 두고 목록만 다시 읽습니다.
-            if (job.listTotal !== null && p.total !== job.listTotal) {
-              await tx.agencyCountCandidate.deleteMany({ where: scope });
-              await tx.agencyCountSnapshot.update({
-                where: { query },
-                data: { page: 1, listTotal: null },
-              });
-              return true;
-            }
-            const from = since().replaceAll('-', ''),
-              to = koreaDay().replaceAll('-', '');
-            const candidates = p.records.filter((r) => {
-              const day = (r.fdYmd || '').replaceAll('-', '');
-              return r.atcId && r.fdSn && day >= from && day <= to;
-            });
-            if (candidates.length)
-              await tx.agencyCountCandidate.createMany({
-                data: candidates.map((r) => ({
-                  ...scope,
-                  atcId: r.atcId,
-                  fdSn: r.fdSn,
-                })),
-                skipDuplicates: true,
-              });
-            await tx.agencyCountSnapshot.update({
-              where: { query },
-              data: {
-                listTotal: p.total,
-                page: page + 1,
-                listed: !p.limited,
-              },
-            });
-
-            return true;
-          }
-          const candidates = await tx.agencyCountCandidate.findMany({
-            where: {
-              ...scope,
-              stored: null,
-              OR: [{ retryAfter: null }, { retryAfter: { lte: new Date() } }],
-            },
-            select: { atcId: true, fdSn: true },
-            orderBy: [{ atcId: 'asc' }, { fdSn: 'asc' }],
-            take: 24,
-          });
-          if (!candidates.length) {
-            const pending = await tx.agencyCountCandidate.findFirst({
-              where: { ...scope, stored: null },
-              orderBy: { retryAfter: 'asc' },
-              select: { retryAfter: true },
-            });
-            if (pending)
-              return defer(
-                Math.max(
-                  60000,
-                  (pending.retryAfter?.getTime() ?? Date.now()) - Date.now(),
-                ),
-              );
-            const total = await tx.agencyCountCandidate.count({
-              where: { ...scope, stored: true },
-            });
-            await tx.agencyCountSnapshot.update({
-              where: { query },
-              data: {
-                total,
-                completedAt: new Date(),
-                generation: generation + 1,
-                page: 1,
-                listTotal: null,
-                listed: false,
-                retryAt: pause(86400000),
-              },
-            });
-            // 이전 세대는 진행 중인 경찰 중복 검사에 쓸 수 있게 한 세대 더 보관합니다.
-            await tx.agencyCountCandidate.deleteMany({
-              where: { query, generation: { lt: generation - 1 } },
-            });
-            return false;
-          }
-          const day = new Date(Date.now() + 9 * 3600000)
-            .toISOString()
-            .slice(0, 10);
-          const budget = await tx.agencyCountBudget.upsert({
-            where: { day },
-            create: { day, calls: 0 },
-            update: {},
-          });
-          if (budget.calls + candidates.length > 8000)
-            return defer(nextPortalDay() - Date.now());
-          await tx.agencyCountBudget.update({
-            where: { day },
-            data: { calls: { increment: candidates.length } },
-          });
-          const checks = await readBatches(
-            candidates.map(({ atcId, fdSn }) => async () => {
-              const response = await this.list('포털기관', 'DetailInfo', {
-                ATC_ID: atcId,
-                FD_SN: fdSn,
-              });
-              const row = response.records.find(
-                (r) => r.atcId === atcId && r.fdSn === fdSn,
-              );
-              if (!row?.csteSteNm) throw Error('Incomplete custody record');
-              return {
-                atcId,
-                fdSn,
-                stored: !!(await this.verifiedItem(
-                  row,
-                  '포털기관',
-                  response.observedAt,
-                  tx,
-                )),
-              };
-            }),
-            8,
-          );
-          for (const stored of [true, false]) {
-            const rows = checks.flatMap((c) =>
-              c.status === 'fulfilled' && c.value.stored === stored
-                ? [{ atcId: c.value.atcId, fdSn: c.value.fdSn }]
-                : [],
-            );
-            if (rows.length)
-              await tx.agencyCountCandidate.updateMany({
-                where: { ...scope, OR: rows },
-                data: { stored, retryAfter: null },
-              });
-          }
-          // 일일 한도는 개별 물품 재시도로 해결되지 않으므로, 이미 확인된 자료만 보존하고 다음 날 재개합니다.
-          if (
-            checks.some(
-              (c) =>
-                c.status === 'rejected' && c.reason instanceof DailyPortalLimit,
-            )
-          ) {
-            return defer(nextPortalDay() - Date.now());
-          }
-          const failed = candidates.filter(
-            (_, index) => checks[index].status === 'rejected',
-          );
-          if (failed.length) {
-            await tx.agencyCountCandidate.updateMany({
-              where: { ...scope, OR: failed },
-              data: { retryAfter: pause(3600000) },
-            });
-            if (failed.length === candidates.length) return defer(60000);
-          }
-          return true;
-        },
-        { timeout: 60000 },
-      );
-      if (!step) return;
-      await new Promise((resolve) => setTimeout(resolve, 250));
-    }
-  }
   private async part<T extends InstitutionItem>(
     source: Source,
     run: () => Promise<{ items: T[]; limited?: boolean; loadFailed?: boolean }>,
@@ -1012,7 +842,6 @@ export class InstitutionItemsService
     days: string,
     cursor?: string,
     strict = false,
-    supplementWallet = false,
   ) {
     const search = itemSearch(q, place);
     const storagePlace = search.place.replace(
@@ -1020,15 +849,7 @@ export class InstitutionItemsService
       '$1($2)',
     );
     if (!storagePlace) {
-      const result = await this.page(
-        search.q,
-        '',
-        days,
-        false,
-        cursor,
-        strict,
-        supplementWallet,
-      );
+      const result = await this.page(search.q, '', days, false, cursor, strict);
       result.items.sort(
         (a, b) => b.date.localeCompare(a.date) || a.id.localeCompare(b.id),
       );
@@ -1098,76 +919,36 @@ export class InstitutionItemsService
     days: string,
   ): Promise<CountProgress> {
     const search = itemSearch(q, place);
-    q =
-      search.terms.length === 1 && search.terms[0][0] === '지갑'
-        ? '지갑'
-        : search.q;
-    place = search.place;
-    const result = await this.countSources(q, place, days);
-    if (!this.db || result.status === 'complete') return result;
-    // 집계 중에도 현재 검색 조건으로 DB에서 보관이 확인된 전체 건수를 제공합니다.
-    const confirmedPortal = await this.db.verifiedPortalItem.count({
-      where: this.portalWhere(q, place, days),
-    });
-    return { ...result, confirmedPortal };
+    if (!this.db) return this.countSources(search.q, search.place, days);
+    // 목록의 표시 개수와 별도로, 저장된 모든 보관품과 학교 공고를 같은 조건으로 셉니다.
+    const [confirmedPortal, school] = await Promise.all([
+      this.db.verifiedPortalItem.count({
+        where: this.portalWhere(search.q, search.place, days),
+      }),
+      Promise.resolve()
+        .then(() => this.schoolInventory(search.q, days))
+        .catch(() => undefined),
+    ]);
+    const schoolTotal = school
+      ? [...school.values()].filter((item) =>
+          matchesPlace(search.place, item.storage, item.foundPlace),
+        ).length
+      : undefined;
+    return {
+      status: 'counting',
+      total: null,
+      confirmedPortal,
+      confirmedTotal:
+        schoolTotal === undefined ? undefined : confirmedPortal + schoolTotal,
+      refreshAfterMs: 60000,
+    };
   }
   private async countSources(
     q: string,
     place: string,
     days: string,
   ): Promise<CountProgress> {
-    let snapshot:
-      { total: number; generation: number; checkedAt: string } | undefined;
-    if (this.db && q.trim() === '지갑' && !place && days === 'all') {
-      const row = await this.db.agencyCountSnapshot.upsert({
-        where: { query: walletSnapshot },
-        create: { query: walletSnapshot },
-        update: {},
-      });
-      if (row.retryAt.getTime() <= Date.now()) this.startWalletWorker();
-      if (!row.completedAt || row.total === null) {
-        const scope = { query: walletSnapshot, generation: row.generation };
-        const parts = await this.db.agencyCountCandidate.groupBy({
-          by: ['stored'],
-          where: scope,
-          _count: { _all: true },
-        });
-        return {
-          status: 'counting',
-          total: null,
-          progress: {
-            stage: row.listed ? 'checking' : 'listing',
-            checked: parts.reduce(
-              (n, p) => n + (p.stored === null ? 0 : p._count._all),
-              0,
-            ),
-            candidates: parts.reduce((n, p) => n + p._count._all, 0),
-          },
-        };
-      }
-      snapshot = {
-        // 완료한 후보 중 오늘도 기간 내에 있고 마지막 확인 상태가 보관인 물품만 합산합니다.
-        total: Number(
-          (
-            await this.db.$queryRaw<
-              { n: number }[]
-            >`SELECT count(*)::int AS n FROM agency_count_candidates c
-          JOIN verified_portal_items v ON v.id = 'lost112:' || c.atc_id || ':' || c.fd_sn
-          WHERE c.query=${walletSnapshot} AND c.generation=${row.generation - 1} AND v.stored AND v.day BETWEEN ${since()} AND ${koreaDay()}`
-          )[0].n,
-        ),
-        generation: row.generation - 1,
-        checkedAt: row.completedAt.toISOString(),
-      };
-    }
-    const key = JSON.stringify([
-      q,
-      place,
-      days,
-      since(days),
-      snapshot?.generation,
-      snapshot?.total,
-    ]);
+    const key = JSON.stringify([q, place, days, since(days)]);
     const now = Date.now();
     for (const [k, scan] of this.counts) {
       if (!scan.running && scan.expires <= now) this.counts.delete(k);
@@ -1199,20 +980,13 @@ export class InstitutionItemsService
       scan.policeAvailable = true;
       scan.result = {
         status: 'counting',
-        total: scan.ids.size + (snapshot?.total ?? 0),
+        total: scan.ids.size,
         policeIncluded: false,
       };
     }
     const current = scan;
     // 한 번에 원본 한 페이지를 확인합니다. 같은 검색은 진행 위치와 요청을 공유합니다.
-    current.running = this.search(
-      q,
-      place,
-      days,
-      current.cursor,
-      true,
-      !!snapshot,
-    )
+    current.running = this.search(q, place, days, current.cursor, true)
       .then(async (page) => {
         const located = !!itemSearch(q, place).place;
         if (
@@ -1226,30 +1000,16 @@ export class InstitutionItemsService
           current.policeAvailable = false;
           current.policeIds.clear();
         }
-        const agencies = page.items.filter((i) => i.source !== '한성대');
-        // 두 기관의 관리번호가 겹치면 포털기관 집계에서 이미 센 물품입니다.
-        const overlaps =
-          snapshot && agencies.length && this.db
-            ? await this.db.$queryRaw<
-                { id: string }[]
-              >`SELECT v.id FROM verified_portal_items v
-                JOIN agency_count_candidates c ON v.id = 'lost112:' || c.atc_id || ':' || c.fd_sn
-                WHERE c.query=${walletSnapshot} AND c.generation=${snapshot.generation}
-                AND v.stored AND v.day BETWEEN ${since()} AND ${koreaDay()} AND v.id = ANY(${agencies.map((i) => i.id)}::text[])`
-            : [];
-        const portalIds = new Set(overlaps.map((i) => i.id));
         for (const item of page.items) {
-          if (portalIds.has(item.id)) continue;
           if (item.source !== '경찰' || (located && item.lastVerifiedOn))
             current.ids.add(item.id);
-          else if (current.policeAvailable && !portalIds.has(item.id))
-            current.policeIds.add(item.id);
+          else if (current.policeAvailable) current.policeIds.add(item.id);
         }
         if (page.nextCursor) {
           if (page.nextCursor === current.cursor)
             throw Error('Repeated cursor');
           current.cursor = page.nextCursor;
-          let confirmedTotal = current.ids.size + (snapshot?.total ?? 0);
+          let confirmedTotal = current.ids.size;
           for (const id of current.policeIds)
             if (!current.ids.has(id)) confirmedTotal++;
           current.result = { ...current.result, confirmedTotal };
@@ -1260,9 +1020,8 @@ export class InstitutionItemsService
           }
           current.result = {
             status: 'complete',
-            total: current.ids.size + (snapshot?.total ?? 0),
+            total: current.ids.size,
             policeIncluded: current.policeAvailable,
-            ...(snapshot && { checkedAt: snapshot.checkedAt }),
           };
           if (located && current.incomplete)
             current.result = {
@@ -1372,14 +1131,30 @@ export class InstitutionItemsService
       AND: [
         ...brandNameFilter(search),
         ...terms.map((group) => ({
-          OR: group.map((word) => ({
-            name: { contains: likeLiteral(word), mode: 'insensitive' as const },
-          })),
+          OR: group.flatMap((word) => {
+            const match = {
+              contains: likeLiteral(word),
+              mode: 'insensitive' as const,
+            };
+            return [{ name: match }, { kindName: match }];
+          }),
         })),
       ],
-      placeKey: exact
-        ? stationKey(place)
-        : { contains: likeLiteral(stationKey(place)) },
+      ...(exact
+        ? { placeKey: stationKey(place), source: { not: '경찰' } }
+        : place
+          ? {
+              OR: [
+                { placeKey: { contains: likeLiteral(stationKey(place)) } },
+                {
+                  foundPlace: {
+                    contains: likeLiteral(place),
+                    mode: 'insensitive',
+                  },
+                },
+              ],
+            }
+          : {}),
       ...(category !== 'ALL' && { category }),
     };
   }
@@ -1412,7 +1187,6 @@ export class InstitutionItemsService
     recent: boolean,
     cursor?: string,
     strict = false,
-    supplementWallet = false,
   ) {
     let positions: Position[] = sourceList.map(() => [1, 0]);
     if (cursor) {
@@ -1476,7 +1250,6 @@ export class InstitutionItemsService
               recent,
               pos[1] === liveFirstOffset ? [1, 0] : pos,
               strict,
-              supplementWallet,
             );
           if (canFallback && pos[0] === 1 && pos[1] === 0) {
             const saved = await this.savedPage(q, place, days, 0, next, i);
@@ -1484,7 +1257,7 @@ export class InstitutionItemsService
               // 화면은 DB에서 응답하고, 사용자가 실제 검색한 조건만 백그라운드에서 재확인합니다.
               this.refreshPortal(
                 [q, place, days, recent],
-                saved.items,
+                saved.items.filter((r) => r.source !== '경찰'),
                 fetchLive,
               );
               // 저장 목록을 본 후 '더보기'에서 포털 원본의 다음 결과도 확인할 수 있습니다.
@@ -1736,6 +1509,7 @@ export class InstitutionItemsService
           where: {
             stored: true,
             placeKey: stationKey(site.name),
+            source: { not: '경찰' },
             day: { gte: since(query.registeredDays), lte: koreaDay() },
           },
         });

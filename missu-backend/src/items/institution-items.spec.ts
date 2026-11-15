@@ -212,53 +212,33 @@ describe('기관 습득물', () => {
     }
     expect((await api.detail('lost112:F101:1')).storage).toBe('콜센터');
   });
-  it('장소 없는 지갑 검색은 완료된 전국 집계와 학교 건수를 합치고 경찰 중복을 제외한다', async () => {
-    const institution = (id: string, source: '한성대' | '경찰') =>
-      ({ id, source }) as Awaited<
-        ReturnType<InstitutionItemsService['search']>
-      >['items'][number];
-    const completedAt = new Date();
-    const snapshot = {
-      total: 100,
-      completedAt,
-      generation: 3,
-      retryAt: new Date(Date.now() + 60000),
-    };
-    const raw = jest
-      .fn()
-      .mockResolvedValueOnce([{ n: 100 }])
-      .mockResolvedValueOnce([{ id: 'lost112:shared:1' }]);
-    const db = {
-      $queryRaw: raw,
-      agencyCountSnapshot: { upsert: jest.fn().mockResolvedValue(snapshot) },
-    } as unknown as DatabaseService;
-    const api = new InstitutionItemsService({} as ExternalHttpService, db);
-    const search = jest.spyOn(api, 'search').mockResolvedValue({
-      items: [
-        institution('hansung:1', '한성대'),
-        institution('lost112:shared:1', '경찰'),
-        institution('lost112:other:1', '경찰'),
-      ],
-      notices: [],
-      unavailableSources: [],
-      nextCursor: null,
-    });
-    expect(await api.searchTotal('지갑', '', 'all')).toEqual({
-      status: 'complete',
-      total: 102,
-      policeIncluded: true,
-      checkedAt: completedAt.toISOString(),
-    });
-    expect(search).toHaveBeenCalledWith(
-      '지갑',
-      '',
-      'all',
-      undefined,
-      true,
-      true,
-    );
-    expect(raw.mock.calls[0]).toContain(2);
-  });
+  it.each(['핸드폰', '지갑', '우산'])(
+    '전국 %s 검색은 별도 수집 요청 없이 DB와 학교의 전체 건수를 읽는다',
+    async (q) => {
+      const count = jest
+        .fn()
+        .mockResolvedValueOnce(100)
+        .mockResolvedValueOnce(108);
+      const api = new InstitutionItemsService(
+        {} as ExternalHttpService,
+        { verifiedPortalItem: { count } } as unknown as DatabaseService,
+      );
+      jest
+        .spyOn(
+          api as unknown as {
+            schoolInventory(
+              q: string,
+              days: string,
+            ): Promise<Map<string, unknown>>;
+          },
+          'schoolInventory',
+        )
+        .mockResolvedValue(new Map([['hansung:1', {}]]));
+      expect((await api.searchTotal(q, '', 'all')).confirmedTotal).toBe(101);
+      expect((await api.searchTotal(q, '', 'all')).confirmedTotal).toBe(109);
+      expect(count.mock.calls[0][0].where.stored).toBe(true);
+    },
+  );
   it('제목이 그대로여도 반환은 제외하고 습득일이 없으면 게시일로 표시한다', () => {
     const head =
       '<div class="title"><span class="cate-name">접수</span><strong>연구실에서 습득한 (충전기) 보관중</strong><li>작성일 : 2026.11.13</li></div>';
@@ -327,33 +307,27 @@ describe('기관 습득물', () => {
         },
       ],
       day: { gte: '2026-05-14', lte: '2026-11-14' },
-      placeKey: { contains: '가상역2호선' },
+      OR: expect.arrayContaining([{ placeKey: { contains: '가상역2호선' } }]),
     });
   });
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
     const count = jest.fn().mockResolvedValue(327);
     const db = {
       verifiedPortalItem: { count },
-      agencyCountCandidate: {
-        groupBy: async () => [
-          { stored: null, _count: { _all: 6 } },
-          { stored: false, _count: { _all: 1 } },
-        ],
-      },
-      agencyCountSnapshot: {
-        upsert: async () => ({
-          total: null,
-          completedAt: null,
-          retryAt: new Date(Date.now() + 60000),
-        }),
-      },
     } as unknown as DatabaseService;
     const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    jest
+      .spyOn(
+        api as unknown as { schoolInventory(): Promise<Map<string, unknown>> },
+        'schoolInventory',
+      )
+      .mockResolvedValue(new Map());
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
       status: 'counting',
       total: null,
       confirmedPortal: 327,
-      progress: { stage: 'listing', checked: 1, candidates: 7 },
+      confirmedTotal: 327,
+      refreshAfterMs: 60000,
     });
     expect(count).toHaveBeenCalledWith({
       where: {
@@ -367,7 +341,6 @@ describe('기관 습득물', () => {
             ),
           },
         ],
-        placeKey: { contains: '' },
         day: { gte: '2026-05-14', lte: '2026-11-14' },
       },
     });
