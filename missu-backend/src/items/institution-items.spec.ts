@@ -224,6 +224,7 @@ describe('기관 습득물', () => {
         {
           verifiedPortalItem: { count },
           agencyCountSnapshot: { findMany: async () => [] },
+          lastSearchCount: { findUnique: async () => null },
         } as unknown as DatabaseService,
       );
       jest
@@ -255,7 +256,10 @@ describe('기관 습득물', () => {
     }));
     const db = {
       verifiedPortalItem: { count: async () => 87 },
+      foundItem: { count: async () => 2 },
+      $executeRaw: async () => 1,
       agencyCountSnapshot: { findMany: async () => jobs },
+      lastSearchCount: { findUnique: async () => null },
     } as unknown as DatabaseService;
     const api = new InstitutionItemsService({} as ExternalHttpService, db);
     const school = jest
@@ -379,6 +383,7 @@ describe('기관 습득물', () => {
     const db = {
       verifiedPortalItem: { count },
       agencyCountSnapshot: { findMany: async () => [] },
+      lastSearchCount: { findUnique: async () => null },
     } as unknown as DatabaseService;
     const api = new InstitutionItemsService({} as ExternalHttpService, db);
     jest

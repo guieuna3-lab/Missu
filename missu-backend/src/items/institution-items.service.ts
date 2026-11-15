@@ -7,6 +7,7 @@ import {
 import { createHash } from 'node:crypto';
 import {
   itemSearch,
+  publicFoundWhere,
   brandNameFilter,
   likeLiteral,
   matchesName,
@@ -69,6 +70,7 @@ type PageBatch = Batch & { next?: Position; loadFailed?: boolean };
 type CountProgress = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  lastComplete?: { total: number; checkedAt: Date; policeIncluded: boolean };
   confirmedPortal?: number;
   confirmedTotal?: number;
   policeIncluded?: boolean;
@@ -925,31 +927,84 @@ export class InstitutionItemsService
   ): Promise<CountProgress> {
     const search = itemSearch(q, place);
     if (!this.db) return this.countSources(search.q, search.place, days);
-    // 목록의 표시 개수와 별도로, 저장된 모든 보관품과 학교 공고를 같은 조건으로 셉니다.
-    const [coverage, school] = await Promise.all([
-      catalogCoverage(this.db, since(days), koreaDay()),
+    const db = this.db;
+    const now = Date.now();
+    const today = koreaDay(now);
+    // 날짜가 바뀌어도 같은 검색 조건은 직전 확정 합계를 찾습니다.
+    const queryKey = createHash('sha256')
+      .update(JSON.stringify([days, search.q, search.place]))
+      .digest('hex');
+    const select = {
+      total: true,
+      policeIncluded: true,
+      checkedAt: true,
+    } as const;
+    const [coverage, previous] = await Promise.all([
+      catalogCoverage(db, since(days, now), today),
+      db.lastSearchCount.findUnique({ where: { queryKey }, select }),
+    ]);
+    const pending = {
+      status: 'counting',
+      total: null,
+      policeIncluded: coverage.policeIncluded,
+      refreshAfterMs: 60000,
+    } as const;
+    if (!coverage.complete && previous)
+      return { ...pending, lastComplete: previous };
+
+    const [confirmedPortal, school] = await Promise.all([
+      db.verifiedPortalItem.count({
+        where: this.portalWhere(search.q, search.place, days),
+      }),
       Promise.resolve()
         .then(() => this.schoolInventory(search.q, days))
         .catch(() => undefined),
     ]);
-    const confirmedPortal = await this.db.verifiedPortalItem.count({
-      where: this.portalWhere(search.q, search.place, days),
-    });
-    const schoolTotal = school
-      ? [...school.values()].filter((item) =>
-          matchesPlace(search.place, item.storage, item.foundPlace),
-        ).length
-      : undefined;
     const confirmedTotal =
-      schoolTotal === undefined ? undefined : confirmedPortal + schoolTotal;
-    const complete = coverage.complete && confirmedTotal !== undefined;
+      school &&
+      confirmedPortal +
+        [...school.values()].filter((item) =>
+          matchesPlace(search.place, item.storage, item.foundPlace),
+        ).length;
+    if (!coverage.complete || confirmedTotal === undefined)
+      return {
+        ...pending,
+        confirmedPortal,
+        confirmedTotal,
+        ...(previous && { lastComplete: previous }),
+      };
+
+    const from =
+      days === 'all' ? undefined : new Date(now - Number(days) * 86400000);
+    const members = await db.foundItem.count({
+      where: publicFoundWhere(search, from, undefined, now),
+    });
+    // 조회 도중 한국 날짜가 바뀌면 서로 다른 날의 결과를 한 합계로 저장하지 않습니다.
+    if (koreaDay() !== today) return this.searchTotal(q, place, days);
+    const lastComplete = {
+      total: members + confirmedTotal,
+      checkedAt: new Date(now),
+      policeIncluded: coverage.policeIncluded,
+    };
+    // 느리게 끝난 요청이 더 최근에 확인한 숫자를 덮어쓰지 않게 합니다.
+    const written =
+      await db.$executeRaw`INSERT INTO last_search_counts AS old (query_key,total,police_included,checked_at)
+      VALUES (${queryKey},${lastComplete.total},${lastComplete.policeIncluded},${lastComplete.checkedAt})
+      ON CONFLICT (query_key) DO UPDATE SET total=EXCLUDED.total,police_included=EXCLUDED.police_included,checked_at=EXCLUDED.checked_at
+      WHERE old.checked_at < EXCLUDED.checked_at`;
     return {
-      status: complete ? 'complete' : 'counting',
-      total: complete ? confirmedTotal : null,
+      status: 'complete',
+      total: confirmedTotal,
       confirmedPortal,
       confirmedTotal,
       policeIncluded: coverage.policeIncluded,
       refreshAfterMs: 60000,
+      lastComplete: written
+        ? lastComplete
+        : await db.lastSearchCount.findUniqueOrThrow({
+            where: { queryKey },
+            select,
+          }),
     };
   }
   private async countSources(

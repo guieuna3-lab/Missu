@@ -56,6 +56,7 @@ const resultTime = (item: SearchItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
 function confirmedSearchCount(state: SearchState, agencies: InstitutionTotal | null) {
+  if (agencies?.lastComplete) return agencies.lastComplete.total;
   if (state.memberTotal === undefined || agencies?.status !== 'complete' || agencies.total == null)
     return null;
   return state.memberTotal + agencies.total;
@@ -154,6 +155,8 @@ export default function SearchScreen() {
         const reply = await institutionTotal(countFilters!, controller.signal);
         if (controller.signal.aborted) return;
         setAgencyCount(reply);
+        // 직전 확정값도 이 검색에서는 고정하고 다음 검색에서 갱신합니다.
+        if (reply.lastComplete) return;
         if (reply.status === 'counting')
           timer = setTimeout(
             () => void check(),
@@ -311,7 +314,7 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {(state.status === 'success' || (state.status === 'loading' && !!agencyCount)) && (
+      {!!agencyCount && (state.status === 'success' || state.status === 'loading') && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
@@ -325,17 +328,18 @@ export default function SearchScreen() {
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&
-        state.memberTotal !== undefined &&
-        agencyCount?.total != null && (
+        confirmedCount !== null &&
+        agencyCount && (
           <Text style={typography.body}>
-            {agencyCount.policeIncluded
+            {(agencyCount.lastComplete?.policeIncluded ?? agencyCount.policeIncluded)
               ? '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰 합계'
               : '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) 합계'}
-            {agencyCount.checkedAt &&
-              ' · 포털기관 집계 완료 ' +
-                new Date(agencyCount.checkedAt).toLocaleDateString('ko-KR', {
+            {agencyCount.lastComplete &&
+              ' · ' +
+                new Date(agencyCount.lastComplete.checkedAt).toLocaleDateString('ko-KR', {
                   timeZone: 'Asia/Seoul',
-                })}
+                }) +
+                ' 기준'}
           </Text>
         )}
       {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (
