@@ -1,5 +1,6 @@
 import { itemSearch, matchesName } from './item-search';
 import {
+  custodianPhone,
   sinceFound,
   schoolFoundDay,
   schoolDetail,
@@ -74,6 +75,16 @@ describe('기관 습득물', () => {
         return new Response(read(new URL(url)));
       },
     } as ExternalHttpService);
+  it('센터의 잘못 표기된 대표번호를 바로잡고 일반 전화번호는 유지한다', () => {
+    expect(custodianPhone('핸드폰찾기 콜센터', '02-1566-4300')).toBe(
+      '1566-4300',
+    );
+    expect(custodianPhone('핸드폰찾기콜센터', '02-3471-1155')).toBe(
+      '02-3471-1155',
+    );
+    expect(custodianPhone('역무실', '02-1234-5678')).toBe('02-1234-5678');
+    expect(custodianPhone('역무실', '미기재')).toBeUndefined();
+  });
   it.each([
     ['휴대폰', '검정 아이폰', true],
     ['아이폰', '삼성휴대폰', false],
