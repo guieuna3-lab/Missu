@@ -75,6 +75,7 @@ export type InstitutionTotal = {
   total: number | null;
   confirmedPortal?: number;
   confirmedTotal?: number;
+  refreshAfterMs?: number;
   policeIncluded?: boolean;
   checkedAt?: string;
   progress?: { stage: 'listing' | 'checking'; checked: number; candidates: number };
