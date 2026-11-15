@@ -2,7 +2,7 @@
  * 물품 저장과 조회의 실제 업무 규칙을 처리합니다.
  * 공개 조회는 정해진 필드만 선택하고, 비공개 특징은 보관자의 관리 상세에서만 복원합니다.
  */
-import { itemSearch, likeLiteral } from './item-search';
+import { itemSearch, likeLiteral, brandNameFilter } from './item-search';
 import { sinceFound } from './institution-records';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
@@ -99,6 +99,7 @@ export class ItemsService {
         ]),
       }),
     );
+    keywords.push(...brandNameFilter(search));
     if (search.excludedEndings.length)
       keywords.push({
         NOT: search.excludedEndings.map((word) => ({
