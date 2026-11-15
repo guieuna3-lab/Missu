@@ -67,6 +67,15 @@ test('registering a found item keeps request item names in sync when renamed', (
   assert.equal(renamed.requests[0].itemName, '갤럭시 버즈2 프로');
 });
 
+test('a returned item keeps its label when its request history has not loaded', () => {
+  assert.equal(foundItemStatus({ id: 'buds', returned: true }, []), 'returned');
+  assert.equal(foundItemStatus({ id: 'buds', returned: false }, []), 'storing');
+  assert.equal(
+    foundItemStatus({ id: 'key' }, [{ itemId: 'buds', status: 'completed' }]),
+    'storing',
+  );
+});
+
 test('requester flow: pending → approved → scheduled → completed', () => {
   let state = sampleActivity;
   const id = 'request-1';

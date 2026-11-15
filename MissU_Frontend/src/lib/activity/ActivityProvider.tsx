@@ -159,6 +159,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
             return {
               id: row.id,
               name: data.name,
+              returned: data.status === 'RETURNED',
               createdAt: row.createdAt,
               category:
                 data.appCategory ??
