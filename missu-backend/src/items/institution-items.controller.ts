@@ -50,6 +50,18 @@ export class InstitutionItemsController {
       ),
     };
   }
+  @Get('inventory-total')
+  @Header('Cache-Control', 'no-store')
+  async inventoryTotal(@Req() req: SessionRequest) {
+    await this.rates.consume('institution-inventory:' + req.ip, 30, 60000);
+    return { data: await this.service.inventoryTotal() };
+  }
+  @Get('sync-status')
+  @Header('Cache-Control', 'no-store')
+  async syncStatus(@Req() req: SessionRequest) {
+    await this.rates.consume('institution-sync-status:' + req.ip, 30, 60000);
+    return { data: await this.service.syncStatus() };
+  }
   @Get('nearby')
   @Header('Cache-Control', 'no-store')
   async nearby(@Query() query: NearbyDto, @Req() req: SessionRequest) {
