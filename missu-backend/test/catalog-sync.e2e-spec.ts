@@ -7,6 +7,8 @@ import {
   nextPortalDay,
 } from '../src/items/catalog-sync';
 import { koreaDay } from '../src/items/institution-records';
+import { harness } from './mvp-support';
+import { randomUUID, createHash } from 'node:crypto';
 
 describe('기관 전 품목 자동 수집', () => {
   it('검색 없이 여러 종류를 저장하고 한도 소진 후 다음 한국 날짜에 남은 후보부터 재개한다', async () => {
@@ -110,4 +112,109 @@ describe('기관 전 품목 자동 수집', () => {
       await db.$disconnect();
     }
   }, 60000);
+});
+
+describe('확인된 습득물 합계', () => {
+  it('자정을 넘겨도 직전 회원·기관 합계와 0건을 보존하고 오늘치 확인 후 다음 요청에서 갱신한다', async () => {
+    const h = await harness();
+    const keeper = await h.user('published');
+    const day = '2040-03-20';
+    const end = Date.parse(day + 'T23:59:55+09:00');
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(end);
+    const q = '이어폰' + randomUUID().slice(0, 8),
+      zero = q + 'x';
+    const snapshots = Array.from(
+      { length: 8 },
+      (_, i) => 'catalog/포털기관/' + koreaDay(end + (i - 6) * 86400000),
+    );
+    const storedKeys = [q, zero].map((word) =>
+      createHash('sha256')
+        .update(JSON.stringify(['7', word, '']))
+        .digest('hex'),
+    );
+    const instance = () =>
+      new InstitutionItemsService({} as ExternalHttpService, h.db);
+    try {
+      await h.db.agencyCountSnapshot.createMany({
+        data: snapshots
+          .slice(0, 7)
+          .map((query) => ({ query, completedAt: new Date(end) })),
+      });
+      await h.item(keeper, { name: q });
+      const before = instance();
+      jest
+        .spyOn(
+          before as unknown as {
+            schoolInventory(word: string): Promise<Map<string, unknown>>;
+          },
+          'schoolInventory',
+        )
+        .mockImplementation(
+          async (word) =>
+            new Map(word === q ? [['school', { storage: '한성대' }]] : []),
+        );
+      const first = await before.searchTotal(q, '', '7');
+      expect(first).toMatchObject({
+        status: 'complete',
+        total: 1,
+        lastComplete: { total: 2, checkedAt: new Date(end) },
+      });
+      expect(
+        (await before.searchTotal(zero, '', '7')).lastComplete?.total,
+      ).toBe(0);
+      clock.mockReturnValue(end + 10000);
+      await h.item(keeper, { name: q });
+      const after = instance();
+      const school = jest
+        .spyOn(
+          after as unknown as {
+            schoolInventory(): Promise<Map<string, unknown>>;
+          },
+          'schoolInventory',
+        )
+        .mockResolvedValue(new Map([['school', { storage: '한성대' }]]));
+      const during = await after.searchTotal(q, '', '7');
+      expect(during).toMatchObject({
+        status: 'counting',
+        total: null,
+        lastComplete: first.lastComplete,
+      });
+      expect((await after.searchTotal(zero, '', '7')).lastComplete?.total).toBe(
+        0,
+      );
+      expect(school).not.toHaveBeenCalled();
+      for (const [word, place, period] of [
+        [q, '서울역', '7'],
+        [q, '', '30'],
+        [q + 'a', '', '7'],
+      ]) {
+        expect(
+          (await after.searchTotal(word, place, period)).lastComplete,
+        ).toBeUndefined();
+      }
+      await h.db.agencyCountSnapshot.create({
+        data: { query: snapshots[7], completedAt: new Date(Date.now()) },
+      });
+      const next = await after.searchTotal(q, '', '7');
+      expect(next).toMatchObject({
+        status: 'complete',
+        lastComplete: { total: 3, checkedAt: new Date(Date.now()) },
+      });
+      expect(during.lastComplete?.total).toBe(2);
+      // 늦게 도착한 과거 요청이 이미 저장한 최신 합계를 되돌리지 않습니다.
+      clock.mockReturnValue(end);
+      expect((await before.searchTotal(q, '', '7')).lastComplete).toEqual(
+        next.lastComplete,
+      );
+    } finally {
+      clock.mockRestore();
+      await h.db.lastSearchCount.deleteMany({
+        where: { queryKey: { in: storedKeys } },
+      });
+      await h.db.agencyCountSnapshot.deleteMany({
+        where: { query: { in: snapshots } },
+      });
+      await h.close();
+    }
+  }, 30000);
 });
