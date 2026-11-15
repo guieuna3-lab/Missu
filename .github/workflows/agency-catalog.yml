@@ -1,0 +1,20 @@
+name: 기관 습득물 수집 현황
+on:
+  schedule:
+    - cron: '0 15 * * *' # 한국시간 자정
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: 운영 수집기가 실행 중인지 확인하고 진행 기록 남기기
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --retry 2 --max-time 85 \
+            https://missu-api-wkdu.onrender.com/api/v1/institution-items/sync-status > status.json
+          jq -e '.data.enabled and (.data.providers | length > 0)' status.json > /dev/null
+          jq -r '.data.providers[] | "\(.source) · 오늘 상세조회 \(.detailAttempts)회 · 확인 완료 \(.completedDays)일"' status.json >> "$GITHUB_STEP_SUMMARY"
