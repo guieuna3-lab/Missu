@@ -1,3 +1,4 @@
+import { itemSearch, matchesName } from './item-search';
 import {
   sinceFound,
   schoolFoundDay,
@@ -73,6 +74,124 @@ describe('기관 습득물', () => {
         return new Response(read(new URL(url)));
       },
     } as ExternalHttpService);
+  it.each([
+    ['휴대폰', '검정 아이폰', true],
+    ['아이폰', '삼성휴대폰', false],
+    ['핸드폰', '아이폰 케이스', false],
+    ['이어폰', '갤럭시 버즈', true],
+    ['자동차 키', '스마트키', true],
+    ['가방', '백팩', true],
+    ['월렛', '반지갑', true],
+    ['가새', '문구용 가위', true],
+    ['가위', '가시개', true],
+    ['바굼지', '대나무 바구니', true],
+    ['필름카메라', '디지털카메라', false],
+  ])('%s 검색의 등록명 %s 일치 여부', (q, name, expected) => {
+    expect(matchesName(itemSearch(String(q)), String(name))).toBe(expected);
+  });
+  it('물품명과 장소를 따로 입력하거나 순서를 바꿔도 습득지와 보관처에서 같은 보관품을 찾는다', async () => {
+    const sources = [
+      {
+        id: 'F101',
+        name: '검정 아이폰',
+        found: '강남역 근처 골목',
+        region: '서울',
+        store: '콜센터',
+        state: '보관중',
+      },
+      {
+        id: 'F102',
+        name: '핸드폰',
+        found: '지하상가',
+        region: '강남역 2호선 방재',
+        store: '콜센터',
+        state: '보관중',
+      },
+      {
+        id: 'V103',
+        name: '스마트폰',
+        found: '공원',
+        region: '서울',
+        store: '강남역(2호선)',
+        state: '보관중',
+      },
+      {
+        id: 'F104',
+        name: '아이폰',
+        found: '강남역',
+        region: '강남역',
+        store: '콜센터',
+        state: '반환',
+      },
+      {
+        id: 'F105',
+        name: '갤럭시폰',
+        found: '역삼역',
+        region: '역삼역',
+        store: '역삼역',
+        state: '보관중',
+      },
+    ];
+    const api = service((url) => {
+      if (url.hostname === 'www.hansung.ac.kr')
+        return '<table><th>작성일</th></table>';
+      if (url.pathname.includes('wisenut'))
+        return JSON.stringify({
+          result: {
+            outputs: {
+              FOUND: {
+                totalCount: sources.length,
+                documents: sources.map((r) => ({
+                  fields: {
+                    PKUP_CMDTY_MNG_ID: r.id,
+                    SORT_SN: '1',
+                    ITEM_CN: r.name,
+                    SGG_NM: r.region,
+                    PKUP_CMDTY_LCLSF_NM: '휴대폰',
+                  },
+                })),
+              },
+            },
+          },
+        });
+      if (!url.pathname.includes('selectFindListDetail'))
+        return xml([]).replace('<items>', '<totalCount>0</totalCount><items>');
+      const r = sources.find(
+        (r) => r.id === url.searchParams.get('pkupCmdtyMngId'),
+      )!;
+      const fields = {
+        관리번호: r.id + '-1',
+        '유실물 상태': r.state,
+        '물품 분류': '휴대폰',
+        습득일: '2026-11-12',
+        '습득 장소': r.found,
+        보관장소: r.store,
+      };
+      return (
+        '<h4 class="box-tit1">' +
+        r.name +
+        '</h4><table>' +
+        Object.entries(fields)
+          .map(([k, v]) => '<tr><th>' + k + '</th><td>' + v + '</td></tr>')
+          .join('') +
+        '</table>'
+      );
+    });
+    for (const [q, place] of [
+      ['핸드폰', '강남역'],
+      ['강남역 휴대폰', ''],
+      ['핸드폰 강남역', ''],
+    ]) {
+      const res = await api.search(q, place, 'all');
+      expect(res.items.map((i) => i.id).sort()).toEqual([
+        'lost112:F101:1',
+        'lost112:F102:1',
+        'lost112:V103:1',
+      ]);
+      expect((await api.searchTotal(q, place, 'all')).total).toBe(3);
+    }
+    expect((await api.detail('lost112:F101:1')).storage).toBe('콜센터');
+  });
   it('장소 없는 지갑 검색은 완료된 전국 집계와 학교 건수를 합치고 경찰 중복을 제외한다', async () => {
     const institution = (id: string, source: '한성대' | '경찰') =>
       ({ id, source }) as Awaited<
@@ -110,12 +229,14 @@ describe('기관 습득물', () => {
       policeIncluded: true,
       checkedAt: completedAt.toISOString(),
     });
-    const cursor = search.mock.calls[0][3]!;
-    expect(JSON.parse(Buffer.from(cursor, 'base64url').toString())).toEqual([
-      [1, 0],
-      [1, 0],
-      null,
-    ]);
+    expect(search).toHaveBeenCalledWith(
+      '지갑',
+      '',
+      'all',
+      undefined,
+      true,
+      true,
+    );
     expect(raw.mock.calls[0]).toContain(2);
   });
   it('제목이 그대로여도 반환은 제외하고 습득일이 없으면 게시일로 표시한다', () => {
@@ -176,7 +297,15 @@ describe('기관 습득물', () => {
     });
     expect(findMany.mock.calls[0][0].where).toMatchObject({
       stored: true,
-      name: { contains: '지갑' },
+      AND: [
+        {
+          OR: expect.arrayContaining(
+            ['지갑', '월렛'].map((contains) => ({
+              name: { contains, mode: 'insensitive' },
+            })),
+          ),
+        },
+      ],
       day: { gte: '2026-05-14', lte: '2026-11-14' },
       placeKey: { contains: '가상역2호선' },
     });
@@ -209,7 +338,15 @@ describe('기관 습득물', () => {
     expect(count).toHaveBeenCalledWith({
       where: {
         stored: true,
-        name: { contains: '지갑', mode: 'insensitive' },
+        AND: [
+          {
+            OR: expect.arrayContaining(
+              ['지갑', '월렛'].map((contains) => ({
+                name: { contains, mode: 'insensitive' },
+              })),
+            ),
+          },
+        ],
         placeKey: { contains: '' },
         day: { gte: '2026-05-14', lte: '2026-11-14' },
       },
@@ -738,6 +875,7 @@ describe('기관 습득물', () => {
     const venues = ['강남역(2호선)', '공항 고객센터', '백화점 안내소', '상점'];
     const entries = venues.map((depPlace, i) => ({
       ...row,
+      fdPrdtNm: i === 2 ? '갈색 월렛' : '지갑',
       depPlace,
       atcId: 'V' + i,
       csteSteNm: i === 3 ? '반환완료' : '보관중',
