@@ -181,8 +181,10 @@ describe('기관 습득물', () => {
       placeKey: { contains: '가상역2호선' },
     });
   });
-  it('전국 첫 집계가 끝나기 전에는 중간 건수나 포털 등록 건수를 표시하지 않는다', async () => {
+  it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
+    const count = jest.fn().mockResolvedValue(327);
     const db = {
+      verifiedPortalItem: { count },
       agencyCountCandidate: {
         groupBy: async () => [
           { stored: null, _count: { _all: 6 } },
@@ -201,7 +203,16 @@ describe('기관 습득물', () => {
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
       status: 'counting',
       total: null,
+      confirmedPortal: 327,
       progress: { stage: 'listing', checked: 1, candidates: 7 },
+    });
+    expect(count).toHaveBeenCalledWith({
+      where: {
+        stored: true,
+        name: { contains: '지갑', mode: 'insensitive' },
+        placeKey: { contains: '' },
+        day: { gte: '2026-05-14', lte: '2026-11-14' },
+      },
     });
   });
   it('키가 없어도 학교 보관 공고와 불러오지 못한 기관을 구분한다', async () => {
@@ -290,7 +301,9 @@ describe('기관 습득물', () => {
       api.searchTotal('지갑', '', 'all'),
       api.searchTotal('지갑', '', 'all'),
     ]);
-    expect(first).toEqual(Array(2).fill({ status: 'counting', total: null }));
+    expect(first).toEqual(
+      Array(2).fill({ status: 'counting', total: null, confirmedTotal: 2 }),
+    );
     expect(await api.searchTotal('지갑', '', 'all')).toEqual({
       status: 'complete',
       total: 3,
