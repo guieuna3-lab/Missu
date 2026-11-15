@@ -174,9 +174,7 @@ export function HomeScreen() {
             <Text style={styles.secondary}>최근 습득물을 불러오지 못했어요.</Text>
           )}
           {state === 'ready' && !recent.length && (
-            <Text style={styles.secondary}>
-              {notice ? '조회한 자료에 최근 습득물이 없어요.' : '최근 등록된 습득물이 없어요'}
-            </Text>
+            <Text style={styles.secondary}>현재 확인된 최근 습득물이 없어요.</Text>
           )}
           {state === 'ready' &&
             recent.slice(0, visibleCount).map((item) => (
@@ -209,17 +207,13 @@ export function HomeScreen() {
                         : '습득일 ' + formatFoundAt(item.foundAt).slice(0, 10)}
                   </Text>
                 </View>
-                <View style={styles.status}>
-                  <Text style={[typography.label, { color: colors.green }]}>
-                    {'source' in item
-                      ? item.lastVerifiedOn
-                        ? '보관 확인 ' + item.lastVerifiedOn
-                        : item.source === '한성대'
-                          ? '학교 접수'
-                          : '보관 중'
-                      : item.statusLabel}
-                  </Text>
-                </View>
+                {(!('source' in item) || item.source === '한성대') && (
+                  <View style={styles.status}>
+                    <Text style={[typography.label, { color: colors.green }]}>
+                      {'source' in item ? '학교 접수' : item.statusLabel}
+                    </Text>
+                  </View>
+                )}
               </Pressable>
             ))}
           {state === 'ready' &&
