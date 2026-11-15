@@ -73,6 +73,7 @@ export function searchInstitutions(filters: SearchFilters, cursor?: string) {
 export type InstitutionTotal = {
   status: 'counting' | 'complete' | 'unavailable';
   total: number | null;
+  lastComplete?: { total: number; checkedAt: string; policeIncluded: boolean };
   confirmedPortal?: number;
   confirmedTotal?: number;
   refreshAfterMs?: number;
