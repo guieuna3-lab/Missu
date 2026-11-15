@@ -364,6 +364,15 @@ model VerifiedPortalItem {
   @@map("verified_portal_items")
 }
 
+// 검색어와 장소 원문을 남기지 않고, 마지막으로 완전히 확인한 합계만 보존합니다.
+model LastSearchCount {
+  queryKey String @id @map("query_key")
+  total Int
+  policeIncluded Boolean @map("police_included")
+  checkedAt DateTime @map("checked_at") @db.Timestamptz
+  @@map("last_search_counts")
+}
+
 model AgencyCountBudget {
   day   String @id
   calls Int
