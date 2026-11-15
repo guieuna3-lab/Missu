@@ -255,6 +255,13 @@ export default function SearchScreen() {
     else router.replace('/home');
   }
   const confirmedCount = confirmedSearchCount(state, agencyCount);
+  // 목록과 건수는 따로 도착하므로 검색을 시작한 시점부터 건수 상태를 표시합니다.
+  let countLabel = '확인된 습득물 건수 조회 중';
+  if (confirmedCount !== null)
+    countLabel = '확인된 습득물 ' + confirmedCount.toLocaleString('ko-KR') + '건';
+  else if (agencyCount?.status === 'unavailable' || state.memberNotice)
+    countLabel = '습득물 건수를 불러오지 못했어요';
+  else if (agencyCount?.status === 'counting') countLabel = '확인된 습득물 집계 중';
   const heading = (
     <>
       <FormField
@@ -314,17 +321,13 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {!!agencyCount && (state.status === 'success' || state.status === 'loading') && (
+      {state.status !== 'idle' && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
           style={typography.heading}
         >
-          {confirmedCount !== null
-            ? '확인된 습득물 ' + confirmedCount.toLocaleString('ko-KR') + '건'
-            : agencyCount?.status === 'unavailable' || !!state.memberNotice
-              ? '습득물 건수를 불러오지 못했어요'
-              : '확인된 습득물 집계 중'}
+          {countLabel}
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&
