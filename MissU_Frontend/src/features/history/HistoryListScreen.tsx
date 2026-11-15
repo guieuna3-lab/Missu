@@ -12,7 +12,8 @@ import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { LoginGateScreen } from '@/features/auth/LoginGateScreen';
 import { useActivity } from '@/lib/activity/ActivityProvider';
-import { categoryLabel, type ItemCategory } from '@/lib/activity/types';
+import { foundItemStatus } from '@/lib/activity/transitions';
+import { categoryLabel, foundItemStatusLabel, type ItemCategory } from '@/lib/activity/types';
 import { formatDate } from '@/lib/dateTime';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { receivedRequests, requestStatusLabel, sentRequests } from './activitySummary';
@@ -99,6 +100,10 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
               key: item.id,
               icon: categoryIcons[item.category],
               title: item.name,
+              status:
+                foundItemStatus(item, received) === 'returned'
+                  ? foundItemStatusLabel.returned
+                  : undefined,
               description: `${categoryLabel(item.category)} · 받은 요청 ${received.length}건`,
               onPress: () => router.push({ pathname: '/my-items/[id]', params: { id: item.id } }),
             };
@@ -155,7 +160,7 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
               <View style={styles.item}>
                 <ChoiceRow
                   icon={row.icon}
-                  title={row.title}
+                  title={'status' in row && row.status ? row.title + ' · ' + row.status : row.title}
                   description={row.description}
                   onPress={row.onPress}
                 />
