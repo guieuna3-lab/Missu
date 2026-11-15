@@ -2,6 +2,7 @@
  * 물품 저장과 조회의 실제 업무 규칙을 처리합니다.
  * 공개 조회는 정해진 필드만 선택하고, 비공개 특징은 보관자의 관리 상세에서만 복원합니다.
  */
+import { itemSearch, likeLiteral } from './item-search';
 import { sinceFound } from './institution-records';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
@@ -38,7 +39,6 @@ function publicCategory(dto: CreateItemDto) {
     return 'WALLET_BAG';
   return dto.appCategory === 'ELECTRONICS' ? 'ELECTRONICS' : 'OTHER';
 }
-const literal = (text: string) => text.replace(/[\\%_]/g, '\\$&');
 
 @Injectable()
 export class ItemsService {
@@ -86,20 +86,40 @@ export class ItemsService {
         'VALIDATION_ERROR',
         '검색 시작일은 종료일보다 늦을 수 없습니다.',
       );
-    // 앱의 검색 화면처럼, 모든 단어가 물품명 또는 공개 특징 중 한 곳에 있어야 합니다.
-    const words = query.q?.split(/\s+/).filter(Boolean) ?? [];
-    const keywords = words.map((word): Prisma.FoundItemWhereInput => {
-      const match = { contains: literal(word), mode: 'insensitive' as const };
-      return { OR: [{ name: match }, { publicFeatures: match }] };
+    const search = itemSearch(query.q, query.place);
+    const contains = (word: string) => ({
+      contains: likeLiteral(word),
+      mode: 'insensitive' as const,
     });
+    const keywords: Prisma.FoundItemWhereInput[] = search.terms.map(
+      (group) => ({
+        OR: group.flatMap((word) => [
+          { name: contains(word) },
+          { publicFeatures: contains(word) },
+        ]),
+      }),
+    );
+    if (search.excludedEndings.length)
+      keywords.push({
+        NOT: search.excludedEndings.map((word) => ({
+          name: { endsWith: word, mode: 'insensitive' },
+        })),
+      });
+    if (search.place) {
+      const places = [
+        search.place,
+        search.place.replace(/^(.+역)\s+(.+선)$/u, '$1($2)'),
+      ];
+      keywords.push({
+        OR: [...new Set(places)].flatMap((place) => [
+          { foundLabel: contains(place) },
+          { storagePlace: contains(place) },
+        ]),
+      });
+    }
     const where: Prisma.FoundItemWhereInput = {
       archived: false,
       status: { in: ['AVAILABLE', 'RESERVED'] },
-      ...(query.place
-        ? {
-            foundLabel: { contains: literal(query.place), mode: 'insensitive' },
-          }
-        : {}),
       foundAt: {
         gte: new Date(
           Math.max(
