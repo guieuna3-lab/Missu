@@ -2,8 +2,7 @@
  * 물품 저장과 조회의 실제 업무 규칙을 처리합니다.
  * 공개 조회는 정해진 필드만 선택하고, 비공개 특징은 보관자의 관리 상세에서만 복원합니다.
  */
-import { itemSearch, likeLiteral, brandNameFilter } from './item-search';
-import { sinceFound } from './institution-records';
+import { itemSearch, publicFoundWhere } from './item-search';
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../database/database.service';
 import { Prisma } from '../generated/prisma/client';
@@ -86,56 +85,11 @@ export class ItemsService {
         'VALIDATION_ERROR',
         '검색 시작일은 종료일보다 늦을 수 없습니다.',
       );
-    const search = itemSearch(query.q, query.place);
-    const contains = (word: string) => ({
-      contains: likeLiteral(word),
-      mode: 'insensitive' as const,
-    });
-    const keywords: Prisma.FoundItemWhereInput[] = search.terms.map(
-      (group) => ({
-        OR: group.flatMap((word) => [
-          { name: contains(word) },
-          { publicFeatures: contains(word) },
-        ]),
-      }),
-    );
-    keywords.push(...brandNameFilter(search));
-    if (search.excludedEndings.length)
-      keywords.push({
-        NOT: search.excludedEndings.map((word) => ({
-          name: { endsWith: word, mode: 'insensitive' },
-        })),
-      });
-    if (search.place) {
-      const places = [
-        search.place,
-        search.place.replace(/^(.+역)\s+(.+선)$/u, '$1($2)'),
-      ];
-      keywords.push({
-        OR: [...new Set(places)].flatMap((place) => [
-          { foundLabel: contains(place) },
-          { storagePlace: contains(place) },
-        ]),
-      });
-    }
-    const where: Prisma.FoundItemWhereInput = {
-      archived: false,
-      status: { in: ['AVAILABLE', 'RESERVED'] },
-      foundAt: {
-        gte: new Date(
-          Math.max(
-            from?.getTime() ?? 0,
-            Date.parse(sinceFound() + 'T00:00:00+09:00'),
-          ),
-        ),
-        lte: new Date(Math.min(to?.getTime() ?? Infinity, Date.now())),
-      },
-      AND: keywords,
-    };
+    const where = publicFoundWhere(itemSearch(query.q, query.place), from, to);
     const [rows, total] = await Promise.all([
       this.db.foundItem.findMany({
         where: cursor
-          ? { ...where, AND: [...keywords, olderThan(cursor)] }
+          ? { ...where, AND: [...where.AND, olderThan(cursor)] }
           : where,
         select: publicSelect,
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
