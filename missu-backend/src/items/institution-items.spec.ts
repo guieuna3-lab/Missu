@@ -377,11 +377,13 @@ describe('기관 습득물', () => {
       stored: true,
       AND: [
         {
-          OR: expect.arrayContaining(
-            ['지갑', '월렛'].map((contains) => ({
-              name: { contains, mode: 'insensitive' },
-            })),
-          ),
+          OR: expect.arrayContaining([
+            {
+              searchFragments: {
+                hasSome: expect.arrayContaining(['지갑', '월렛']),
+              },
+            },
+          ]),
         },
       ],
       day: { gte: '2026-05-14', lte: '2026-11-14' },
@@ -415,16 +417,30 @@ describe('기관 습득물', () => {
         stored: true,
         AND: [
           {
-            OR: expect.arrayContaining(
-              ['지갑', '월렛'].map((contains) => ({
-                name: { contains, mode: 'insensitive' },
-              })),
-            ),
+            OR: expect.arrayContaining([
+              {
+                searchFragments: {
+                  hasSome: expect.arrayContaining(['지갑', '월렛']),
+                },
+              },
+            ]),
           },
         ],
         day: { gte: '2026-05-14', lte: '2026-11-14' },
       },
     });
+  });
+  it('학교 게시판을 한 번 읽어 동시에 요청한 여러 품목과 기간에 사용한다', async () => {
+    const read = jest.fn(() => school);
+    const api = service(read);
+    const [earphones, wallet] = await Promise.all([
+      api['schoolInventory']('이어폰', 'all'),
+      api['schoolInventory']('지갑', '7'),
+    ]);
+    expect([...earphones.keys()]).toEqual(['hansung:1']);
+    expect(wallet.size).toBe(0);
+    await api['schoolInventory']('에어팟', '30');
+    expect(read).toHaveBeenCalledTimes(1);
   });
   it('키가 없어도 학교 보관 공고와 불러오지 못한 기관을 구분한다', async () => {
     delete process.env.DATA_GO_KR_SERVICE_KEY;

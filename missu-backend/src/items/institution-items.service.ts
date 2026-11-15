@@ -148,13 +148,20 @@ export class InstitutionItemsService
   private timer?: ReturnType<typeof setInterval>;
   private readonly logger = new Logger(InstitutionItemsService.name);
   onApplicationBootstrap() {
-    if (!this.db || !process.env.DATA_GO_KR_SERVICE_KEY) return;
-    this.catalog = new CatalogSync(
-      this.db,
-      (source, op, params) => this.list(source, op, params),
-      (row, source, at, tx) => this.verifiedItem(row, source, at, tx),
-    );
-    const wake = () =>
+    if (!this.db) return;
+    if (process.env.DATA_GO_KR_SERVICE_KEY)
+      this.catalog = new CatalogSync(
+        this.db,
+        (source, op, params) => this.list(source, op, params),
+        (row, source, at, tx) => this.verifiedItem(row, source, at, tx),
+      );
+    const warmSchool = process.env.NODE_ENV !== 'test';
+    if (!this.catalog && !warmSchool) return;
+    const wake = () => {
+      if (warmSchool)
+        void this.refreshSchool().catch(() =>
+          this.logger.warn('한성대 보관 목록을 다음 주기에 다시 확인합니다.'),
+        );
       void this.catalog
         ?.run()
         ?.catch(() =>
@@ -162,6 +169,7 @@ export class InstitutionItemsService
             '기관 보관 상태 수집을 다음 주기에 다시 시도합니다.',
           ),
         );
+    };
     this.timer = setInterval(wake, 60000);
     this.timer.unref();
     wake();
@@ -503,6 +511,7 @@ export class InstitutionItemsService
     if (!m) return missing();
     const saved = await this.db?.verifiedPortalItem.findUnique({
       where: { id },
+      omit: { searchFragments: true },
     });
     const source = saved
       ? saved.source === '경찰'
@@ -949,9 +958,13 @@ export class InstitutionItemsService
       policeIncluded: true,
       checkedAt: true,
     } as const;
-    const [coverage, previous] = await Promise.all([
+    const [coverage, previous, confirmedPortal, school] = await Promise.all([
       catalogCoverage(db, since(days, now), today),
       db.lastSearchCount.findUnique({ where: { queryKey }, select }),
+      db.verifiedPortalItem.count({
+        where: this.portalWhere(search.q, search.place, days),
+      }),
+      this.schoolInventory(search.q, days).catch(() => undefined),
     ]);
     const pending = {
       status: 'counting',
@@ -960,14 +973,6 @@ export class InstitutionItemsService
       refreshAfterMs: 60000,
     } as const;
     // 수집 중에도 새 검색은 현재 보관 중인 자료를 센다. 직전 확정값은 조회 실패 시 사용한다.
-    const [confirmedPortal, school] = await Promise.all([
-      db.verifiedPortalItem.count({
-        where: this.portalWhere(search.q, search.place, days),
-      }),
-      Promise.resolve()
-        .then(() => this.schoolInventory(search.q, days))
-        .catch(() => undefined),
-    ]);
     const confirmedTotal =
       school &&
       confirmedPortal +
@@ -1197,20 +1202,34 @@ export class InstitutionItemsService
       day: { gte: since(days), lte: koreaDay() },
       ...(excludedEndings.length && {
         NOT: excludedEndings.map((word) => ({
-          name: { endsWith: word, mode: 'insensitive' },
+          name: { endsWith: word },
         })),
       }),
       AND: [
         ...brandNameFilter(search),
-        ...terms.map((group) => ({
-          OR: group.flatMap((word) => {
+        ...terms.map((group) => {
+          const short: string[] = [];
+          const alternatives: Prisma.VerifiedPortalItemWhereInput[] = [];
+          for (const word of group) {
+            const indexed = /^[가-힣a-z0-9 ]+$/u.test(word);
+            if (indexed && word.length <= 3) {
+              short.push(word);
+              continue;
+            }
             const match = {
               contains: likeLiteral(word),
               mode: 'insensitive' as const,
             };
-            return [{ name: match }, { kindName: match }];
-          }),
-        })),
+            // 긴 이름은 색인으로 후보를 좁힌 뒤 전체 문자열까지 같은지 확인한다.
+            alternatives.push({
+              ...(indexed && { searchFragments: { has: word.slice(0, 3) } }),
+              OR: [{ name: match }, { kindName: match }],
+            });
+          }
+          if (short.length)
+            alternatives.push({ searchFragments: { hasSome: short } });
+          return { OR: alternatives };
+        }),
       ],
       ...(exact
         ? { placeKey: stationKey(place), source: { not: '경찰' } }
@@ -1241,6 +1260,7 @@ export class InstitutionItemsService
     category = 'ALL',
   ) {
     const rows = await this.db!.verifiedPortalItem.findMany({
+      omit: { searchFragments: true },
       where: this.portalWhere(q, place, days, exact, category),
       orderBy: [{ day: 'desc' }, { id: 'asc' }],
       skip: offset,
@@ -1506,42 +1526,55 @@ export class InstitutionItemsService
         groups.some((g) => g.status === 'rejected' || g.value.limited),
     };
   }
-  private readonly schoolCounts = new Map<
-    string,
-    { value: Promise<Map<string, InstitutionItem>>; expires: number }
-  >();
+  private schoolSnapshot?: {
+    items: Map<string, InstitutionItem>;
+    checkedAt: number;
+  };
+  private schoolRefresh?: Promise<Map<string, InstitutionItem>>;
   async schoolForMatching() {
     return [...(await this.schoolInventory('', 'ALL')).values()];
   }
-  private schoolInventory(q: string, days: string) {
-    const key = JSON.stringify([q, days, koreaDay()]);
-    const cached = this.schoolCounts.get(key);
-    if (cached && cached.expires > Date.now()) return cached.value;
-    for (const [k, v] of this.schoolCounts)
-      if (v.expires <= Date.now()) this.schoolCounts.delete(k);
-    if (this.schoolCounts.size >= 24) throw Error('School count busy');
-    // 같은 학교·검색어의 전체 목록은 반경과 분류가 바뀌어도 함께 사용합니다.
-    const value = (async () => {
+  private refreshSchool(): Promise<Map<string, InstitutionItem>> {
+    const snapshot = this.schoolSnapshot;
+    if (snapshot && snapshot.checkedAt + 300000 > Date.now())
+      return Promise.resolve(snapshot.items);
+    if (this.schoolRefresh) return this.schoolRefresh;
+    // 부분 수집이나 오류가 마지막으로 확인한 전체 목록을 덮어쓰지 않게 한다.
+    this.schoolRefresh = (async () => {
       const items = new Map<string, InstitutionItem>();
       for (let page = 1; page <= 9999; page++) {
-        const result = await this.school(q, days, page);
+        const result = await this.school('', 'all', page);
         if (result.loadFailed) throw Error('School details unavailable');
         for (const item of result.items) items.set(item.id, item);
-        if (!result.limited) return items;
+        if (!result.limited) {
+          this.schoolSnapshot = { items, checkedAt: Date.now() };
+          return items;
+        }
       }
       throw Error('School list incomplete');
-    })();
-    const entry = { value, expires: Infinity };
-    this.schoolCounts.set(key, entry);
-    void value.then(
-      () => {
-        entry.expires = Date.now() + 300000;
-      },
-      () => {
-        this.schoolCounts.delete(key);
-      },
+    })().finally(() => {
+      this.schoolRefresh = undefined;
+    });
+    return this.schoolRefresh;
+  }
+  private async schoolInventory(q: string, days: string) {
+    // 서버가 준비한 목록을 모든 검색어·기간이 공유한다. 장시간 갱신 실패는 호출자에게 알린다.
+    const snapshot = this.schoolSnapshot;
+    const items =
+      snapshot && Date.now() - snapshot.checkedAt < 600000
+        ? snapshot.items
+        : await this.refreshSchool();
+    const search = itemSearch(q),
+      from = since(days),
+      today = koreaDay();
+    return new Map(
+      [...items].filter(
+        ([, item]) =>
+          item.date >= from &&
+          item.date <= today &&
+          matchesName(search, item.name),
+      ),
     );
-    return value;
   }
   private async venueItems(
     source: Provider,
@@ -1578,6 +1611,7 @@ export class InstitutionItemsService
       failed ||= publicList.failed;
       if (this.db) {
         const stored = await this.db.verifiedPortalItem.findMany({
+          omit: { searchFragments: true },
           where: {
             stored: true,
             placeKey: stationKey(site.name),

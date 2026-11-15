@@ -348,6 +348,7 @@ model AgencyCountCandidate {
 
 // 포털이 실제로 응답한 공개 필드와 확인 시각만 저장합니다.
 model VerifiedPortalItem {
+  searchFragments String[] @default(dbgenerated()) @map("search_fragments")
   kindName String? @map("kind_name")
   foundPlace String? @map("found_place")
   phone String?
@@ -361,6 +362,7 @@ model VerifiedPortalItem {
   stored Boolean
   checkedAt DateTime @map("checked_at") @db.Timestamptz
   @@index([stored, day, id])
+  @@index([searchFragments], type: Gin, map: "verified_items_fragments_gin")
   @@map("verified_portal_items")
 }
 

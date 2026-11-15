@@ -9,6 +9,7 @@ import {
 import { koreaDay } from '../src/items/institution-records';
 import { harness } from './mvp-support';
 import { randomUUID, createHash } from 'node:crypto';
+import { itemSearch, likeLiteral } from '../src/items/item-search';
 
 describe('기관 전 품목 자동 수집', () => {
   it('검색 없이 여러 종류를 저장하고 한도 소진 후 다음 한국 날짜에 남은 후보부터 재개한다', async () => {
@@ -115,6 +116,87 @@ describe('기관 전 품목 자동 수집', () => {
 });
 
 describe('확인된 습득물 합계', () => {
+  it('색인 검색의 물품 ID가 기존 부분 일치·별칭 검색과 같다', async () => {
+    const h = await harness();
+    const api = new InstitutionItemsService({} as ExternalHttpService, h.db);
+    const prefix = randomUUID();
+    const fixtures = [
+      ['분홍 카드지갑', '기타'],
+      ['검정 WALLET', ''],
+      ['머니클립', ''],
+      ['에도', '카드 홀더'],
+      ['삼성휴대폰', '아이폰'],
+      ['AIRPODS PRO', ''],
+      ['에어팟 케이스', ''],
+      ['미니폰', '휴대전화'],
+      ['USB', ''],
+      ['100%_기기', ''],
+      ['wall 달력', ''],
+      ['지', '갑'],
+      ['빨간 월렛', ''],
+    ];
+    try {
+      await h.db.verifiedPortalItem.createMany({
+        data: fixtures.map(([name, kindName], i) => ({
+          id: prefix + i,
+          name,
+          kindName,
+          stored: i !== fixtures.length - 1,
+          source: '포털기관',
+          storage: '강남역',
+          placeKey: '강남역',
+          day: koreaDay(),
+          category: 'OTHER',
+          checkedAt: new Date(),
+        })),
+      });
+      for (const q of [
+        '지갑',
+        '월렛',
+        '핸드폰',
+        '이어폰',
+        '아이폰',
+        'USB',
+        '100%_',
+        'wall',
+        '지',
+        '검정 지갑',
+      ]) {
+        const indexed = api['portalWhere'](q, '강남역', '7');
+        const { terms, brand } = itemSearch(q);
+        const unchangedBrand = brand
+          ? (indexed.AND as object[]).slice(0, 1)
+          : [];
+        const original = {
+          ...indexed,
+          AND: [
+            ...unchangedBrand,
+            ...terms.map((group) => ({
+              OR: group.flatMap((word) => {
+                const match = {
+                  contains: likeLiteral(word),
+                  mode: 'insensitive' as const,
+                };
+                return [{ name: match }, { kindName: match }];
+              }),
+            })),
+          ],
+        };
+        const ids = (where: typeof indexed) =>
+          h.db.verifiedPortalItem.findMany({
+            where: { ...where, id: { startsWith: prefix } },
+            select: { id: true },
+            orderBy: { id: 'asc' },
+          });
+        expect(await ids(indexed)).toEqual(await ids(original));
+      }
+    } finally {
+      await h.db.verifiedPortalItem.deleteMany({
+        where: { id: { startsWith: prefix } },
+      });
+      await h.close();
+    }
+  });
   it('자정을 넘겨도 직전 회원·기관 합계와 0건을 보존하고 오늘치 확인 후 다음 요청에서 갱신한다', async () => {
     const h = await harness();
     const keeper = await h.user('published');
