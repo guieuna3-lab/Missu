@@ -206,6 +206,18 @@ export function portalDetail(html: string, atcId: string, fdSn: string) {
   };
 }
 
+export function custodianPhone(storage: string, raw?: string | null) {
+  const phone = raw?.trim();
+  if (!phone || !/^(?:0[0-9 -]{7,15}|1[0-9 -]{7,9})$/.test(phone)) return;
+  // KAIT 핸드폰찾기콜센터의 공식 대표번호입니다. 일부 기관 기록에는 서울 지역번호가 중복됩니다.
+  if (
+    clean(storage) === '핸드폰찾기콜센터' &&
+    phone.replace(/[ -]/g, '') === '0215664300'
+  )
+    return '1566-4300';
+  return phone;
+}
+
 export function governmentItem(
   row: Record<string, string>,
   source: '경찰' | '포털기관',
@@ -240,9 +252,7 @@ export function governmentItem(
     storage,
     category: category((row.prdtClNm || '') + ' ' + name),
     url: policeSite,
-    phone: /^(?:0[0-9 -]{7,15}|1[0-9 -]{7,9})$/.test(row.tel || '')
-      ? row.tel.trim()
-      : undefined,
+    phone: custodianPhone(storage, row.tel),
   };
 }
 export function distance(a: Point, b: Point) {
