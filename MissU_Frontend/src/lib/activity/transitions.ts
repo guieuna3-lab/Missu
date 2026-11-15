@@ -60,7 +60,9 @@ export function deleteLostReport(state: ActivityState, id: string) {
 }
 
 // 05 습득물 등록
-export type FoundItemInput = Omit<FoundItem, 'id' | 'createdAt'> & { photoIds?: string[] };
+export type FoundItemInput = Omit<FoundItem, 'id' | 'createdAt' | 'returned'> & {
+  photoIds?: string[];
+};
 
 export function addFoundItem(state: ActivityState, input: FoundItemInput, clock: Clock) {
   const item: FoundItem = { ...input, id: clock.id, createdAt: clock.now };
@@ -78,9 +80,10 @@ export function updateFoundItem(state: ActivityState, id: string, patch: Partial
 }
 
 export function foundItemStatus(
-  item: Pick<FoundItem, 'id'>,
+  item: Pick<FoundItem, 'id' | 'returned'>,
   requests: OwnershipRequest[],
 ): FoundItemStatus {
+  if (item.returned) return 'returned';
   const own = requests.filter((r) => r.itemId === item.id);
   if (own.some((r) => r.status === 'completed')) return 'returned';
   if (own.some((r) => r.status === 'handed')) return 'handed';
