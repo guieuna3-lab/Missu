@@ -348,6 +348,8 @@ model AgencyCountCandidate {
 
 // 포털이 실제로 응답한 공개 필드와 확인 시각만 저장합니다.
 model VerifiedPortalItem {
+  kindName String? @map("kind_name")
+  foundPlace String? @map("found_place")
   phone String?
   id String @id
   name String
