@@ -85,6 +85,15 @@ describe('기관 습득물', () => {
     expect(custodianPhone('역무실', '02-1234-5678')).toBe('02-1234-5678');
     expect(custodianPhone('역무실', '미기재')).toBeUndefined();
   });
+  it('물품명과 기관 세부 분류의 기종이 달라도 포괄 검색은 유지하고 기종 검색은 실물 이름을 따른다', () => {
+    const fields = ['삼성휴대폰', '휴대폰', '아이폰'];
+    expect(matchesName(itemSearch('핸드폰'), ...fields)).toBe(true);
+    expect(matchesName(itemSearch('아이폰'), ...fields)).toBe(false);
+    expect(matchesName(itemSearch('아이폰'), '휴대폰', '아이폰')).toBe(true);
+    expect(matchesName(itemSearch('갤럭시폰'), '아이폰', '삼성휴대폰')).toBe(
+      false,
+    );
+  });
   it.each([
     ['휴대폰', '검정 아이폰', true],
     ['아이폰', '삼성휴대폰', false],
