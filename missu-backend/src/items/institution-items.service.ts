@@ -1412,8 +1412,11 @@ export class InstitutionItemsService
   }
   private readonly schoolCounts = new Map<
     string,
-    { value: Promise<Map<string, string>>; expires: number }
+    { value: Promise<Map<string, InstitutionItem>>; expires: number }
   >();
+  async schoolForMatching() {
+    return [...(await this.schoolInventory('', 'ALL')).values()];
+  }
   private schoolInventory(q: string, days: string) {
     const key = JSON.stringify([q, days, koreaDay()]);
     const cached = this.schoolCounts.get(key);
@@ -1423,11 +1426,11 @@ export class InstitutionItemsService
     if (this.schoolCounts.size >= 24) throw Error('School count busy');
     // 같은 학교·검색어의 전체 목록은 반경과 분류가 바뀌어도 함께 사용합니다.
     const value = (async () => {
-      const items = new Map<string, string>();
+      const items = new Map<string, InstitutionItem>();
       for (let page = 1; page <= 9999; page++) {
         const result = await this.school(q, days, page);
         if (result.loadFailed) throw Error('School details unavailable');
-        for (const item of result.items) items.set(item.id, item.category);
+        for (const item of result.items) items.set(item.id, item);
         if (!result.limited) return items;
       }
       throw Error('School list incomplete');
@@ -1609,7 +1612,7 @@ export class InstitutionItemsService
         query.registeredDays,
       );
       return [...inventory.values()].filter(
-        (category) => query.category === 'ALL' || category === query.category,
+        (item) => query.category === 'ALL' || item.category === query.category,
       ).length;
     };
     void Promise.all([area.parts, schoolCount().catch(() => null)]).then(
