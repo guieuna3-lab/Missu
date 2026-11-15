@@ -145,6 +145,7 @@ export function NearbyScreen() {
     [memberRows, agencyRows],
   );
   const areaCount = count?.params === params && count.reload === reload ? count.value : undefined;
+  const incompleteSources = areaCount?.incomplete.filter((source) => source !== '경찰') ?? [];
   const total =
     membersReady && result.total != null && areaCount?.total != null
       ? result.total + areaCount.total
@@ -527,9 +528,9 @@ export function NearbyScreen() {
                   {notice}
                 </Text>
               )}
-              {expanded && !!areaCount?.incomplete.length && (
+              {expanded && incompleteSources.length > 0 && (
                 <Text style={styles.caption}>
-                  전체 조회가 어려운 기관 · {areaCount.incomplete.join(', ')}
+                  전체 조회가 어려운 기관 · {incompleteSources.join(', ')}
                 </Text>
               )}
               {!searchedArea ? null : loading ||
@@ -551,7 +552,7 @@ export function NearbyScreen() {
               ) : !items.length && !(agenciesReady && agencies.nextCursor) ? (
                 <View style={styles.empty}>
                   <Text style={typography.label}>
-                    {notice
+                    {notice || areaCount?.status === 'partial'
                       ? '조회한 자료에서 조건에 맞는 물품이 없어요'
                       : '조건에 맞는 물품이 아직 없어요'}
                   </Text>
