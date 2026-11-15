@@ -182,7 +182,8 @@ describe('확인된 습득물 합계', () => {
       expect((await after.searchTotal(zero, '', '7')).lastComplete?.total).toBe(
         0,
       );
-      expect(school).not.toHaveBeenCalled();
+      expect(school).toHaveBeenCalled();
+      expect(during.confirmedTotal).toBe(1);
       for (const [word, place, period] of [
         [q, '서울역', '7'],
         [q, '', '30'],
