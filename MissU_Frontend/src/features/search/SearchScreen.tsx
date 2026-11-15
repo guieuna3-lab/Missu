@@ -55,6 +55,31 @@ const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
 const resultTime = (item: SearchItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
+function confirmedSearchCount(state: SearchState, agencies: InstitutionTotal | null) {
+  // 서버 전체 집계와 이미 받은 카드는 겹칠 수 있습니다. 출처별로 큰 값만 취합니다.
+  let members = 0,
+    school = 0,
+    government = 0;
+  for (const item of state.items) {
+    if (!('source' in item)) members++;
+    else if (item.source === '한성대') school++;
+    else government++;
+  }
+  const institutions = Math.max(
+    agencies?.total ?? 0,
+    agencies?.confirmedTotal ?? 0,
+    school + Math.max(government, agencies?.confirmedPortal ?? 0),
+  );
+  const count = Math.max(members, state.memberTotal ?? 0) + institutions;
+  if (
+    count > 0 ||
+    (state.memberTotal !== undefined && agencies?.total != null) ||
+    state.status === 'success'
+  )
+    return count;
+  return null;
+}
+
 async function loadResults(
   filters: SearchFilters,
   previous: SearchState,
@@ -243,6 +268,7 @@ export default function SearchScreen() {
     else if (router.canGoBack()) router.back();
     else router.replace('/home');
   }
+  const confirmedCount = confirmedSearchCount(state, agencyCount);
   const heading = (
     <>
       <FormField
@@ -287,10 +313,10 @@ export default function SearchScreen() {
           </Text>
         </>
       )}
-      {state.status === 'loading' && (
+      {state.status === 'loading' && confirmedCount === null && (
         <View style={styles.feedback} accessibilityLiveRegion="polite">
           <ActivityIndicator color={colors.blue} />
-          <Text style={typography.body}>회원과 기관의 습득물을 함께 찾고 있어요.</Text>
+          <Text style={typography.body}>습득물을 찾고 있어요.</Text>
         </View>
       )}
       {state.status === 'error' && (
@@ -302,24 +328,13 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {(state.status === 'success' ||
-        (state.status === 'loading' &&
-          state.memberTotal !== undefined &&
-          agencyCount?.total != null)) && (
+      {(state.status === 'success' || state.status === 'loading') && confirmedCount !== null && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
           style={typography.heading}
         >
-          {agencyCount?.status === 'unavailable' || state.memberTotal === undefined
-            ? '전체 습득물 건수를 확인할 수 없어요'
-            : agencyCount?.total != null
-              ? (agencyCount.policeIncluded === false ? '확인된 습득물 총 ' : '총 습득물 ') +
-                (state.memberTotal + agencyCount.total).toLocaleString('ko-KR') +
-                '건'
-              : agencyCount?.progress
-                ? '전국 지갑의 보관 상태를 처음 집계하고 있어요'
-                : '전체 습득물 건수를 확인하고 있어요'}
+          확인된 총 {confirmedCount.toLocaleString('ko-KR')}건
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&
