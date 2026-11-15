@@ -21,6 +21,7 @@ import {
   schoolArticle,
   policeSite,
   policePage,
+  portalDetail,
   roadKey,
   schoolPage,
   type Batch,
@@ -44,7 +45,7 @@ type NearbyCount = {
   total: number | null;
   incomplete: Source[];
 };
-type NearbyCountJob = { result: NearbyCount; expires: number };
+type NearbyCountJob = { result: NearbyCount };
 type Custodian = Point & { name: string; address: string; source: Source };
 type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
@@ -168,7 +169,12 @@ export class InstitutionItemsService
     string,
     { until: number; observedAt: Date; value: Promise<string> }
   >();
-  private async text(key: string, url: URL, headers?: Record<string, string>) {
+  private async text(
+    key: string,
+    url: URL,
+    headers?: Record<string, string>,
+    body?: string,
+  ) {
     const cached = this.cache.get(key);
     if (cached && cached.until > Date.now())
       return { body: await cached.value, observedAt: cached.observedAt };
@@ -178,7 +184,10 @@ export class InstitutionItemsService
     const value = this.http
       .request(url.toString(), {
         headers,
-        ...(url.hostname === 'apis.data.go.kr' && {
+        ...(body && { method: 'POST', body }),
+        ...(['apis.data.go.kr', 'minwon24.police.go.kr'].includes(
+          url.hostname,
+        ) && {
           signal: AbortSignal.timeout(9500),
         }),
       })
@@ -227,6 +236,120 @@ export class InstitutionItemsService
       loadFailed: results.some((r) => r.status === 'rejected'),
     };
   }
+  private async portalRecord(atcId: string, fdSn: string) {
+    const url = new URL(
+      'https://minwon24.police.go.kr/cvlcpt/selectFindListDetail.do',
+    );
+    url.search = new URLSearchParams({
+      cvlcptId: 'MW-201',
+      pkupCmdtyMngId: atcId,
+      sortSn: fdSn,
+    }).toString();
+    const res = await this.text(url.href, url);
+    const row = portalDetail(res.body, atcId, fdSn);
+    return {
+      item: await this.verifiedItem(row, '포털기관', res.observedAt),
+      observedAt: res.observedAt,
+    };
+  }
+  // 포털 공개 검색과 OpenAPI의 게시 시점·목록이 다를 수 있어 관리번호로 합칩니다.
+  private async publicStation(site: Custodian, days: string) {
+    const storage = site.name.replace(/^(.+역)\s+(.+)$/u, '$1($2)');
+    if (/[<>:\r\n]/.test(storage)) throw Error('Invalid place');
+    const url = new URL('https://minwon24.police.go.kr/wisenut/search.do');
+    const start = since(days),
+      end = koreaDay();
+    const seen = new Set<string>();
+    const records = new Map<string, InstitutionItem | undefined>();
+    let failed = false;
+    for (let page = 1; ; page++) {
+      try {
+        const body = JSON.stringify({
+          query: '',
+          searchFields: ['_ALL_'],
+          resultFields: ['PKUP_CMDTY_MNG_ID', 'SORT_SN', 'KPNG_PLC_NM'],
+          collections: ['FOUND'],
+          pageStart: page,
+          pageCount: 50,
+          orderBys: ['DATE/DESC'],
+          subQueries: {
+            MODE: 'DETAIL',
+            SNIPPET_SIZE: '200',
+            HL_TERM: '',
+            FOUND_FILTER_QUERY: '',
+            FOUND_COLLECTION_QUERY: '<KPNG_PLC_NM:contains:' + storage + '>',
+            START_DATE: start.replaceAll('-', '') + '000000',
+            END_DATE: end.replaceAll('-', '') + '235959',
+          },
+        });
+        const response = await this.text(
+          'portal-index:' + body,
+          url,
+          { 'Content-Type': 'application/json' },
+          body,
+        );
+        const group = (
+          JSON.parse(response.body) as {
+            result: {
+              outputs: {
+                FOUND: {
+                  totalCount: number | string;
+                  documents: { fields: Record<string, string> }[];
+                };
+              };
+            };
+          }
+        ).result.outputs.FOUND;
+        const total = Number(group.totalCount);
+        if (
+          group.totalCount == null ||
+          !Number.isSafeInteger(total) ||
+          total < 0 ||
+          !Array.isArray(group.documents)
+        )
+          throw Error('Unknown public list');
+        const before = seen.size;
+        const jobs = group.documents.flatMap(({ fields }) => {
+          const atcId = fields.PKUP_CMDTY_MNG_ID,
+            fdSn = String(fields.SORT_SN);
+          if (!/^[A-Z0-9]{2,32}$/.test(atcId) || !/^\d{1,6}$/.test(fdSn)) {
+            failed = true;
+            return [];
+          }
+          const id = 'lost112:' + atcId + ':' + fdSn;
+          if (seen.has(id)) return [];
+          seen.add(id);
+          if (
+            !atcId.startsWith('V') ||
+            stationKey(
+              (fields.KPNG_PLC_NM || '').replace(/<(?:HS|HE)>/g, ''),
+            ) !== stationKey(storage)
+          )
+            return [];
+          return [
+            async () => {
+              const { item } = await this.portalRecord(atcId, fdSn);
+              records.set(
+                id,
+                item && stationKey(item.storage) === stationKey(storage)
+                  ? item
+                  : undefined,
+              );
+            },
+          ];
+        });
+        const checked = await readBatches(jobs, 3);
+        failed ||= checked.some((r) => r.status === 'rejected');
+        if (seen.size >= total) break;
+        if (seen.size === before || group.documents.length === 0)
+          throw Error('Incomplete public list');
+      } catch {
+        failed = true;
+        break;
+      }
+    }
+    return { records, failed };
+  }
   async detail(id: string) {
     const hs = /^hansung:(\d{1,12})$/.exec(id);
     const missing = () =>
@@ -250,23 +373,35 @@ export class InstitutionItemsService
     });
     if (saved && !saved.stored) return missing();
     const source = m[1].startsWith('V') || saved ? '포털기관' : '경찰';
-    let result;
-    try {
-      result = await this.list(source, 'DetailInfo', {
-        ATC_ID: m[1],
-        FD_SN: m[2],
-      });
-    } catch {
-      if (!saved)
+    const result = await this.list(source, 'DetailInfo', {
+      ATC_ID: m[1],
+      FD_SN: m[2],
+    }).catch(() => null);
+    const row = result?.records.find(
+      (r) => r.atcId === m[1] && r.fdSn === m[2],
+    );
+    if (!result || !row?.csteSteNm) {
+      if (source === '포털기관') {
+        const publicRecord = await this.portalRecord(m[1], m[2]).catch(
+          () => null,
+        );
+        if (publicRecord)
+          return publicRecord.item
+            ? {
+                ...publicRecord.item,
+                lastVerifiedOn: koreaDay(publicRecord.observedAt.getTime()),
+              }
+            : missing();
+      }
+      if (saved) return this.savedItem(saved);
+      if (!result)
         return fail(
           503,
           'EXTERNAL_UNAVAILABLE',
           '기관 상세를 불러올 수 없어요. 잠시 후 다시 확인해 주세요.',
         );
-      return this.savedItem(saved);
+      return missing();
     }
-    const row = result.records.find((r) => r.atcId === m[1] && r.fdSn === m[2]);
-    if (!row?.csteSteNm) return saved ? this.savedItem(saved) : missing();
     const current = await this.verifiedItem(row, source, result.observedAt);
     return current
       ? { ...current, lastVerifiedOn: koreaDay(result.observedAt.getTime()) }
@@ -1280,69 +1415,115 @@ export class InstitutionItemsService
     );
     return value;
   }
-  private async nearbySourceIds(source: '한성대' | Provider, query: NearbyDto) {
-    const { sites, limited } = await this.places(source, query, true);
-    const ids = new Set<string>();
-    if (source === '한성대') {
-      if (sites.length)
-        for (const [id, category] of await this.schoolInventory(
+  private async venueItems(
+    source: Provider,
+    query: NearbyDto,
+    site: Custodian,
+  ) {
+    const station = source === '포털기관' && /역\s+.+$/u.test(site.name);
+    if (station && !(await this.uniqueStation(site)))
+      return { items: [], failed: true };
+    const items = new Map<string, InstitutionItem>();
+    let failed = false;
+    // 목록 한 묶음(12건) 뒤에 남은 상세와 원본의 다음 페이지를 모두 읽습니다.
+    let pos: Position = [1, 0];
+    try {
+      while (pos) {
+        const batch: PageBatch = await this.records(
+          source,
           query.q || '',
+          '',
           query.registeredDays,
-        ))
-          if (query.category === 'ALL' || query.category === category)
-            ids.add(id);
-      return { ids, complete: sites.length > 0 || !limited };
+          site,
+          false,
+          pos,
+        );
+        for (const item of batch.items) items.set(item.id, item);
+        failed ||= !!batch.loadFailed || (!!batch.limited && !batch.next);
+        pos = batch.next || null;
+      }
+    } catch {
+      failed = true;
     }
-    const checks = await readBatches(
-      sites.map((site) => async () => {
-        const isStation =
-          source === '포털기관' && /역\s+.+선$/u.test(site.name);
-        if (isStation && this.db && (await this.uniqueStation(site))) {
-          // 한도가 소진되어도 해당 보관처에서 확인해 둔 전체 자료는 포함합니다.
-          const saved = await this.db.verifiedPortalItem.findMany({
-            where: {
-              stored: true,
-              placeKey: stationKey(site.name),
-              day: { gte: since(query.registeredDays), lte: koreaDay() },
-              name: {
-                contains: (query.q || '').replace(/[\\%_]/g, '\\$&'),
-                mode: 'insensitive',
-              },
-              ...(query.category !== 'ALL' && { category: query.category }),
-            },
-            select: { id: true },
-          });
-          for (const row of saved) ids.add(row.id);
-        }
-        let pos: Exclude<Position, null> = [1, 0];
-        for (;;) {
-          const result = await this.records(
-            source,
-            query.q || '',
-            '',
-            query.registeredDays,
-            site,
-            false,
-            pos,
-          );
-          for (const item of result.items)
-            if (query.category === 'ALL' || query.category === item.category)
-              ids.add(item.id);
-          if (result.loadFailed) return false;
-          if (!result.next) return !result.limited;
-          pos = result.next;
-        }
-      }),
-      2,
-    );
-    return {
-      ids,
-      complete:
-        !limited && checks.every((r) => r.status === 'fulfilled' && r.value),
-    };
+    if (station) {
+      const publicList = await this.publicStation(site, query.registeredDays);
+      failed ||= publicList.failed;
+      if (this.db) {
+        const stored = await this.db.verifiedPortalItem.findMany({
+          where: {
+            stored: true,
+            placeKey: stationKey(site.name),
+            day: { gte: since(query.registeredDays), lte: koreaDay() },
+          },
+        });
+        const saved = stored.map((r) => this.savedItem(r));
+        // 이전에 확인한 물품은 기관 한도 소진 중에도 남겨 두고 오래된 보관 상태를 다시 확인합니다.
+        this.refreshPortal(['station-recheck', site.name], saved, async () => ({
+          items: [
+            ...items.values(),
+            ...Array.from(publicList.records.values()).filter(
+              (i): i is InstitutionItem => !!i,
+            ),
+          ],
+          limited: false,
+        }));
+        for (const item of saved)
+          if (!items.has(item.id)) items.set(item.id, item);
+      }
+      for (const [id, item] of publicList.records) {
+        if (item) items.set(id, item);
+        else items.delete(id);
+      }
+    }
+    const cutoff = since(query.registeredDays),
+      end = koreaDay(),
+      term = clean(query.q || '');
+    const located = [...items.values()]
+      .filter(
+        (i) =>
+          i.date >= cutoff &&
+          i.date <= end &&
+          clean(i.name).includes(term) &&
+          (query.category === 'ALL' || query.category === i.category),
+      )
+      .map((i) => ({
+        ...i,
+        distanceM: Math.round(distance(query, site)),
+        foundLocation: {
+          lat: site.lat,
+          lng: site.lng,
+          label: '보관처 · ' + i.storage,
+        },
+      }));
+    return { items: located, failed };
   }
-  private readonly nearbyCounts = new Map<string, NearbyCountJob>();
-  nearbyTotal(query: NearbyDto): NearbyCount {
+  private async nearbyProvider(source: Provider, query: NearbyDto) {
+    return this.part<Located>(source, async () => {
+      const { sites, limited } = await this.places(source, query, true);
+      const checks = await readBatches(
+        sites.map((site) => () => this.venueItems(source, query, site)),
+        3,
+      );
+      return {
+        items: checks.flatMap((r) =>
+          r.status === 'fulfilled' ? r.value.items : [],
+        ),
+        loadFailed:
+          limited ||
+          checks.some((r) => r.status === 'rejected' || r.value.failed),
+      };
+    });
+  }
+  // 목록과 건수가 동일한 반경·필터의 같은 조회 결과를 사용합니다.
+  private readonly areas = new Map<
+    string,
+    {
+      parts: Promise<Result<Located>[]>;
+      expires: number;
+      count?: NearbyCountJob;
+    }
+  >();
+  private area(query: NearbyDto) {
     const key = JSON.stringify([
       query.lat,
       query.lng,
@@ -1352,36 +1533,71 @@ export class InstitutionItemsService
       query.q || '',
       koreaDay(),
     ]);
-    const now = Date.now();
-    for (const [k, v] of this.nearbyCounts)
-      if (v.expires <= now) this.nearbyCounts.delete(k);
-    const cached = this.nearbyCounts.get(key);
-    if (cached) return cached.result;
-    if (this.nearbyCounts.size >= 32)
+    for (const [k, v] of this.areas)
+      if (v.expires <= Date.now()) this.areas.delete(k);
+    const cached = this.areas.get(key);
+    if (cached) return cached;
+    if (this.areas.size >= 32) throw Error('Nearby lookup busy');
+    const parts = Promise.all([
+      this.nearbyProvider('경찰', query),
+      this.nearbyProvider('포털기관', query),
+    ]);
+    const entry: {
+      parts: typeof parts;
+      expires: number;
+      count?: NearbyCountJob;
+    } = { parts, expires: Infinity };
+    this.areas.set(key, entry);
+    void parts.then(
+      (p) => {
+        entry.expires =
+          Date.now() + (p.some((r) => r.notices.length) ? 60000 : 300000);
+      },
+      () => this.areas.delete(key),
+    );
+    return entry;
+  }
+  nearbyTotal(query: NearbyDto): NearbyCount {
+    let area: ReturnType<typeof this.area>;
+    try {
+      area = this.area(query);
+    } catch {
       return { status: 'unavailable', total: null, incomplete: [] };
+    }
+    if (area.count) return area.count.result;
     const job: NearbyCountJob = {
       result: { status: 'counting', total: null, incomplete: [] },
-      expires: Infinity,
     };
-    this.nearbyCounts.set(key, job);
-    void Promise.allSettled(
-      sourceList.map((source) => this.nearbySourceIds(source, query)),
-    ).then((parts) => {
-      const ids = new Set<string>();
-      const incomplete: Source[] = [];
-      parts.forEach((part, i) => {
-        if (part.status === 'fulfilled')
-          for (const id of part.value.ids) ids.add(id);
-        if (part.status === 'rejected' || !part.value.complete)
-          incomplete.push(sourceList[i]);
-      });
-      job.result = {
-        total: ids.size,
-        status: incomplete.length ? 'partial' : 'complete',
-        incomplete,
-      };
-      job.expires = Date.now() + (incomplete.length ? 60000 : 300000);
-    });
+    area.count = job;
+    const schoolCount = async () => {
+      const { sites, limited } = await this.places('한성대', query, true);
+      if (!sites.length) {
+        if (limited) throw Error('School lookup unavailable');
+        return 0;
+      }
+      const inventory = await this.schoolInventory(
+        query.q || '',
+        query.registeredDays,
+      );
+      return [...inventory.values()].filter(
+        (category) => query.category === 'ALL' || category === query.category,
+      ).length;
+    };
+    void Promise.all([area.parts, schoolCount().catch(() => null)]).then(
+      ([parts, school]) => {
+        const incomplete: Source[] = [];
+        if (school === null) incomplete.push('한성대');
+        if (parts[0].notices.length) incomplete.push('경찰');
+        if (parts[1].notices.length) incomplete.push('포털기관');
+        job.result = {
+          total: (school || 0) + combine(parts).items.length,
+          status: incomplete.length ? 'partial' : 'complete',
+          incomplete,
+        };
+        if (incomplete.length)
+          area.expires = Math.min(area.expires, Date.now() + 60000);
+      },
+    );
     return job.result;
   }
   private async nearbySchool(query: NearbyDto, startPage: number) {
@@ -1427,99 +1643,44 @@ export class InstitutionItemsService
     return { part, nextCursor };
   }
   async nearby(query: NearbyDto) {
-    if (query.cursor && !/^school:[1-9]\d{0,5}$/.test(query.cursor))
-      fail(400, 'VALIDATION_ERROR', '다음 페이지 정보가 올바르지 않습니다.');
-    const page = query.cursor ? Number(query.cursor.slice(7)) : 1;
-    const school = this.nearbySchool(query, page);
-    if (query.cursor) {
-      const { part, nextCursor } = await school;
+    const cursor = query.cursor;
+    const schoolPage = cursor?.match(/^school:([1-9]\d{0,5})$/);
+    if (schoolPage) {
+      const { part, nextCursor } = await this.nearbySchool(
+        query,
+        Number(schoolPage[1]),
+      );
       return { ...part, nextCursor };
     }
-    const parts = await Promise.all(
-      sourceList
-        .filter((source) => source !== '한성대')
-        .map((source) =>
-          this.part<Located>(source, async () => {
-            if (source === '경찰' && !process.env.DATA_GO_KR_SERVICE_KEY)
-              throw Error('Agency access pending');
-            const { sites, limited } = await this.places(source, query);
-            const pages = await Promise.allSettled(
-              sites.map(async (site) => {
-                const live = async () =>
-                  this.records(
-                    source,
-                    query.q || '',
-                    '',
-                    query.registeredDays,
-                    site,
-                  );
-                let batch: Awaited<ReturnType<typeof live>>;
-                const station =
-                  source === '포털기관' && /역\s+.+선$/u.test(site.name);
-                if (station && this.db && (await this.uniqueStation(site))) {
-                  const saved = await this.savedPage(
-                    query.q || '',
-                    site.name,
-                    query.registeredDays,
-                    0,
-                    [],
-                    0,
-                    true,
-                    query.category,
-                  );
-                  if (saved.items.length) {
-                    this.refreshPortal(
-                      ['nearby', site.name, query.q, query.registeredDays],
-                      saved.items,
-                      () =>
-                        this.records(
-                          '포털기관',
-                          query.q || '',
-                          '',
-                          query.registeredDays,
-                          site,
-                        ),
-                    );
-                    batch = { items: saved.items, limited: false };
-                  } else batch = await live();
-                } else batch = await live();
-                const items = batch.items
-                  .filter(
-                    (i) =>
-                      i.date >= since(query.registeredDays) &&
-                      (query.category === 'ALL' ||
-                        i.category === query.category),
-                  )
-                  .map((i) => ({
-                    ...i,
-                    distanceM: Math.round(distance(query, site)),
-                    foundLocation: {
-                      lat: site.lat,
-                      lng: site.lng,
-                      label: '보관처 · ' + i.storage,
-                    },
-                  }));
-                return { items, limited: batch.limited };
-              }),
-            );
-            if (pages.length && pages.every((p) => p.status === 'rejected'))
-              throw Error('Source unavailable');
-            return {
-              items: pages.flatMap((p) =>
-                p.status === 'fulfilled' ? p.value.items : [],
-              ),
-              limited:
-                limited ||
-                pages.some((p) => p.status === 'rejected' || p.value.limited),
-            };
-          }),
-        ),
-    );
-    const { part, nextCursor } = await school;
-    const result = combine([part, ...parts]);
-    result.items.sort(
-      (a, b) => a.distanceM - b.distanceM || b.date.localeCompare(a.date),
-    );
+    const more = cursor?.match(/^area:([1-9]\d{0,6}):(\d{1,6})$/);
+    if (cursor && !more)
+      fail(400, 'VALIDATION_ERROR', '다음 페이지 정보가 올바르지 않습니다.');
+    const offset = more ? Number(more[1]) : 0;
+    const [parts, school] = await Promise.all([
+      this.area(query).parts,
+      more ? null : this.nearbySchool(query, 1),
+    ]);
+    const agencies = combine(parts);
+    const order = (a: Located, b: Located) =>
+      a.distanceM - b.distanceM ||
+      b.date.localeCompare(a.date) ||
+      a.id.localeCompare(b.id);
+    agencies.items.sort(order);
+    const schoolNext = more
+      ? Number(more[2])
+      : Number(school?.nextCursor?.slice(7) || 0);
+    const page = agencies.items.slice(offset, offset + 25);
+    const nextCursor =
+      offset + 25 < agencies.items.length
+        ? 'area:' + (offset + 25) + ':' + schoolNext
+        : schoolNext
+          ? 'school:' + schoolNext
+          : null;
+    const result = combine([
+      ...(school ? [school.part] : []),
+      { items: page, notices: agencies.notices },
+    ]);
+    result.items.sort(order);
     return { ...result, nextCursor };
   }
 }
