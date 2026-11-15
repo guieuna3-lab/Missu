@@ -56,9 +56,9 @@ const resultTime = (item: SearchItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
 function confirmedSearchCount(state: SearchState, agencies: InstitutionTotal | null) {
-  if (state.memberTotal === undefined || !agencies) return null;
-  const institutions = agencies.total ?? agencies.confirmedTotal;
-  return institutions == null ? null : state.memberTotal + institutions;
+  if (state.memberTotal === undefined || agencies?.status !== 'complete' || agencies.total == null)
+    return null;
+  return state.memberTotal + agencies.total;
 }
 
 async function loadResults(
@@ -159,8 +159,7 @@ export default function SearchScreen() {
             () => void check(),
             reply.refreshAfterMs ?? (reply.progress ? 60000 : 3500),
           );
-        else if (reply.policeIncluded === false || reply.status === 'unavailable')
-          timer = setTimeout(() => void check(), 120000);
+        else if (reply.status === 'unavailable') timer = setTimeout(() => void check(), 120000);
       } catch {
         if (!controller.signal.aborted) {
           setAgencyCount({ status: 'unavailable', total: null });
@@ -312,13 +311,17 @@ export default function SearchScreen() {
           <ActionButton label="다시 시도" onPress={() => void search()} />
         </View>
       )}
-      {(state.status === 'success' || state.status === 'loading') && confirmedCount !== null && (
+      {(state.status === 'success' || (state.status === 'loading' && !!agencyCount)) && (
         <Text
           accessibilityRole="header"
           accessibilityLiveRegion="polite"
           style={typography.heading}
         >
-          총 습득물 {confirmedCount.toLocaleString('ko-KR')}건
+          {confirmedCount !== null
+            ? '확인된 습득물 ' + confirmedCount.toLocaleString('ko-KR') + '건'
+            : agencyCount?.status === 'unavailable' || !!state.memberNotice
+              ? '습득물 건수를 불러오지 못했어요'
+              : '확인된 습득물 집계 중'}
         </Text>
       )}
       {(state.status === 'success' || state.status === 'loading') &&
