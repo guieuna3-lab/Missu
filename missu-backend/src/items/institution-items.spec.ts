@@ -75,6 +75,16 @@ describe('기관 습득물', () => {
         return new Response(read(new URL(url)));
       },
     } as ExternalHttpService);
+  it('상세에서 기관이 확인한 반환과 조회되지 않는 관리번호를 구분한다', async () => {
+    const returned = service(() => xml([{ ...row, csteSteNm: '반환완료' }]));
+    await expect(returned.detail('lost112:F0001:1')).rejects.toThrow(
+      '반환을 완료',
+    );
+    const missing = service(() => xml([]));
+    await expect(missing.detail('lost112:F0001:1')).rejects.toThrow(
+      '관리번호의 물품 정보를 찾을 수 없어요',
+    );
+  });
   it('센터의 잘못 표기된 대표번호를 바로잡고 일반 전화번호는 유지한다', () => {
     expect(custodianPhone('핸드폰찾기 콜센터', '02-1566-4300')).toBe(
       '1566-4300',

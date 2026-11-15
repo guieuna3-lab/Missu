@@ -290,6 +290,7 @@ export class InstitutionItemsService
     const res = await this.text(url.href, url);
     const row = portalDetail(res.body, atcId, fdSn);
     return {
+      custodyStatus: row.csteSteNm,
       item: await this.verifiedItem(
         row,
         atcId.startsWith('V') ? '포털기관' : '경찰',
@@ -478,7 +479,17 @@ export class InstitutionItemsService
       fail(
         404,
         'RESOURCE_NOT_FOUND',
-        '반환되었거나 조회할 수 없는 물품이에요.',
+        '기관에서 이 관리번호의 물품 정보를 찾을 수 없어요.',
+      );
+    const notStored = (status?: string) =>
+      fail(
+        404,
+        'RESOURCE_NOT_FOUND',
+        ['반환완료', '반환', '본인인도', '소유자반환'].includes(
+          clean(status ?? ''),
+        )
+          ? '기관에서 반환을 완료한 물품이에요.'
+          : '기관의 보관 중 목록에서 제외된 물품이에요.',
       );
     if (hs) {
       const url = schoolArticle(hs[1]);
@@ -493,7 +504,6 @@ export class InstitutionItemsService
     const saved = await this.db?.verifiedPortalItem.findUnique({
       where: { id },
     });
-    if (saved && !saved.stored) return missing();
     const source = saved
       ? saved.source === '경찰'
         ? '경찰'
@@ -519,9 +529,9 @@ export class InstitutionItemsService
                 ...publicRecord.item,
                 lastVerifiedOn: koreaDay(publicRecord.observedAt.getTime()),
               }
-            : missing();
+            : notStored(publicRecord.custodyStatus);
       }
-      if (saved) return this.savedItem(saved);
+      if (saved) return saved.stored ? this.savedItem(saved) : notStored();
       if (!result)
         return fail(
           503,
@@ -533,7 +543,7 @@ export class InstitutionItemsService
     const current = await this.verifiedItem(row, source, result.observedAt);
     return current
       ? { ...current, lastVerifiedOn: koreaDay(result.observedAt.getTime()) }
-      : missing();
+      : notStored(row.csteSteNm);
   }
   private savedItem(r: {
     id: string;
@@ -949,9 +959,7 @@ export class InstitutionItemsService
       policeIncluded: coverage.policeIncluded,
       refreshAfterMs: 60000,
     } as const;
-    if (!coverage.complete && previous)
-      return { ...pending, lastComplete: previous };
-
+    // 수집 중에도 새 검색은 현재 보관 중인 자료를 센다. 직전 확정값은 조회 실패 시 사용한다.
     const [confirmedPortal, school] = await Promise.all([
       db.verifiedPortalItem.count({
         where: this.portalWhere(search.q, search.place, days),
