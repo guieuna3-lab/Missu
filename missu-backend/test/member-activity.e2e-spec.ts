@@ -1,3 +1,5 @@
+import { InstitutionItemsService } from '../src/items/institution-items.service';
+import { koreaDay } from '../src/items/institution-records';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import {
@@ -99,6 +101,95 @@ describe('팀 화면의 회원 활동 API', () => {
     expect(
       (await req.get('/api/v1' + path).set('Authorization', bearer)).body.data,
     ).toEqual([]);
+  });
+
+  it('본인 신고에서 날짜·종류가 맞는 습득물과 보관 기관을 찾아 가까운 장소부터 보여준다', async () => {
+    const owner = await h.user('match-owner'),
+      keeper = await h.user('match-keeper');
+    const lost = new Date(Date.now() - 2 * 86400000);
+    const body = {
+      ...claimBody(),
+      name: '검정 지갑',
+      category: 'WALLET',
+      placeName: '미아역 4호선',
+      lostTime: {
+        start: lost.toISOString(),
+        end: lost.toISOString(),
+        precision: 'EXACT',
+      },
+    };
+    const res = await h
+      .post(owner, '/lost-reports', randomUUID())
+      .send(body)
+      .expect(201);
+    const path = '/api/v1/lost-reports/' + res.body.data.id + '/matches';
+    const near = await h.item(keeper, {
+      name: '카드지갑',
+      foundLabel: '미아역 2번 출구',
+    });
+    await h.item(keeper, { name: '지갑', status: 'RETURNED' });
+    await h.item(keeper, { name: '지갑', archived: true });
+    await h.item(keeper, {
+      name: '지갑',
+      foundAt: new Date(lost.getTime() - 10000),
+    });
+    await h.item(keeper, { name: '휴대폰' });
+    await h.item(owner, { name: '지갑' });
+    const external = 'lost112:V' + Math.random().toString().slice(2) + ':1';
+    const school = jest
+      .spyOn(h.app.get(InstitutionItemsService), 'schoolForMatching')
+      .mockResolvedValue([
+        {
+          id: 'hansung:1',
+          name: '지갑',
+          source: '한성대',
+          storage: '한성대학교',
+          date: koreaDay(),
+          dateLabel: '게시일',
+          category: 'WALLET_BAG',
+          reference: '1',
+          url: '',
+        },
+      ]);
+    try {
+      await h.db.verifiedPortalItem.create({
+        data: {
+          id: external,
+          name: '남색 지갑',
+          source: '지하철',
+          storage: '유실물센터',
+          placeKey: '유실물센터',
+          day: koreaDay(),
+          category: 'WALLET_BAG',
+          stored: true,
+          checkedAt: new Date(),
+        },
+      });
+      await request(h.app.getHttpServer()).get(path).expect(401);
+      await keeper.agent.get(path).expect(404);
+      expect(school).not.toHaveBeenCalled();
+      const first = await owner.agent.get(path).expect(200);
+      expect(first.body.data[0].id).toBe(near.id);
+      expect(first.body.data.map((i: { id: string }) => i.id).sort()).toEqual(
+        [near.id, external, 'hansung:1'].sort(),
+      );
+      expect(first.body.data[0]).not.toHaveProperty('userId');
+      expect(school).toHaveBeenCalledWith();
+      await h.db.verifiedPortalItem.update({
+        where: { id: external },
+        data: { stored: false },
+      });
+      const fresh = await h.item(keeper, { name: '반지갑' });
+      school.mockRejectedValueOnce(new Error('offline'));
+      const next = await owner.agent.get(path).expect(200);
+      expect(next.body.meta.schoolAvailable).toBe(false);
+      expect(next.body.data.map((i: { id: string }) => i.id).sort()).toEqual(
+        [fresh.id, near.id].sort(),
+      );
+    } finally {
+      school.mockRestore();
+      await h.db.verifiedPortalItem.deleteMany({ where: { id: external } });
+    }
   });
 
   it('작성자가 선택한 습득물 글과 사진만 숨기고 대기 요청을 종료한다', async () => {
