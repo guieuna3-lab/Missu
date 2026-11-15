@@ -20,6 +20,8 @@ import { IdempotencyService } from '../common/idempotency.service';
 import { lostTimes } from '../common/dto';
 import { cursorFor, olderThan, readCursor } from '../common/cursor';
 import { fail } from '../common/http';
+import { InstitutionItemsService } from '../items/institution-items.service';
+import { reportMatches } from './lost-report-matches';
 
 function fields(dto: CreateLostReportDto) {
   return {
@@ -58,6 +60,7 @@ export class LostReportsController {
   constructor(
     private readonly db: DatabaseService,
     private readonly idem: IdempotencyService,
+    private readonly institutions: InstitutionItemsService,
   ) {}
   @Post()
   async create(
@@ -121,6 +124,24 @@ export class LostReportsController {
     });
     if (!row) fail(404, 'RESOURCE_NOT_FOUND', '분실 신고를 찾을 수 없습니다.');
     return { data: view(row) };
+  }
+  @Get(':id/matches')
+  async matches(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: SessionRequest,
+  ) {
+    const report = await this.db.lostReport.findFirst({
+      where: { id, userId: req.authSession!.userId! },
+    });
+    if (!report)
+      fail(404, 'RESOURCE_NOT_FOUND', '분실 신고를 찾을 수 없습니다.');
+    const school = await this.institutions
+      .schoolForMatching()
+      .catch(() => null);
+    return {
+      data: await reportMatches(this.db, report, school ?? []),
+      meta: { schoolAvailable: school !== null },
+    };
   }
   @Put(':id')
   async edit(
