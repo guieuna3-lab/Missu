@@ -579,6 +579,148 @@ describe('기관 습득물', () => {
       ['한성대입구역(4호선)', 0],
     ]);
   });
+  it('반경 내 모든 역·페이지와 공개 보관품을 합산하고 실제로 같은 건수를 끝까지 열 수 있다', async () => {
+    const sites = ['하나', '둘', '셋', '넷', '다섯'].map((name, i) => ({
+      place_name: name + '역 2호선',
+      road_address_name: '테스트로 ' + (i + 1),
+      category_group_code: 'SW8',
+      x: String(127 + i / 10000),
+      y: '37.5',
+    }));
+    const storage = (i: number) =>
+      sites[i].place_name.replace(' 2호선', '(2호선)');
+    const entries = Array.from({ length: 28 }, (_, i) => ({
+      ...row,
+      atcId: 'V' + (100 + i),
+      depPlace: storage(i < 24 ? 0 : i - 23),
+    }));
+    const indexCalls: string[] = [];
+    const detailHtml = (
+      atcId: string,
+      place: string,
+      state: string,
+      name: string,
+    ) =>
+      '<h4 class="box-tit1">' +
+      name +
+      '</h4><table>' +
+      Object.entries({
+        관리번호: atcId + '-1',
+        습득일: '2026-11-13, 11시 경',
+        '유실물 상태': state,
+        보관장소: place,
+        '물품 분류': '휴대폰',
+      })
+        .map(([k, v]) => '<tr><th>' + k + '</th><td>' + v + '</td></tr>')
+        .join('') +
+      '</table>';
+    const api = new InstitutionItemsService({
+      request: async (raw: string, init: RequestInit) => {
+        const u = new URL(raw);
+        if (u.host === 'dapi.kakao.com')
+          return Response.json({
+            meta: { is_end: true },
+            documents:
+              u.searchParams.get('category_group_code') === 'SW8'
+                ? u.searchParams.has('query')
+                  ? sites.filter(
+                      (x) => x.place_name === u.searchParams.get('query'),
+                    )
+                  : sites
+                : [],
+          });
+        if (u.pathname.endsWith('search.do')) {
+          if (typeof init.body !== 'string') throw Error('Missing search body');
+          const body = JSON.parse(init.body) as {
+            subQueries: { FOUND_COLLECTION_QUERY: string };
+            pageStart: number;
+          };
+          const place = body.subQueries.FOUND_COLLECTION_QUERY.slice(
+            '<KPNG_PLC_NM:contains:'.length,
+            -1,
+          );
+          indexCalls.push(place);
+          const ids =
+            place === storage(4) ? ['V127', 'V999', 'V998', 'V997'] : [];
+          return Response.json({
+            result: {
+              outputs: {
+                FOUND: {
+                  totalCount: ids.length,
+                  documents: ids.map((id) => ({
+                    fields: {
+                      PKUP_CMDTY_MNG_ID: id,
+                      SORT_SN: '1',
+                      KPNG_PLC_NM: id === 'V997' ? '다른역(2호선)' : place,
+                    },
+                  })),
+                },
+              },
+            },
+          });
+        }
+        if (u.pathname.endsWith('selectFindListDetail.do')) {
+          const id = u.searchParams.get('pkupCmdtyMngId')!;
+          return new Response(
+            detailHtml(
+              id,
+              storage(4),
+              id === 'V998' ? '반환완료' : '보관중',
+              id === 'V999' ? '삼성 스마트폰' : '이어폰',
+            ),
+          );
+        }
+        if (u.pathname.endsWith('DetailInfo'))
+          return new Response(
+            xml(
+              entries.filter((x) => x.atcId === u.searchParams.get('ATC_ID')),
+            ),
+          );
+        const matches = entries.filter(
+          (x) => x.depPlace === u.searchParams.get('DEP_PLACE'),
+        );
+        const page = Number(u.searchParams.get('pageNo')),
+          size = 16;
+        return new Response(
+          xml(matches.slice((page - 1) * size, page * size)).replace(
+            '<items>',
+            '<pageNo>' +
+              page +
+              '</pageNo><numOfRows>' +
+              size +
+              '</numOfRows><totalCount>' +
+              matches.length +
+              '</totalCount><items>',
+          ),
+        );
+      },
+    } as ExternalHttpService);
+    const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
+    api.nearbyTotal(query);
+    const first = await api.nearby(query);
+    const next = await api.nearby(
+      Object.assign(new NearbyDto(), query, { cursor: first.nextCursor! }),
+    );
+    const ids = [...first.items, ...next.items].map((i) => i.id);
+    expect(first.items).toHaveLength(25);
+    expect(new Set(ids).size).toBe(29);
+    expect(ids).toHaveLength(29);
+    expect(ids).toContain('lost112:V999:1');
+    expect(ids).not.toContain('lost112:V998:1');
+    expect(ids).not.toContain('lost112:V997:1');
+    expect(next.nextCursor).toBeNull();
+    expect(first.notices).toEqual([]);
+    expect(indexCalls).toHaveLength(5);
+    expect(api.nearbyTotal(query)).toEqual({
+      status: 'complete',
+      total: 29,
+      incomplete: [],
+    });
+    expect(await api.detail('lost112:V999:1')).toMatchObject({
+      name: '삼성 스마트폰',
+      storage: storage(4),
+    });
+  });
   it('전국 검색에서 지하철·공항·상점의 보관품만 한 번씩 표시한다', async () => {
     const venues = ['강남역(2호선)', '공항 고객센터', '백화점 안내소', '상점'];
     const entries = venues.map((depPlace, i) => ({

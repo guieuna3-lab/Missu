@@ -175,6 +175,36 @@ export function policePage(xml: string) {
       (page - 1) * size + records.length < total,
   };
 }
+// 경찰민원24의 공개 상세에서 보관 상태와 물품 정보만 읽습니다.
+export function portalDetail(html: string, atcId: string, fdSn: string) {
+  const dom = parseDocument(html);
+  const fields = new Map<string, string>();
+  for (const row of byTag('tr', dom.children)) {
+    const label = byTag('th', row.children)[0];
+    const value = byTag('td', row.children)[0];
+    if (label && value) fields.set(plain(label).trim(), plain(value).trim());
+  }
+  if (
+    fields.get('관리번호') !== atcId + '-' + fdSn ||
+    !fields.get('유실물 상태')
+  )
+    throw Error('Unknown custody detail');
+  const name = byTag('h4', dom.children)
+    .filter((el) => el.attribs.class?.split(/\s+/).includes('box-tit1'))
+    .map((el) => plain(el).trim())
+    .find((title) => title && title !== '상세내용');
+  return {
+    atcId,
+    fdSn,
+    fdPrdtNm: name || '',
+    fdYmd: fields.get('습득일')?.match(/\d{4}-\d{2}-\d{2}/)?.[0] || '',
+    depPlace: fields.get('보관장소') || '',
+    csteSteNm: fields.get('유실물 상태')!,
+    prdtClNm: fields.get('물품 분류') || '',
+    tel: fields.get('보관장소 연락처') || '',
+  };
+}
+
 export function governmentItem(
   row: Record<string, string>,
   source: '경찰' | '포털기관',

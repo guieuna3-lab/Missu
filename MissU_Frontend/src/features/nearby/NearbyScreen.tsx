@@ -219,7 +219,7 @@ export function NearbyScreen() {
       moreRequest.current = null;
     };
   }, [params, reload]);
-  async function loadMoreSchool() {
+  async function loadMoreInstitutions() {
     if (!agenciesReady || !agencies.nextCursor || moreRequest.current) return;
     const controller = new AbortController();
     moreRequest.current = controller;
@@ -242,7 +242,18 @@ export function NearbyScreen() {
           loadingMore: false,
           rows: [...rows.values()],
           nextCursor: next.nextCursor,
-          notices: [...prev.notices.filter((n) => !n.startsWith('한성대 ')), ...next.notices],
+          notices: [
+            ...new Set([
+              ...prev.notices.filter(
+                (n) =>
+                  !n.startsWith('다음 페이지') &&
+                  (agencies.nextCursor?.startsWith('school:')
+                    ? !n.startsWith('한성대 ')
+                    : n.startsWith('한성대 ')),
+              ),
+              ...next.notices,
+            ]),
+          ],
         };
       });
     } catch {
@@ -253,8 +264,8 @@ export function NearbyScreen() {
                 ...prev,
                 loadingMore: false,
                 notices: [
-                  ...prev.notices.filter((n) => !n.startsWith('한성대 ')),
-                  '한성대 자료를 불러오지 못했어요. 더보기를 눌러 다시 시도해 주세요.',
+                  ...prev.notices.filter((n) => !n.startsWith('다음 페이지')),
+                  '다음 페이지를 불러오지 못했어요. 더보기를 눌러 다시 시도해 주세요.',
                 ],
               }
             : prev,
@@ -556,10 +567,14 @@ export function NearbyScreen() {
                     ))}
                     {agenciesReady && !!agencies.nextCursor && (
                       <ActionButton
-                        label="한성대 물품 더보기"
+                        label={
+                          agencies.nextCursor.startsWith('school:')
+                            ? '한성대 물품 더보기'
+                            : '주변 습득물 더보기'
+                        }
                         variant="outline"
                         loading={agencies.loadingMore}
-                        onPress={() => void loadMoreSchool()}
+                        onPress={() => void loadMoreInstitutions()}
                       />
                     )}
                   </ScrollView>
