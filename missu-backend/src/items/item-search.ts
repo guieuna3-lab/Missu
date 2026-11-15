@@ -147,11 +147,36 @@ export function itemSearch(query = '', place = '') {
     device && !accessoryNames.some((word) => compact(q).includes(word))
       ? accessoryNames
       : [];
-  return { q, place: place.trim(), terms, excludedEndings };
+  // 기관 분류와 제품명이 충돌하면 제품명에 명시된 기종을 우선합니다.
+  const brand = terms.find((group) =>
+    ['아이폰', '갤럭시폰'].includes(group[0]),
+  );
+  const otherBrand = !brand
+    ? []
+    : brand[0] === '아이폰'
+      ? [
+          '삼성휴대폰',
+          '삼성 휴대폰',
+          '삼성핸드폰',
+          '삼성 핸드폰',
+          '삼성폰',
+          '삼성스마트폰',
+          '삼성 스마트폰',
+          '갤럭시',
+          'galaxy',
+        ]
+      : ['아이폰', 'iphone'];
+  return { q, place: place.trim(), terms, excludedEndings, brand, otherBrand };
 }
 export type ItemSearch = ReturnType<typeof itemSearch>;
 export function matchesName(search: ItemSearch, ...fields: string[]) {
   const values = fields.map(compact);
+  const title = values[0] ?? '';
+  if (
+    search.otherBrand.some((word) => title.includes(compact(word))) &&
+    !search.brand?.some((word) => title.includes(compact(word)))
+  )
+    return false;
   if (search.excludedEndings.some((word) => values[0]?.endsWith(word)))
     return false;
   return search.terms.every((group) =>
@@ -163,4 +188,16 @@ export function matchesPlace(place: string, ...fields: (string | undefined)[]) {
   return (
     !key || fields.some((field) => !!field && compact(field).includes(key))
   );
+}
+
+export function brandNameFilter(search: ItemSearch) {
+  if (!search.brand) return [];
+  const inName = (word: string) => ({
+    name: { contains: likeLiteral(word), mode: 'insensitive' as const },
+  });
+  return [
+    {
+      OR: [...search.brand.map(inName), { NOT: search.otherBrand.map(inName) }],
+    },
+  ];
 }
