@@ -32,6 +32,44 @@ const poolSize = 8;
 // 운영계정 포털기관 상세 100만 회 중 20%는 실시간 요청용입니다. 경찰은 별도 계정 한도입니다.
 const budgets: Record<Feed, number> = { 포털기관: 800000, 경찰: 8000 };
 
+// 기간의 모든 날짜에서 상세 확인을 한 번 마쳐야 그 기간의 전체 건수를 표시합니다.
+export async function catalogCoverage(
+  db: DatabaseService,
+  from: string,
+  through: string,
+) {
+  const rows = await db.agencyCountSnapshot.findMany({
+    where: {
+      OR: feeds.map((feed) => ({
+        query: {
+          gte: prefix(feed) + sinceFound(),
+          lte: prefix(feed) + through,
+        },
+      })),
+    },
+    select: { query: true, listTotal: true, completedAt: true },
+  });
+  const expectedDays =
+    Math.round((Date.parse(through) - Date.parse(from)) / 86400000) + 1;
+  const policeIncluded = rows.some(
+    (row) =>
+      row.query.startsWith(prefix('경찰')) &&
+      (row.listTotal !== null || row.completedAt !== null),
+  );
+  const complete = feeds
+    .filter((feed) => feed !== '경찰' || policeIncluded)
+    .every(
+      (feed) =>
+        rows.filter(
+          (row) =>
+            row.query.startsWith(prefix(feed)) &&
+            row.query.slice(-10) >= from &&
+            row.completedAt !== null,
+        ).length === expectedDays,
+    );
+  return { complete, policeIncluded };
+}
+
 export class CatalogSync {
   private prepared = '';
   private turn = 0;

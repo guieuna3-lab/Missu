@@ -1,4 +1,9 @@
-import { CatalogSync, DailyPortalLimit, nextPortalDay } from './catalog-sync';
+import {
+  CatalogSync,
+  catalogCoverage,
+  DailyPortalLimit,
+  nextPortalDay,
+} from './catalog-sync';
 import { createHash } from 'node:crypto';
 import {
   itemSearch,
@@ -921,25 +926,29 @@ export class InstitutionItemsService
     const search = itemSearch(q, place);
     if (!this.db) return this.countSources(search.q, search.place, days);
     // 목록의 표시 개수와 별도로, 저장된 모든 보관품과 학교 공고를 같은 조건으로 셉니다.
-    const [confirmedPortal, school] = await Promise.all([
-      this.db.verifiedPortalItem.count({
-        where: this.portalWhere(search.q, search.place, days),
-      }),
+    const [coverage, school] = await Promise.all([
+      catalogCoverage(this.db, since(days), koreaDay()),
       Promise.resolve()
         .then(() => this.schoolInventory(search.q, days))
         .catch(() => undefined),
     ]);
+    const confirmedPortal = await this.db.verifiedPortalItem.count({
+      where: this.portalWhere(search.q, search.place, days),
+    });
     const schoolTotal = school
       ? [...school.values()].filter((item) =>
           matchesPlace(search.place, item.storage, item.foundPlace),
         ).length
       : undefined;
+    const confirmedTotal =
+      schoolTotal === undefined ? undefined : confirmedPortal + schoolTotal;
+    const complete = coverage.complete && confirmedTotal !== undefined;
     return {
-      status: 'counting',
-      total: null,
+      status: complete ? 'complete' : 'counting',
+      total: complete ? confirmedTotal : null,
       confirmedPortal,
-      confirmedTotal:
-        schoolTotal === undefined ? undefined : confirmedPortal + schoolTotal,
+      confirmedTotal,
+      policeIncluded: coverage.policeIncluded,
       refreshAfterMs: 60000,
     };
   }

@@ -212,7 +212,7 @@ describe('기관 습득물', () => {
     }
     expect((await api.detail('lost112:F101:1')).storage).toBe('콜센터');
   });
-  it.each(['핸드폰', '지갑', '우산'])(
+  it.each(['이어폰', '핸드폰', '지갑', '우산'])(
     '전국 %s 검색은 별도 수집 요청 없이 DB와 학교의 전체 건수를 읽는다',
     async (q) => {
       const count = jest
@@ -221,7 +221,10 @@ describe('기관 습득물', () => {
         .mockResolvedValueOnce(108);
       const api = new InstitutionItemsService(
         {} as ExternalHttpService,
-        { verifiedPortalItem: { count } } as unknown as DatabaseService,
+        {
+          verifiedPortalItem: { count },
+          agencyCountSnapshot: { findMany: async () => [] },
+        } as unknown as DatabaseService,
       );
       jest
         .spyOn(
@@ -239,6 +242,67 @@ describe('기관 습득물', () => {
       expect(count.mock.calls[0][0].where.stored).toBe(true);
     },
   );
+  it('이어폰 전체 건수는 선택 기간의 각 날짜가 확인된 뒤에만 확정하고 승인된 경찰도 포함한다', async () => {
+    const days = Array.from(
+      { length: 7 },
+      (_, i) => '2026-11-' + String(8 + i).padStart(2, '0'),
+    );
+    const completedAt = new Date();
+    const jobs = days.map((day) => ({
+      query: 'catalog/포털기관/' + day,
+      completedAt: completedAt as Date | null,
+      listTotal: null as number | null,
+    }));
+    const db = {
+      verifiedPortalItem: { count: async () => 87 },
+      agencyCountSnapshot: { findMany: async () => jobs },
+    } as unknown as DatabaseService;
+    const api = new InstitutionItemsService({} as ExternalHttpService, db);
+    const school = jest
+      .spyOn(
+        api as unknown as { schoolInventory(): Promise<Map<string, unknown>> },
+        'schoolInventory',
+      )
+      .mockResolvedValue(new Map([['hansung:1', {}]]));
+    const query = () => api.searchTotal('이어폰', '', '7');
+    jobs[0].completedAt = null;
+    expect(await query()).toMatchObject({
+      status: 'counting',
+      total: null,
+      confirmedTotal: 88,
+    });
+    jobs[0].completedAt = completedAt;
+    expect(await query()).toMatchObject({
+      status: 'complete',
+      total: 88,
+      policeIncluded: false,
+    });
+    jobs.push({
+      query: 'catalog/경찰/' + days[0],
+      completedAt: null,
+      listTotal: 1,
+    });
+    expect(await query()).toMatchObject({
+      status: 'counting',
+      total: null,
+      policeIncluded: true,
+    });
+    jobs.pop();
+    jobs.push(
+      ...days.map((day) => ({
+        query: 'catalog/경찰/' + day,
+        completedAt,
+        listTotal: 0,
+      })),
+    );
+    expect(await query()).toMatchObject({
+      status: 'complete',
+      total: 88,
+      policeIncluded: true,
+    });
+    school.mockRejectedValueOnce(Error('학교 응답 없음'));
+    expect(await query()).toMatchObject({ total: null });
+  });
   it('제목이 그대로여도 반환은 제외하고 습득일이 없으면 게시일로 표시한다', () => {
     const head =
       '<div class="title"><span class="cate-name">접수</span><strong>연구실에서 습득한 (충전기) 보관중</strong><li>작성일 : 2026.11.13</li></div>';
@@ -314,6 +378,7 @@ describe('기관 습득물', () => {
     const count = jest.fn().mockResolvedValue(327);
     const db = {
       verifiedPortalItem: { count },
+      agencyCountSnapshot: { findMany: async () => [] },
     } as unknown as DatabaseService;
     const api = new InstitutionItemsService({} as ExternalHttpService, db);
     jest
@@ -327,6 +392,7 @@ describe('기관 습득물', () => {
       total: null,
       confirmedPortal: 327,
       confirmedTotal: 327,
+      policeIncluded: false,
       refreshAfterMs: 60000,
     });
     expect(count).toHaveBeenCalledWith({
