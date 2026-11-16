@@ -153,12 +153,12 @@ export function HomeScreen() {
         <View style={styles.audience}>
           {(
             [
-              { icon: 'heart', label: 'ADHD', width: 80 },
-              { icon: 'child', label: '아이 물건', width: 100 },
-              { icon: 'shield', label: '공개 정보 조회', width: 120 },
+              { icon: 'heart', label: 'ADHD' },
+              { icon: 'child', label: '아이 물건' },
+              { icon: 'shield', label: '공개 정보 조회' },
             ] as const
           ).map((chip) => (
-            <View key={chip.icon} style={[styles.chip, { minWidth: chip.width }]}>
+            <View key={chip.icon} style={styles.chip}>
               <Icon name={chip.icon} />
               <Text style={[typography.label, { color: colors.body }]}>{chip.label}</Text>
             </View>
@@ -266,7 +266,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     minHeight: 34,
-    paddingHorizontal: 8,
+    // Width follows the label, so every chip has the same padding on both sides.
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderWidth: 1,
     borderColor: colors.border,

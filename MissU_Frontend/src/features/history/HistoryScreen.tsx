@@ -15,6 +15,7 @@ import { useActivity } from '@/lib/activity/ActivityProvider';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { receivedRequests, sentRequests } from './activitySummary';
 import type { HistoryTab } from './HistoryListScreen';
+import { ActivityRow } from './ActivityRow';
 import { ProfileModal } from './ProfileModal';
 
 // Figma 01.05 with its loading (01.05-L), empty (01.05-E), logout confirmation (01.05-C)
@@ -78,27 +79,48 @@ export function HistoryScreen() {
                 ? '아직 활동 내역이 없어요'
                 : '내 활동'}
             </Text>
-            <Card title="내 분실 신고" onPress={() => openList('lost')}>
-              {reports.length
-                ? `${plural(reports[0].name, reports.length)} · 신고됨`
-                : '신고한 물품이 없어요'}
-            </Card>
-            {/* Always opens the list, like the other two cards, so past requests stay reachable. */}
-            <Card title="내 반환 요청" onPress={() => openList('requests')}>
-              {sent.length
-                ? `${plural(sent[0].itemName, sent.length)} · 진행 상태 보기`
-                : '보낸 반환 요청이 없어요'}
-            </Card>
-            <Card title="내가 등록한 습득물" onPress={() => openList('found')}>
-              {items.length
-                ? `${plural(items[0].name, items.length)} · 받은 요청 ${
-                    receivedRequests(activity).filter((r) => r.itemId === items[0].id).length
-                  }건`
-                : activity.foundError ||
-                  (activity.foundLoading
-                    ? '등록한 물품을 불러오고 있어요'
-                    : '등록한 물품이 없어요')}
-            </Card>
+            <ActivityRow
+              icon="edit"
+              tint="#FFF4E5"
+              title="내 분실 신고"
+              count={activity.reportsError ? undefined : reports.length}
+              description={
+                reports.length
+                  ? `${plural(reports[0].name, reports.length)} · 신고됨`
+                  : '신고한 물품이 없어요'
+              }
+              onPress={() => openList('lost')}
+            />
+            {/* Always opens the list, like the other two rows, so past requests stay reachable. */}
+            <ActivityRow
+              icon="search"
+              tint={colors.lightBlue}
+              title="내 반환 요청"
+              count={sent.length}
+              description={
+                sent.length
+                  ? `${plural(sent[0].itemName, sent.length)} · 진행 상태 보기`
+                  : '보낸 반환 요청이 없어요'
+              }
+              onPress={() => openList('requests')}
+            />
+            <ActivityRow
+              icon="box"
+              tint="#ECFDF3"
+              title="내가 등록한 습득물"
+              count={activity.foundError || activity.foundLoading ? undefined : items.length}
+              description={
+                items.length
+                  ? `${plural(items[0].name, items.length)} · 받은 요청 ${
+                      receivedRequests(activity).filter((r) => r.itemId === items[0].id).length
+                    }건`
+                  : activity.foundError ||
+                    (activity.foundLoading
+                      ? '등록한 물품을 불러오고 있어요'
+                      : '등록한 물품이 없어요')
+              }
+              onPress={() => openList('found')}
+            />
             {empty && (
               <>
                 <ActionButton label="분실 신고하기" onPress={() => router.replace('/report')} />
