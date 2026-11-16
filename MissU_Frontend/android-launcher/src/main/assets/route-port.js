@@ -15,17 +15,21 @@
       if (reply.error) request.reject(new Error(reply.error));
       else request.resolve(reply.state || {});
     };
-    window.missuRoute = {call(command, args) {
-      return new Promise((resolve, reject) => {
-        const request = ++sequence;
-        const timer = setTimeout(() => {
-          requests.delete(request);
-          reject(new Error('휴대폰에서 응답하지 않았어요. 알림과 위치 권한을 확인해 주세요.'));
-        }, command === 'prepare' ? 180000 : 10000);
-        requests.set(request, {resolve, reject, timer});
-        port.postMessage(JSON.stringify({ request, command, ...args }));
-      });
-    }};
+    window.missuRoute = {
+      call(command, args) {
+        return new Promise((resolve, reject) => {
+          const request = ++sequence;
+          const timer = setTimeout(
+            () => {
+              requests.delete(request);
+              reject(new Error('휴대폰에서 응답하지 않았어요. 알림과 위치 권한을 확인해 주세요.'));
+            },
+            command === 'prepare' ? 180000 : 10000,
+          );
+          requests.set(request, { resolve, reject, timer });
+          port.postMessage(JSON.stringify({ request, command, ...args }));
+        });
+      },
+    };
   });
 })();
-
