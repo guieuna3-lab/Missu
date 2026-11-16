@@ -72,7 +72,11 @@ export function PhoneConsentScreen() {
         hitSlop={12}
         style={styles.consent}
       >
-        <Text style={typography.label}>{'☐  [필수] 연락처 인증 정보 수집 동의'}</Text>
+        <Text style={typography.label}>
+          {'☐  '}
+          <Text style={styles.required}>[필수]</Text>
+          {' 연락처 인증 정보 수집 동의'}
+        </Text>
         {agreed && <Text style={styles.check}>✓</Text>}
       </Pressable>
       {message && (
@@ -85,6 +89,8 @@ export function PhoneConsentScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Required consent stands out from the rest of the label.
+  required: { color: colors.blue, fontWeight: '700' },
   card: {
     backgroundColor: colors.lightBlue,
     borderRadius: 12,

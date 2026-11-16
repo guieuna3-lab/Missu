@@ -109,6 +109,7 @@ export function RequestFormScreen() {
       <FormField
         label="분실 날짜·시간 범위 / 장소"
         required
+        hint="자유롭게 쓰셔도 됩니다"
         placeholder="2026.10.06 14:00~18:00 · 중앙도서관"
         value={lostInfo}
         onChangeText={(value) => {

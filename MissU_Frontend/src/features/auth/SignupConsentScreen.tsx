@@ -62,7 +62,11 @@ export function SignupConsentScreen() {
           hitSlop={12}
           style={styles.consent}
         >
-          <Text style={typography.label}>{'☐  [필수] 계정 정보 수집·이용 동의'}</Text>
+          <Text style={typography.label}>
+            {'☐  '}
+            <Text style={styles.required}>[필수]</Text>
+            {' 계정 정보 수집·이용 동의'}
+          </Text>
           {agreed && <Text style={styles.check}>✓</Text>}
         </Pressable>
         {/* Not in Figma: entry to 02-A.04, which has no incoming link there. */}
@@ -82,6 +86,8 @@ export function SignupConsentScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Required consent stands out from the rest of the label.
+  required: { color: colors.blue, fontWeight: '700' },
   consentRow: { minHeight: 52, paddingTop: 12, flexDirection: 'row', alignItems: 'flex-start' },
   consent: { flex: 1 },
   check: {
