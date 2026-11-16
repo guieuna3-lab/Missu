@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "sha256_cert_fingerprints": [
+        "6D:73:F9:EE:16:D7:62:2A:BA:26:BC:1B:F8:B2:71:E3:47:A8:4A:AD:89:64:E3:DF:AF:B5:51:DA:EC:39:8D:00"
+      ],
+      "package_name": "kr.missu.web",
+      "namespace": "android_app"
+    }
+  }
+]
