@@ -152,7 +152,7 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
               ? '등록한 습득물이 없어요.'
               : tab === 'lost'
                 ? '등록한 분실 신고가 없어요.'
-                : '아직 표시할 항목이 없어요.'}
+                : '보낸 반환 요청이 없어요.'}
           </Text>
         ) : (
           rows.map((row) => (
