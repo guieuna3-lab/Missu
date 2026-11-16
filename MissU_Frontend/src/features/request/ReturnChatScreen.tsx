@@ -66,7 +66,7 @@ export function ReturnChatScreen({
       <View style={styles.composerField}>
         <FormField
           label="메시지"
-          placeholder={empty ? '메시지를 입력하세요' : '네, 안내데스크에서 뵙겠습니다.'}
+          placeholder="채팅을 입력하세요"
           value={draft}
           onChangeText={setDraft}
           onSubmitEditing={send}

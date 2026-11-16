@@ -8,7 +8,7 @@ import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack } from '@/lib/navigation';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { requestPhoneCode } from './mockPhoneApi';
-import { isPhoneNumber, normalizePhone } from './phone';
+import { formatPhoneInput, isPhoneNumber, normalizePhone } from './phone';
 
 // Figma 07.01 and 07.01-E (format error).
 export function PhoneNumberScreen() {
@@ -51,11 +51,12 @@ export function PhoneNumberScreen() {
         placeholder="010-0000-0000"
         value={phone}
         onChangeText={(value) => {
-          setPhone(value);
+          setPhone(formatPhoneInput(value));
           setError(undefined);
         }}
         error={error}
         keyboardType="phone-pad"
+        maxLength={13}
         autoComplete="tel"
         textContentType="telephoneNumber"
         onSubmitEditing={submit}

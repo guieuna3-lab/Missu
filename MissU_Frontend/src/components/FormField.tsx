@@ -9,6 +9,7 @@ export function FormField({
   error,
   action,
   reveal,
+  hint,
   ...input
 }: TextInputProps & {
   label: string;
@@ -22,12 +23,15 @@ export function FormField({
    * state so one button can also reveal a paired confirm field.
    */
   reveal?: { visible: boolean; onToggle: () => void };
+  /** Short guidance shown under the label, such as how freely the field can be filled. */
+  hint?: string;
 }) {
   return (
     <View style={styles.field}>
       <Text importantForAccessibility="no" accessibilityElementsHidden style={typography.label}>
         {required ? `${label} *` : label}
       </Text>
+      {hint && <Text style={styles.hint}>{hint}</Text>}
       <View style={[styles.box, !!error && styles.boxError]}>
         <TextInput
           accessibilityLabel={required ? `${label}, 필수` : label}
@@ -146,5 +150,6 @@ const styles = StyleSheet.create({
   divider: { width: 1, height: 18, backgroundColor: colors.divider },
   action: { minWidth: 56, alignItems: 'center' },
   small: { fontSize: 12, lineHeight: 18 },
+  hint: { ...typography.body, fontSize: 12, lineHeight: 18, marginTop: -4 },
   pressed: { opacity: 0.75 },
 });

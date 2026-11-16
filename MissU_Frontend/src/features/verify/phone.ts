@@ -21,3 +21,13 @@ export function maskPhone(text: string) {
   if (digits.length < 10) return text;
   return `${digits.slice(0, 3)}-****-${digits.slice(-4)}`;
 }
+
+/** Formats as the user types: "0101234" → "010-1234", "01012345678" → "010-1234-5678". */
+export function formatPhoneInput(text: string) {
+  const digits = normalizePhone(text).slice(0, 11);
+  if (digits.length <= 3) return digits;
+  // 10-digit numbers other than 010 (e.g. 011-234-5678) use a 3-digit middle part.
+  const middle = digits.length === 10 && !digits.startsWith('010') ? 3 : 4;
+  if (digits.length <= 3 + middle) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 3 + middle)}-${digits.slice(3 + middle)}`;
+}
