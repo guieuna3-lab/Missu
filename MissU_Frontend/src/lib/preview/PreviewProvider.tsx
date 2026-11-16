@@ -1,7 +1,12 @@
-import { androidRoute, routeCommand } from '@/features/nearby/androidRoute';
+import {
+  backgroundRoute,
+  reconcileRouteAccount,
+  routeCommand,
+} from '@/features/nearby/backgroundRoute';
 import { logout, type AuthSession } from '@/features/auth/authApi';
 import { router, type Href } from 'expo-router';
-import { createContext, useContext, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import { AppState, Platform } from 'react-native';
 import { apiBase } from '../backend';
 import { previewProfile, type Profile } from './fixtures';
 
@@ -55,6 +60,15 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
   const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || !backgroundRoute) return;
+    // 위치 이벤트에 의해 백그라운드에서 시작한 경우에는 로그인 화면으로 간주하지 않습니다.
+    if (AppState.currentState === 'active') reconcileRouteAccount(accessToken);
+    const listener = AppState.addEventListener('change', (state) => {
+      if (state === 'active') reconcileRouteAccount(accessToken);
+    });
+    return () => listener.remove();
+  }, [accessToken]);
   const [sessionId, setSessionId] = useState(0);
   const [sessionExpired, setSessionExpired] = useState(false);
   const nextSession = () => {
@@ -80,7 +94,8 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           ),
         exitMemberPreview: () => {
           nextSession();
-          if (androidRoute && accessToken)
+          if (Platform.OS === 'ios' && backgroundRoute) reconcileRouteAccount(null);
+          else if (backgroundRoute && accessToken)
             void routeCommand('stop', { token: accessToken }).catch(() => undefined);
           if (accessToken) void logout(accessToken).catch(() => undefined);
           setAccessToken(null);

@@ -1,0 +1,13 @@
+{
+  "build": {
+    "production": {
+      "distribution": "store",
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://missu-api-wkdu.onrender.com/api/v1",
+        "EXPO_PUBLIC_POLICY_VERSION": "v1.0"
+      }
+    }
+  },
+  "cli": { "appVersionSource": "remote" }
+}
