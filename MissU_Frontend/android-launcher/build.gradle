@@ -5,6 +5,10 @@ plugins {
 android {
     namespace 'kr.missu.web'
     compileSdk 36
+    // Expo의 _expo 폴더도 APK에 포함해야 첫 실행과 오프라인 화면이 열립니다.
+    androidResources {
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
     defaultConfig {
         applicationId 'kr.missu.web'
         minSdk 23
