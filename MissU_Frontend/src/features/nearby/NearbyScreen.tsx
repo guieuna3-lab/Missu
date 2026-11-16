@@ -177,27 +177,38 @@ export function NearbyScreen() {
         timer = setTimeout(() => void refreshCount(), value.status === 'counting' ? 3500 : 65000);
     }
     void refreshCount();
-    nearbyInstitutions(params, controller.signal)
-      .then(({ items, notices, nextCursor }) => {
-        if (!controller.signal.aborted)
+    async function loadAgencies() {
+      const signal = controller.signal;
+      try {
+        // 구버전 서버도 같은 배포 과정에서 요청을 받을 수 있다.
+        let page = await nearbyInstitutions(params, signal, 'verified').catch((error) => {
+          if (signal.aborted) throw error;
+          return nearbyInstitutions(params, signal);
+        });
+        while (!signal.aborted) {
           setAgencies({
             params,
             reload,
-            rows: items.map((item) => ({ ...item, foundAt: item.date, institution: item })),
-            notices,
-            nextCursor,
+            rows: page.items.map((item) => ({ ...item, foundAt: item.date, institution: item })),
+            notices: page.refreshing ? ['다른 보관처도 확인하고 있어요.'] : page.notices,
+            nextCursor: page.nextCursor,
           });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          setAgencies({
+          if (!page.refreshing) return;
+          page = await nearbyInstitutions(params, signal);
+        }
+      } catch {
+        // 전체 조회가 실패해도 먼저 확인한 물품은 남긴다.
+        if (!signal.aborted)
+          setAgencies((previous) => ({
             params,
             reload,
-            rows: [],
+            rows: previous?.params === params && previous.reload === reload ? previous.rows : [],
             notices: ['기관 자료를 현재 조회할 수 없어요.'],
             nextCursor: null,
-          });
-      });
+          }));
+      }
+    }
+    void loadAgencies();
     nearbyMembers(params, controller.signal)
       .then(({ data: rows, meta }) => {
         if (!controller.signal.aborted)
