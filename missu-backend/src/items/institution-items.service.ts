@@ -320,7 +320,7 @@ export class InstitutionItemsService
       loadFailed: results.some((r) => r.status === 'rejected'),
     };
   }
-  private async portalRecord(atcId: string, fdSn: string) {
+  private portalUrl(atcId: string, fdSn: string) {
     const url = new URL(
       'https://minwon24.police.go.kr/cvlcpt/selectFindListDetail.do',
     );
@@ -329,6 +329,31 @@ export class InstitutionItemsService
       pkupCmdtyMngId: atcId,
       sortSn: fdSn,
     }).toString();
+    return url;
+  }
+
+  async publicPhotos(id: string) {
+    const match = /^lost112:([A-Z0-9]{2,32}):(\d{1,6})$/.exec(id);
+    if (!match)
+      return fail(404, 'RESOURCE_NOT_FOUND', '기관 물품을 찾을 수 없어요.');
+    const [, atcId, fdSn] = match;
+    const url = this.portalUrl(atcId, fdSn);
+    try {
+      // 상세를 연 물품 한 건만 확인합니다. 수집 진도나 검색 집계에는 쓰지 않습니다.
+      const row = portalDetail(
+        (await this.text(url.href, url)).body,
+        atcId,
+        fdSn,
+      );
+      return clean(row.csteSteNm) === '보관중' && row.fdFilePathImg
+        ? [row.fdFilePathImg]
+        : [];
+    } catch {
+      return fail(503, 'EXTERNAL_UNAVAILABLE', '기관 사진을 확인할 수 없어요.');
+    }
+  }
+  private async portalRecord(atcId: string, fdSn: string) {
+    const url = this.portalUrl(atcId, fdSn);
     const res = await this.text(url.href, url);
     const row = portalDetail(res.body, atcId, fdSn);
     return {

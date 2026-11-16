@@ -105,6 +105,41 @@ describe('기관 습득물', () => {
       '관리번호의 물품 정보를 찾을 수 없어요',
     );
   });
+  it('한성대 게시글의 본문 사진과 실제 이미지 첨부만 중복 없이 노출한다', () => {
+    const html =
+      '<div class="title"><span class="cate-name">접수</span><strong>충전기</strong>작성일 : 2026.11.13</div>' +
+      '<img src="/logo.png"><div class="txt"><img src="/uploads/item.jpg"><img src="https://example.org/x.png"></div>' +
+      '<a href="/bbs/hansung/2175/33/download.do">충전기.JPG</a>'.repeat(2) +
+      '<a href="/bbs/hansung/2175/34/download.do">목록.pdf</a>';
+    expect(schoolDetail(html, '55')?.photoUrls).toEqual([
+      'https://www.hansung.ac.kr/uploads/item.jpg',
+      'https://www.hansung.ac.kr/bbs/hansung/2175/33/download.do',
+    ]);
+  });
+  it('다른 물품 사진·기본 이미지·반환품을 빼고 요청한 관리번호의 공개 첨부만 읽는다', async () => {
+    const address =
+      '/lost112Minwon/selectLostInfoAttachFile.do?pkupCmdtyMngId=F0001&fileId=C123';
+    const page =
+      '<table><tr><th>관리번호</th><td>F0001-1</td></tr><tr><th>유실물 상태</th><td>보관중</td></tr></table>' +
+      '<div id="imgDiv"><img src="/img/error/lostNonImg_2.png"></div><script>if (el) el.src = "' +
+      address +
+      '";</script>';
+    const read = (html: string) =>
+      service(() => html).publicPhotos('lost112:F0001:1');
+    await expect(read(page)).resolves.toEqual([
+      'https://minwon24.police.go.kr' + address,
+    ]);
+    await expect(
+      read(page.replace('fileId=C123', 'fileId=N')),
+    ).resolves.toEqual([]);
+    await expect(
+      read(page.replace('pkupCmdtyMngId=F0001', 'pkupCmdtyMngId=F0002')),
+    ).resolves.toEqual([]);
+    await expect(read(page.replace('보관중', '반환완료'))).resolves.toEqual([]);
+    await expect(read(page.replace('F0001-1', 'F0001-2'))).rejects.toThrow(
+      '기관 사진',
+    );
+  });
   it('센터의 잘못 표기된 대표번호를 바로잡고 일반 전화번호는 유지한다', () => {
     expect(custodianPhone('핸드폰찾기 콜센터', '02-1566-4300')).toBe(
       '1566-4300',
@@ -677,12 +712,10 @@ describe('기관 습득물', () => {
         return { items: [], notices: [] };
       });
       jest.spyOn(methods, 'checkedStations').mockResolvedValue([]);
-      jest
-        .spyOn(methods, 'schoolStockInArea')
-        .mockResolvedValue({
-          site: { ...query, name: '학교', address: '', source: '한성대' },
-          items: Array(campusCount),
-        });
+      jest.spyOn(methods, 'schoolStockInArea').mockResolvedValue({
+        site: { ...query, name: '학교', address: '', source: '한성대' },
+        items: Array(campusCount),
+      });
       return { api, finish };
     }
     const first = start(1015);

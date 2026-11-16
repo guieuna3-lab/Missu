@@ -79,6 +79,11 @@ export class InstitutionItemsController {
     await this.rates.consume('institution-detail:' + req.ip, 60, 60000);
     return { data: await this.service.detail(id) };
   }
+  @Get('photos/:id')
+  async photos(@Param('id') id: string, @Req() req: SessionRequest) {
+    await this.rates.consume('institution-photos:' + req.ip, 60, 60000);
+    return { data: await this.service.publicPhotos(id) };
+  }
   @Get('preview')
   async preview(
     @Query() query: InstitutionPreviewDto,
