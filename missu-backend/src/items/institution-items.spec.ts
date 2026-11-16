@@ -11,6 +11,25 @@ import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import type { DatabaseService } from '../database/database.service';
 
+// 서비스 단위 시험은 저장된 요약이 없는 첫 조회를 사용한다. 실제 변경 감지와
+// 재사용은 PostgreSQL 통합 시험에서 검증한다.
+function firstCountDatabase(
+  count: (args: { where: object }) => Promise<number>,
+) {
+  const tx = {
+    $queryRaw: async () => [{ revisions: {}, summary: null }],
+    verifiedPortalItem: {
+      groupBy: async ({ where }: { where: { day: { gte: string } } }) => [
+        { day: where.day.gte, _count: { _all: await count({ where }) } },
+      ],
+    },
+  };
+  return {
+    $transaction: (read: (db: typeof tx) => unknown) => read(tx),
+    $executeRaw: async () => 1,
+  };
+}
+
 const school =
   '<table><th>작성일</th><tr><td><a href="/bbs/hansung/2175/1/artclView.do"><span class="cate-name">접수</span><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.11.22</td></tr><tr><td><a href="/bbs/hansung/2175/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.11.22</td></tr></table>';
 function xml(rows: Record<string, string>[]) {
@@ -232,7 +251,7 @@ describe('기관 습득물', () => {
       const api = new InstitutionItemsService(
         {} as ExternalHttpService,
         {
-          verifiedPortalItem: { count },
+          ...firstCountDatabase(count),
           agencyCountSnapshot: { findMany: async () => [] },
           lastSearchCount: { findUnique: async () => null },
         } as unknown as DatabaseService,
@@ -265,7 +284,7 @@ describe('기관 습득물', () => {
       listTotal: null as number | null,
     }));
     const db = {
-      verifiedPortalItem: { count: async () => 87 },
+      ...firstCountDatabase(async () => 87),
       foundItem: { count: async () => 2 },
       $executeRaw: async () => 1,
       agencyCountSnapshot: { findMany: async () => jobs },
@@ -393,7 +412,7 @@ describe('기관 습득물', () => {
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
     const count = jest.fn().mockResolvedValue(327);
     const db = {
-      verifiedPortalItem: { count },
+      ...firstCountDatabase(count),
       agencyCountSnapshot: { findMany: async () => [] },
       lastSearchCount: { findUnique: async () => null },
     } as unknown as DatabaseService;

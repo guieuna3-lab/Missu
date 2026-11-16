@@ -5,6 +5,7 @@ import {
   nextPortalDay,
 } from './catalog-sync';
 import { createHash } from 'node:crypto';
+import { countVerifiedDays } from './verified-search-count';
 import {
   itemSearch,
   publicFoundWhere,
@@ -146,6 +147,7 @@ export class InstitutionItemsService
   ) {}
   private catalog?: CatalogSync;
   private timer?: ReturnType<typeof setInterval>;
+  private readonly activeCounts = new Map<string, Promise<number>>();
   private readonly logger = new Logger(InstitutionItemsService.name);
   onApplicationBootstrap() {
     if (!this.db) return;
@@ -173,6 +175,33 @@ export class InstitutionItemsService
     this.timer = setInterval(wake, 60000);
     this.timer.unref();
     wake();
+    if (warmSchool) void this.warmCommonCounts();
+  }
+  private async warmCommonCounts() {
+    // 시작 응답을 막지 않고 자주 찾는 세 검색어를 한 번에 하나씩 준비한다.
+    for (const word of ['이어폰', '지갑', '핸드폰']) {
+      try {
+        await this.verifiedCount(word, '', 'all', Date.now());
+      } catch {
+        this.logger.warn('기관 검색 건수는 다음 조회에서 다시 확인합니다.');
+      }
+    }
+  }
+  private verifiedCount(q: string, place: string, days: string, now: number) {
+    const from = since(days, now);
+    const through = koreaDay(now);
+    const request = JSON.stringify([q, place, days, from, through]);
+    const active = this.activeCounts.get(request);
+    if (active) return active;
+    const pending = countVerifiedDays(
+      this.db!,
+      days,
+      from,
+      through,
+      this.portalWhere(q, place, days),
+    ).finally(() => this.activeCounts.delete(request));
+    this.activeCounts.set(request, pending);
+    return pending;
   }
   async syncStatus() {
     if (!this.catalog) return { enabled: false, providers: [] };
@@ -961,9 +990,7 @@ export class InstitutionItemsService
     const [coverage, previous, confirmedPortal, school] = await Promise.all([
       catalogCoverage(db, since(days, now), today),
       db.lastSearchCount.findUnique({ where: { queryKey }, select }),
-      db.verifiedPortalItem.count({
-        where: this.portalWhere(search.q, search.place, days),
-      }),
+      this.verifiedCount(search.q, search.place, days, now),
       this.schoolInventory(search.q, days).catch(() => undefined),
     ]);
     const pending = {
