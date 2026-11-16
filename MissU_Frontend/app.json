@@ -6,7 +6,23 @@
     "scheme": "missu",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "plugins": ["expo-router", "expo-image", "expo-font"],
+    "ios": {
+      "bundleIdentifier": "kr.missu.app",
+      "icon": "./public/missu-512.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-image",
+      "expo-font",
+      [
+        "expo-location",
+        {
+          "isIosBackgroundLocationEnabled": true,
+          "locationWhenInUsePermission": "현재 위치로 주변 습득물을 찾고, 직접 시작한 이동 경로의 출발점을 확인해요.",
+          "locationAlwaysAndWhenInUsePermission": "직접 시작한 이동 경로를 화면이 잠겨 있거나 다른 앱을 쓰는 동안에도 내 계정에 기록해요. 언제든 미슈에서 중지할 수 있어요."
+        }
+      ]
+    ],
     "web": {
       "output": "single"
     }
