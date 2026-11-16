@@ -91,7 +91,7 @@ POST /auth/signup:
 {
   "email":"developer@example.test",
   "nickname":"미슈회원",
-  "password":"12자 이상 128자 이하 비밀번호",
+  "password":"12~128자, 영문·숫자·특수문자 각 1개 이상 (한글·공백 불가)",
   "challengeId":"발급된 UUID",
   "proof":"확인 응답의 proof",
   "consents":[

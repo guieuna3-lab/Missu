@@ -8,6 +8,7 @@ import {
   Min,
 } from 'class-validator';
 import { Trim, Type } from '../common/dto';
+import { IsNewPassword } from '../common/password';
 export class ProfileDto {
   @Trim() @IsString() @Length(2, 10) nickname: string;
 }
@@ -20,5 +21,5 @@ export class HistoryDto {
 
 export class ChangePasswordDto {
   @IsString() @Length(12, 128) currentPassword: string;
-  @IsString() @Length(12, 128) newPassword: string;
+  @IsNewPassword() newPassword: string;
 }

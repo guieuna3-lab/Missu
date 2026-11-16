@@ -4,7 +4,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField } from '@/components/FormField';
 import { useSignupDraft } from './SignupDraft';
-import { isEmail, MIN_PASSWORD_LENGTH } from './validation';
+import { isEmail, PASSWORD_HINT, passwordProblem } from './validation';
 
 type Field = 'email' | 'nickname' | 'password' | 'confirm';
 
@@ -31,8 +31,8 @@ export function SignupAccountScreen() {
     const found: Partial<Record<Field, string>> = {};
     if (!isEmail(values.email)) found.email = '이메일 형식을 확인해 주세요.';
     if (!values.nickname.trim()) found.nickname = '닉네임을 입력해 주세요.';
-    if (values.password.length < MIN_PASSWORD_LENGTH)
-      found.password = `비밀번호를 ${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`;
+    const passwordError = passwordProblem(values.password);
+    if (passwordError) found.password = passwordError;
     if (values.confirm !== values.password) found.confirm = '비밀번호가 일치하지 않아요.';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
@@ -78,7 +78,7 @@ export function SignupAccountScreen() {
       <FormField
         label="비밀번호"
         required
-        placeholder={`${MIN_PASSWORD_LENGTH}자 이상`}
+        placeholder={PASSWORD_HINT}
         value={values.password}
         onChangeText={edit('password')}
         error={errors.password}
