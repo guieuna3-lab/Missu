@@ -24,7 +24,10 @@ export function passwordProblem(value: string): string | undefined {
     digitPattern.test(value) ? null : '숫자',
     specialPattern.test(value) ? null : '특수문자',
   ].filter((part): part is string => part !== null);
-  if (missing.length > 0) return `${missing.join('·')}를 1개 이상 포함해 주세요.`;
+  if (missing.length > 0) {
+    const particle = missing[missing.length - 1] === '영문' ? '을' : '를';
+    return `${missing.join('·')}${particle} 1개 이상 포함해 주세요.`;
+  }
   return undefined;
 }
 

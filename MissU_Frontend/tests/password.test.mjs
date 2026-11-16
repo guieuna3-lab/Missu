@@ -16,7 +16,7 @@ test('rejects passwords outside the rule with a specific message', () => {
   assert.match(passwordProblem('Ab1!') ?? '', /12자 이상/);
   assert.match(passwordProblem('abcdefghijkl') ?? '', /숫자·특수문자/);
   assert.match(passwordProblem('abcdefghijk1') ?? '', /특수문자를/);
-  assert.match(passwordProblem('123456789!!!') ?? '', /영문를|영문/);
+  assert.equal(passwordProblem('123456789!!!'), '영문을 1개 이상 포함해 주세요.');
   assert.match(passwordProblem('미슈비밀번호입니다a1!') ?? '', /한글·공백/);
   assert.match(passwordProblem('missu 2026 pass!') ?? '', /한글·공백/);
   assert.match(passwordProblem('missu2026pass!😀') ?? '', /한글·공백/);
