@@ -19,6 +19,7 @@ export function FlowScreen({
   children,
   compact = false,
   centered = false,
+  headerAction,
 }: {
   title?: string;
   onBack?: () => void;
@@ -35,10 +36,16 @@ export function FlowScreen({
   compact?: boolean;
   /** Centers the content vertically (Figma 02.05, 04.05, 05.05). */
   centered?: boolean;
+  /** Text button at the right end of the header (see Header `action`). */
+  headerAction?: Parameters<typeof Header>[0]['action'];
 }) {
   return (
     <Screen>
-      {wordmark ? <Header /> : <Header title={title} onBack={onBack} backLabel={backLabel} />}
+      {wordmark ? (
+        <Header />
+      ) : (
+        <Header title={title} onBack={onBack} backLabel={backLabel} action={headerAction} />
+      )}
       <KeyboardAvoidingView
         style={styles.body}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

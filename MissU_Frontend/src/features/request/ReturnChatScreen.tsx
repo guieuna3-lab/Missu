@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { FlowScreen } from '@/components/FlowScreen';
-import { FormField, FormMessage, TextLink } from '@/components/FormField';
+import { FormField, FormMessage } from '@/components/FormField';
 import { colors, typography } from '@/constants/theme';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import type { OwnershipRequest, Party } from '@/lib/activity/types';
@@ -61,11 +61,13 @@ export function ReturnChatScreen({
     }
   }
 
+  // Pinned at the bottom of the screen under the appointment button.
   const composer = (
     <View style={styles.composer}>
       <View style={styles.composerField}>
         <FormField
           label="메시지"
+          hideLabel
           placeholder="채팅을 입력하세요"
           value={draft}
           onChangeText={setDraft}
@@ -74,15 +76,13 @@ export function ReturnChatScreen({
           editable={!sending}
         />
       </View>
-      {!empty && (
-        <ActionButton
-          label="보내기"
-          onPress={send}
-          loading={sending}
-          disabled={!draft.trim()}
-          style={styles.sendButton}
-        />
-      )}
+      <ActionButton
+        label="보내기"
+        onPress={send}
+        loading={sending}
+        disabled={!draft.trim()}
+        style={styles.sendButton}
+      />
     </View>
   );
 
@@ -95,6 +95,27 @@ export function ReturnChatScreen({
     />
   );
 
+  const reportAction = {
+    label: '신고',
+    accessibilityLabel: '의심되는 요청 신고',
+    onPress: onReport,
+    danger: true,
+  };
+  const bottom = (
+    <>
+      {proposeButton}
+      {composer}
+    </>
+  );
+  const notice = (
+    <View style={styles.notice}>
+      <Text style={styles.noticeText}>
+        <Text style={styles.noticeStrong}>선입금·외부 링크</Text> 요청은 오른쪽 위 신고를 이용해
+        주세요.
+      </Text>
+    </View>
+  );
+
   if (empty)
     return (
       <FlowScreen
@@ -102,10 +123,10 @@ export function ReturnChatScreen({
         onBack={onBack}
         heading="아직 메시지가 없어요"
         description="반환 장소와 시간을 대화로 정해 보세요."
-        actions={proposeButton}
+        headerAction={reportAction}
+        actions={bottom}
       >
-        {composer}
-        <ActionButton label="보내기" onPress={send} loading={sending} disabled={!draft.trim()} />
+        {notice}
         {error && <FormMessage>{error}</FormMessage>}
       </FlowScreen>
     );
@@ -115,11 +136,13 @@ export function ReturnChatScreen({
       title="반환 대화"
       onBack={onBack}
       heading="반환 일정을 정해 주세요"
-      actions={proposeButton}
+      headerAction={reportAction}
+      actions={bottom}
     >
       <Card title={request.itemName} blue>
         {`주인 확인 완료 · ${request.storageName} 보관`}
       </Card>
+      {notice}
       {request.messages.map((message) => {
         const mine = message.by === role;
         return (
@@ -148,11 +171,6 @@ export function ReturnChatScreen({
           )}
         </View>
       )}
-      {composer}
-      <Text style={styles.notice}>선입금·외부 링크 요청은 의심 요청 신고를 이용해 주세요.</Text>
-      <View style={styles.reportRow}>
-        <TextLink label="의심되는 요청 신고" onPress={onReport} />
-      </View>
       {error && <FormMessage>{error}</FormMessage>}
     </FlowScreen>
   );
@@ -174,7 +192,15 @@ const styles = StyleSheet.create({
   composer: { flexDirection: 'row', alignItems: 'flex-end', gap: 8 },
   composerField: { flex: 1 },
   sendButton: { minWidth: 60, paddingHorizontal: 12 },
-  notice: { ...typography.body, fontSize: 12, lineHeight: 18, color: colors.muted },
-  reportRow: { minHeight: 32, justifyContent: 'center' },
+  notice: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#F3D1D1',
+    backgroundColor: colors.white,
+  },
+  noticeText: { ...typography.body, fontSize: 12, lineHeight: 18 },
+  noticeStrong: { color: colors.danger, fontWeight: '700' },
   blueOutline: { borderColor: colors.blue },
 });
