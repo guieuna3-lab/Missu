@@ -80,7 +80,8 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           ),
         exitMemberPreview: () => {
           nextSession();
-          if (androidRoute && accessToken) void routeCommand('stop', { token: accessToken }).catch(() => undefined);
+          if (androidRoute && accessToken)
+            void routeCommand('stop', { token: accessToken }).catch(() => undefined);
           if (accessToken) void logout(accessToken).catch(() => undefined);
           setAccessToken(null);
           setProfile(null);
