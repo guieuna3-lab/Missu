@@ -1,3 +1,4 @@
+import { androidRoute, routeCommand } from '@/features/nearby/androidRoute';
 import { logout, type AuthSession } from '@/features/auth/authApi';
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useState, type ReactNode } from 'react';
@@ -79,6 +80,8 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           ),
         exitMemberPreview: () => {
           nextSession();
+          if (androidRoute && accessToken)
+            void routeCommand('stop', { token: accessToken }).catch(() => undefined);
           if (accessToken) void logout(accessToken).catch(() => undefined);
           setAccessToken(null);
           setProfile(null);
