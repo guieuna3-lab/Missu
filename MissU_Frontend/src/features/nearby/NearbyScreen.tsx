@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { router, useFocusEffect } from 'expo-router';
 import {
+  AppState,
   BackHandler,
   KeyboardAvoidingView,
   Platform,
@@ -77,6 +78,7 @@ function ItemRow({ item }: { item: NearbyRow }) {
 type AreaCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
+  confirmedTotal?: number;
   incomplete: string[];
 };
 const emptyItems: MapItem[] = [];
@@ -92,7 +94,12 @@ export function NearbyScreen() {
     total: number | null;
     error: string;
   }>();
-  const [count, setCount] = useState<{ params: string; reload: number; value: AreaCount }>();
+  const [count, setCount] = useState<{
+    params: string;
+    value: AreaCount;
+    refreshing: boolean;
+    failed: boolean;
+  }>();
   const [agencies, setAgencies] = useState<{
     params: string;
     reload: number;
@@ -144,13 +151,13 @@ export function NearbyScreen() {
     () => [...memberRows, ...agencyRows].sort((a, b) => a.distanceM - b.distanceM),
     [memberRows, agencyRows],
   );
-  const areaCount = count?.params === params && count.reload === reload ? count.value : undefined;
+  const areaCount = count?.params === params ? count.value : undefined;
   const incompleteSources = areaCount?.incomplete.filter((source) => source !== '경찰') ?? [];
+  const agencyTotal = areaCount?.total ?? areaCount?.confirmedTotal;
   const total =
-    membersReady && result.total != null && areaCount?.total != null
-      ? result.total + areaCount.total
-      : null;
-  const countFailed = (membersReady && !!result.error) || areaCount?.status === 'unavailable';
+    membersReady && result.total != null && agencyTotal != null ? result.total + agencyTotal : null;
+  const memberFailed = membersReady && !!result.error;
+  const agencyCountFailed = count?.params === params && count.failed;
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
   const notice = [
     agenciesReady ? agencies.notices.join(' ') : '기관 보관품을 확인하고 있어요.',
@@ -161,8 +168,18 @@ export function NearbyScreen() {
   useEffect(() => {
     if (!params) return;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
+    let countTimer: ReturnType<typeof setTimeout>;
+    let memberTimer: ReturnType<typeof setTimeout>;
+    let countRetryMs = 5000;
+    let memberRetryMs = 5000;
+    let countPollMs = 1000;
+    let countPaused = false;
+    let membersPaused = false;
     async function refreshCount() {
+      if (AppState.currentState === 'background') {
+        countPaused = true;
+        return;
+      }
       let value: AreaCount;
       try {
         value = await mapApi<AreaCount>('/institution-items/nearby-total?' + params, {
@@ -172,9 +189,32 @@ export function NearbyScreen() {
         value = { status: 'unavailable', total: null, incomplete: [] };
       }
       if (controller.signal.aborted) return;
-      setCount({ params, reload, value });
-      if (value.status !== 'complete')
-        timer = setTimeout(() => void refreshCount(), value.status === 'counting' ? 3500 : 65000);
+      // 같은 장소와 필터에서 갱신하는 동안에는 마지막으로 확인된 기관 건수를 유지합니다.
+      setCount((previous) => ({
+        params,
+        value:
+          value.total == null &&
+          previous?.params === params &&
+          (previous.value.total != null ||
+            (value.confirmedTotal == null && previous.value.confirmedTotal != null))
+            ? previous.value
+            : value,
+        refreshing: value.total == null,
+        failed: value.status === 'unavailable',
+      }));
+      if (value.status === 'complete') return;
+      let delay = 65000;
+      if (value.status === 'unavailable') {
+        delay = countRetryMs;
+        countRetryMs = Math.min(60000, countRetryMs * 2);
+      } else {
+        countRetryMs = 5000;
+        if (value.status === 'counting') {
+          delay = countPollMs;
+          countPollMs = Math.min(4500, countPollMs * 2);
+        }
+      }
+      countTimer = setTimeout(() => void refreshCount(), delay);
     }
     void refreshCount();
     async function loadAgencies() {
@@ -209,23 +249,44 @@ export function NearbyScreen() {
       }
     }
     void loadAgencies();
-    nearbyMembers(params, controller.signal)
-      .then(({ data: rows, meta }) => {
+    async function loadMembers() {
+      if (AppState.currentState === 'background') {
+        membersPaused = true;
+        return;
+      }
+      try {
+        const { data: rows, meta } = await nearbyMembers(params, controller.signal);
         if (!controller.signal.aborted)
           setResult({ params, reload, rows, total: meta.total, error: '' });
-      })
-      .catch(() => {
-        if (!controller.signal.aborted)
-          setResult({
-            params,
-            reload,
-            rows: [],
-            total: null,
-            error: '주변 습득물을 불러오지 못했어요.',
-          });
-      });
+      } catch {
+        if (controller.signal.aborted) return;
+        setResult((previous) => ({
+          params,
+          reload,
+          rows: previous?.params === params ? previous.rows : [],
+          total: previous?.params === params ? previous.total : null,
+          error: '회원 습득물을 다시 확인하고 있어요.',
+        }));
+        memberTimer = setTimeout(() => void loadMembers(), memberRetryMs);
+        memberRetryMs = Math.min(60000, memberRetryMs * 2);
+      }
+    }
+    void loadMembers();
+    const visibility = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      if (countPaused) {
+        countPaused = false;
+        void refreshCount();
+      }
+      if (membersPaused) {
+        membersPaused = false;
+        void loadMembers();
+      }
+    });
     return () => {
-      clearTimeout(timer);
+      visibility.remove();
+      clearTimeout(countTimer);
+      clearTimeout(memberTimer);
       controller.abort();
       moreRequest.current?.abort();
       moreRequest.current = null;
@@ -302,6 +363,18 @@ export function NearbyScreen() {
   const category = categories.find(({ value }) => value === filters.category)?.label;
   const radius = radii.find(({ value }) => value === filters.radiusM)?.label;
   const resultLabel = filters.category === 'ALL' ? '이 주변 습득물' : category;
+  let countLabel = '주변 총건수 확인 중';
+  if (total !== null) {
+    const partial = areaCount?.status !== 'complete' || count?.refreshing || memberFailed;
+    countLabel =
+      resultLabel + (partial ? ' · 확인된 총 ' : ' · 총 ') + total.toLocaleString('ko-KR') + '개';
+  } else if (memberFailed && agencyTotal != null) {
+    countLabel = '기관 확인 ' + agencyTotal.toLocaleString('ko-KR') + '개 · 회원 건수 확인 중';
+  } else if (agencyCountFailed && membersReady && result.total != null) {
+    countLabel = '회원 등록 ' + result.total.toLocaleString('ko-KR') + '개 · 기관 건수 확인 중';
+  } else if (memberFailed || agencyCountFailed) {
+    countLabel = '주변 총건수 다시 확인 중';
+  }
 
   const centerMap = useCallback((point: Coordinates, label: string) => {
     hasSearchArea.current = true;
@@ -503,16 +576,7 @@ export function NearbyScreen() {
                   accessibilityLiveRegion="polite"
                   style={styles.sheetTitle}
                 >
-                  {selected
-                    ? '선택한 습득물'
-                    : total !== null
-                      ? resultLabel +
-                        (areaCount?.status === 'partial' ? ' · 확인된 총 ' : ' · 총 ') +
-                        total.toLocaleString('ko-KR') +
-                        '개'
-                      : countFailed
-                        ? '주변 총건수 조회 불가'
-                        : '주변 총건수 확인 중'}
+                  {selected ? '선택한 습득물' : countLabel}
                 </Text>
                 {selected ? (
                   <TextLink label="닫기" onPress={() => setSelectedId(undefined)} />

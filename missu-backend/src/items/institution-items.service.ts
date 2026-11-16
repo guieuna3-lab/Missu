@@ -56,6 +56,7 @@ type Provider = keyof typeof government;
 type NearbyCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
+  confirmedTotal?: number;
   incomplete: Source[];
 };
 type NearbyCountJob = { result: NearbyCount };
@@ -1860,7 +1861,14 @@ export class InstitutionItemsService
       if (v.expires <= Date.now()) this.areas.delete(k);
     const cached = this.areas.get(key);
     if (cached) return cached;
-    if (this.areas.size >= 32) throw Error('Nearby lookup busy');
+    if (this.areas.size >= 32) {
+      // 완료된 반경은 새 검색에 자리를 내주고, 실행 중인 작업은 중복 실행하지 않습니다.
+      const settled = [...this.areas].find(([, entry]) =>
+        Number.isFinite(entry.expires),
+      );
+      if (!settled) throw Error('Nearby lookup busy');
+      this.areas.delete(settled[0]);
+    }
     const parts = Promise.all([
       this.nearbyProvider('경찰', query),
       this.nearbyProvider('포털기관', query),
@@ -1892,36 +1900,78 @@ export class InstitutionItemsService
       result: { status: 'counting', total: null, incomplete: [] },
     };
     area.count = job;
-    const schoolCount = async () => {
-      const { sites, limited } = await this.places('한성대', query, true);
-      if (!sites.length) {
-        if (limited) throw Error('School lookup unavailable');
-        return 0;
-      }
-      const inventory = await this.schoolInventory(
-        query.q || '',
-        query.registeredDays,
-      );
-      return [...inventory.values()].filter(
-        (item) => query.category === 'ALL' || item.category === query.category,
-      ).length;
-    };
-    void Promise.all([area.parts, schoolCount().catch(() => null)]).then(
-      ([parts, school]) => {
-        const incomplete: Source[] = [];
-        if (school === null) incomplete.push('한성대');
-        if (parts[0].notices.length) incomplete.push('경찰');
-        if (parts[1].notices.length) incomplete.push('포털기관');
+    let confirmedSchool = 0;
+    let confirmedStations = 0;
+    const publishConfirmed = () => {
+      const subtotal = confirmedSchool + confirmedStations;
+      if (job.result.status === 'counting' && subtotal > 0)
         job.result = {
-          total: (school || 0) + combine(parts).items.length,
-          status: incomplete.length ? 'partial' : 'complete',
-          incomplete,
+          status: 'counting',
+          total: null,
+          confirmedTotal: subtotal,
+          incomplete: [],
         };
-        if (incomplete.length)
-          area.expires = Math.min(area.expires, Date.now() + 60000);
-      },
-    );
+    };
+    if (this.db) {
+      const db = this.db;
+      void this.checkedStations(query)
+        .then(async (sites) => {
+          if (!sites.length) return;
+          const where = this.portalWhere(
+            query.q || '',
+            '',
+            query.registeredDays,
+            false,
+            query.category,
+          );
+          confirmedStations = await db.verifiedPortalItem.count({
+            where: {
+              ...where,
+              source: { not: '경찰' },
+              placeKey: { in: sites.map((s) => stationKey(s.name)) },
+            },
+          });
+          publishConfirmed();
+        })
+        .catch(() => undefined);
+    }
+    const school = this.schoolStockInArea(query)
+      .then(({ items }) => {
+        confirmedSchool = items.length;
+        publishConfirmed();
+        return confirmedSchool;
+      })
+      .catch(() => null);
+    void Promise.all([area.parts, school]).then(([parts, school]) => {
+      const incomplete: Source[] = [];
+      if (school === null) incomplete.push('한성대');
+      if (parts[0].notices.length) incomplete.push('경찰');
+      if (parts[1].notices.length) incomplete.push('포털기관');
+      job.result = {
+        total: (school || 0) + combine(parts).items.length,
+        status: incomplete.length ? 'partial' : 'complete',
+        incomplete,
+      };
+      if (incomplete.length)
+        area.expires = Math.min(area.expires, Date.now() + 60000);
+    });
     return job.result;
+  }
+  private async schoolStockInArea(query: NearbyDto) {
+    const { sites, limited } = await this.places('한성대', query, true);
+    const site = sites[0];
+    if (!site) {
+      if (limited) throw Error('School lookup unavailable');
+      return { site, items: [] };
+    }
+    const inventory = await this.schoolInventory(
+      query.q || '',
+      query.registeredDays,
+    );
+    const items = [...inventory.values()].filter(
+      (item) => query.category === 'ALL' || item.category === query.category,
+    );
+    return { site, items };
   }
   private async nearbySchool(query: NearbyDto, startPage: number) {
     // 다음 페이지에서 실패해도 같은 위치에서 재시도할 수 있게 합니다.
@@ -1973,36 +2023,31 @@ export class InstitutionItemsService
   ) {
     const [campus, stations] = await Promise.all([
       school,
-      this.places('포털기관', query, true),
+      this.checkedStations(query),
     ]);
-    // 다른 지역의 동명 역에 물품을 배치하지 않는다. 주소 대조가 필요한 경찰서와
-    // 유실물센터는 기존 전체 조회에서 반영하고, 실제 반경·거리 정렬은 그대로 쓴다.
     const checked = await readBatches(
-      stations.sites
-        .filter((s) => /역\s+.+$/u.test(s.name))
-        .map((site) => async () => {
-          if (!(await this.uniqueStation(site))) return [];
-          const page = await this.savedPage(
-            query.q || '',
-            site.name,
-            query.registeredDays,
-            0,
-            [],
-            0,
-            true,
-            query.category,
-          );
-          const distanceM = Math.round(distance(query, site));
-          return page.items.map((item) => ({
-            ...item,
-            distanceM,
-            foundLocation: {
-              lat: site.lat,
-              lng: site.lng,
-              label: '보관처 · ' + item.storage,
-            },
-          }));
-        }),
+      stations.map((site) => async () => {
+        const page = await this.savedPage(
+          query.q || '',
+          site.name,
+          query.registeredDays,
+          0,
+          [],
+          0,
+          true,
+          query.category,
+        );
+        const distanceM = Math.round(distance(query, site));
+        return page.items.map((item) => ({
+          ...item,
+          distanceM,
+          foundLocation: {
+            lat: site.lat,
+            lng: site.lng,
+            label: '보관처 · ' + item.storage,
+          },
+        }));
+      }),
       3,
     );
     const items = [
@@ -2027,6 +2072,21 @@ export class InstitutionItemsService
       refreshing: true,
     };
   }
+  private async checkedStations(query: NearbyDto) {
+    const { sites } = await this.places('포털기관', query, true);
+    const checked = await readBatches(
+      sites
+        .filter((s) => /역\s+.+$/u.test(s.name))
+        .map(
+          (site) => async () =>
+            (await this.uniqueStation(site)) ? site : null,
+        ),
+      3,
+    );
+    return checked.flatMap((r) =>
+      r.status === 'fulfilled' && r.value ? [r.value] : [],
+    );
+  }
   async nearby(query: NearbyDto) {
     if (query.cursor === 'verified') {
       const initial = Object.assign(new NearbyDto(), query, {
@@ -2037,10 +2097,54 @@ export class InstitutionItemsService
       if (!this.db) return full;
       // 이미 완성된 반경 목록은 즉시 전달한다. 첫 조회 중에는 검증된 행을 먼저
       // 전달하고 클라이언트가 같은 반경의 최종 목록으로 교체할 수 있게 한다.
+      // 한성대 첫 페이지가 있으면 역 이름 대조나 공공기관 전체 조회를 기다리지 않습니다.
+      const campus = school
+        .then(({ part }) =>
+          part.items.length
+            ? {
+                items: part.items.slice(0, 25),
+                notices: part.notices,
+                nextCursor: null,
+                refreshing: true,
+              }
+            : full,
+        )
+        .catch(() => full);
+      const warmCampus =
+        this.schoolSnapshot &&
+        this.schoolSnapshot.checkedAt + 600000 > Date.now()
+          ? this.schoolStockInArea(initial)
+              .then(({ site, items }) => {
+                if (!site || !items.length) return full;
+                const distanceM = Math.round(distance(initial, site));
+                return {
+                  items: items
+                    .sort(
+                      (a, b) =>
+                        b.date.localeCompare(a.date) ||
+                        a.id.localeCompare(b.id),
+                    )
+                    .slice(0, 25)
+                    .map((item) => ({
+                      ...item,
+                      distanceM,
+                      foundLocation: {
+                        lat: site.lat,
+                        lng: site.lng,
+                        label: '보관처 · ' + item.storage,
+                      },
+                    })),
+                  notices: [],
+                  nextCursor: null,
+                  refreshing: true,
+                };
+              })
+              .catch(() => full)
+          : full;
       const confirmed = this.confirmedNearby(initial, school)
         .then((page) => (page.items.length ? page : full))
         .catch(() => full);
-      return Promise.race([full, confirmed]);
+      return Promise.race([full, warmCampus, campus, confirmed]);
     }
     return this.nearbyPage(query);
   }
