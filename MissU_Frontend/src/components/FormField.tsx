@@ -1,12 +1,14 @@
 import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View, type TextInputProps } from 'react-native';
 import { colors, typography } from '@/constants/theme';
+import { Icon } from './Icon';
 
 export function FormField({
   label,
   required = false,
   error,
   action,
+  reveal,
   ...input
 }: TextInputProps & {
   label: string;
@@ -15,6 +17,11 @@ export function FormField({
   error?: boolean | string;
   /** Text action inside the field, such as 재전송. */
   action?: { label: string; onPress: () => void; disabled?: boolean };
+  /**
+   * Password field with an eye button. `visible` shows the whole text; the parent owns the
+   * state so one button can also reveal a paired confirm field.
+   */
+  reveal?: { visible: boolean; onToggle: () => void };
 }) {
   return (
     <View style={styles.field}>
@@ -27,7 +34,19 @@ export function FormField({
           placeholderTextColor={colors.body}
           style={styles.input}
           {...input}
+          {...(reveal && { secureTextEntry: !reveal.visible })}
         />
+        {reveal && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={reveal.visible ? '비밀번호 숨기기' : '비밀번호 보기'}
+            onPress={reveal.onToggle}
+            hitSlop={12}
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            <Icon name={reveal.visible ? 'eye' : 'eye-off'} />
+          </Pressable>
+        )}
         {action && (
           <>
             <View style={styles.divider} />

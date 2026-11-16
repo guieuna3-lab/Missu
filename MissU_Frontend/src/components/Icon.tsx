@@ -17,6 +17,8 @@ const icons = {
   user: require('../../assets/icons/user.svg'),
   'user-active': require('../../assets/icons/user-active.svg'),
   lock: require('../../assets/icons/lock.svg'),
+  eye: require('../../assets/icons/eye.svg'),
+  'eye-off': require('../../assets/icons/eye-off.svg'),
   back: require('../../assets/icons/back.svg'),
   search: require('../../assets/icons/search.svg'),
   // Item categories (04.02, 05.01) reuse the nearby row art for bag and id.

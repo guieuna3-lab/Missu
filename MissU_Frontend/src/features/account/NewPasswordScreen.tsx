@@ -19,6 +19,9 @@ export function NewPasswordScreen() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  // One eye button on 새 비밀번호 also reveals 새 비밀번호 확인.
+  const [showNew, setShowNew] = useState(false);
   const [errors, setErrors] = useState<{ password?: string; confirm?: string }>({});
   const [requestError, setRequestError] = useState<string>();
   const [submitting, setSubmitting] = useState(false);
@@ -63,7 +66,7 @@ export function NewPasswordScreen() {
           label="현재 비밀번호"
           value={currentPassword}
           onChangeText={setCurrentPassword}
-          secureTextEntry
+          reveal={{ visible: showCurrent, onToggle: () => setShowCurrent((shown) => !shown) }}
           autoComplete="current-password"
         />
       )}
@@ -77,7 +80,7 @@ export function NewPasswordScreen() {
           setErrors((current) => ({ ...current, password: undefined }));
         }}
         error={errors.password}
-        secureTextEntry
+        reveal={{ visible: showNew, onToggle: () => setShowNew((shown) => !shown) }}
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
@@ -93,7 +96,7 @@ export function NewPasswordScreen() {
           setErrors((current) => ({ ...current, confirm: undefined }));
         }}
         error={errors.confirm}
-        secureTextEntry
+        secureTextEntry={!showNew}
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
