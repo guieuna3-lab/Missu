@@ -3,7 +3,8 @@ import { AuthUnavailableError } from './mockAuthApi';
 
 // Figma states the rules (email, 8+ character password, 6-digit code) but not the error texts.
 // The messages below are provisional until the design defines them.
-export const MIN_PASSWORD_LENGTH = 12;
+// The team rule is now 12+ characters with letters, digits and specials (see ./password.ts).
+export { MIN_PASSWORD_LENGTH, PASSWORD_HINT, isValidPassword, passwordProblem } from './password';
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

@@ -6,7 +6,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { FlowScreen } from '@/components/FlowScreen';
 import { FormField, FormMessage } from '@/components/FormField';
 import { changePassword } from '@/features/auth/mockAuthApi';
-import { MIN_PASSWORD_LENGTH, requestErrorMessage } from '@/features/auth/validation';
+import { PASSWORD_HINT, passwordProblem, requestErrorMessage } from '@/features/auth/validation';
 import { goBack, leaveFlowTo } from '@/lib/navigation';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
@@ -27,8 +27,8 @@ export function NewPasswordScreen() {
   async function submit() {
     if (submitting) return;
     const next: typeof errors = {};
-    if (password.length < MIN_PASSWORD_LENGTH)
-      next.password = `비밀번호를 ${MIN_PASSWORD_LENGTH}자 이상 입력해 주세요.`;
+    const passwordError = passwordProblem(password);
+    if (passwordError) next.password = passwordError;
     if (confirm !== password) next.confirm = '비밀번호가 일치하지 않아요.';
     setErrors(next);
     if (Object.keys(next).length > 0) return;
@@ -70,7 +70,7 @@ export function NewPasswordScreen() {
       <FormField
         label="새 비밀번호"
         required
-        placeholder={`${MIN_PASSWORD_LENGTH}자 이상`}
+        placeholder={PASSWORD_HINT}
         value={password}
         onChangeText={(value) => {
           setPassword(value);

@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { Trim, Type } from '../common/dto';
+import { IsNewPassword } from '../common/password';
 
 export class ConsentDto {
   @IsIn(['TERMS', 'PRIVACY', 'PHONE']) kind: 'TERMS' | 'PRIVACY' | 'PHONE';
@@ -39,7 +40,7 @@ export class ProofDto {
 export class SignupDto extends ProofDto {
   @Trim() @IsEmail() @Length(3, 254) email: string;
   @Trim() @IsString() @Length(2, 10) nickname: string;
-  @IsString() @Length(12, 128) password: string;
+  @IsNewPassword() password: string;
   @IsArray()
   @ArrayMinSize(2)
   @ArrayMaxSize(2)
@@ -48,5 +49,5 @@ export class SignupDto extends ProofDto {
   consents: ConsentDto[];
 }
 export class ResetPasswordDto extends ProofDto {
-  @IsString() @Length(12, 128) newPassword: string;
+  @IsNewPassword() newPassword: string;
 }
