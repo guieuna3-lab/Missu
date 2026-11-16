@@ -21,6 +21,7 @@ def exportWeb = tasks.register('exportMissuWeb', Exec) {
     onlyIf { suppliedWeb == null }
     workingDir file('..')
     environment 'EXPO_PUBLIC_API_URL', System.getenv('EXPO_PUBLIC_API_URL') ?: 'https://missu-api-wkdu.onrender.com/api/v1'
+    environment 'EXPO_PUBLIC_POLICY_VERSION', System.getenv('EXPO_PUBLIC_POLICY_VERSION') ?: 'v1.0'
     commandLine 'node', 'node_modules/expo/bin/cli', 'export', '--platform', 'web', '--output-dir', exportDir
 }
 def stageWeb = tasks.register('stageMissuWeb', Sync) {
