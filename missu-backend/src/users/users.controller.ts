@@ -22,6 +22,7 @@ import { hash, verify } from '@node-rs/argon2';
 import { fail } from '../common/http';
 import { transaction } from '../common/transaction';
 import { RateLimitService } from '../common/rate-limit.service';
+import { assertNicknameAvailable } from '../common/nickname';
 import { ChangePasswordDto, HistoryDto, ProfileDto } from './users.dto';
 @Controller('api/v1/me')
 export class UsersController {
@@ -35,6 +36,11 @@ export class UsersController {
   }
   @Patch()
   async profile(@Req() req: SessionRequest, @Body() dto: ProfileDto) {
+    await assertNicknameAvailable(
+      this.db,
+      dto.nickname,
+      req.authSession!.userId!,
+    );
     return {
       data: publicUser(
         await this.db.user.update({

@@ -9,6 +9,7 @@ import { config } from '../config';
 import { decrypt, digest, encrypt, equal, sign, token } from '../common/crypto';
 import { fail } from '../common/http';
 import { RateLimitService } from '../common/rate-limit.service';
+import { assertNicknameAvailable, isNicknameTaken } from '../common/nickname';
 import { DeliveryService } from '../integrations/delivery.service';
 import {
   ChallengeDto,
@@ -279,6 +280,13 @@ export class RegistrationService {
       fail(400, 'PROOF_INVALID', '인증 증명이 올바르지 않습니다.');
     return value;
   }
+  async nicknameAvailable(nickname: string, req: SessionRequest) {
+    await this.rates.consume('nickname-check-ip:' + req.ip, 60, 60000);
+    return {
+      nickname: nickname.trim(),
+      available: !(await isNicknameTaken(this.db, nickname)),
+    };
+  }
   async signup(dto: SignupDto, sessionId: string) {
     this.consent(
       dto.consents.find((x) => x.kind === 'TERMS'),
@@ -302,6 +310,7 @@ export class RegistrationService {
           fail(400, 'PROOF_INVALID', '인증한 이메일과 다릅니다.');
         if (await tx.user.findUnique({ where: { email } }))
           fail(409, 'EMAIL_UNAVAILABLE', '사용할 수 없는 이메일입니다.');
+        await assertNicknameAvailable(tx, dto.nickname);
         // 비싼 해시 계산은 유효한 인증 증명을 확인한 뒤에만 수행합니다.
         const password = await passwordHash(dto.password);
         const user = await tx.user.create({
