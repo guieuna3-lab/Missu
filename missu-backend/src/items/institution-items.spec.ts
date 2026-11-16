@@ -547,6 +547,96 @@ describe('기관 습득물', () => {
       expect(await api.nearby({ ...query, cursor: undefined })).toBe(full);
     },
   );
+  it('느린 기관 조회 전에 한성대 첫 목록과 실제 보관 건수를 표시하고 최종 집계로 교체한다', async () => {
+    const day = new Date(Date.now()).toISOString().slice(0, 10);
+    const campus = {
+      name: '한성대학교 상상관',
+      address: '',
+      source: '한성대' as const,
+      lat: 37.5827,
+      lng: 127.0102,
+    };
+    const station = {
+      ...campus,
+      source: '지하철' as const,
+      name: '가상역 4호선',
+    };
+    const sample = {
+      source: '한성대' as const,
+      name: '지갑',
+      category: 'WALLET_BAG',
+      storage: campus.name,
+      date: day,
+      dateLabel: '습득일' as const,
+      reference: '',
+      url: '',
+    };
+    const stock = Array.from({ length: 41 }, (_, i) => ({
+      ...sample,
+      id: 'hansung:' + i,
+    }));
+    const count = jest.fn().mockResolvedValue(13);
+    const api = new InstitutionItemsService(service(() => xml([]))['http'], {
+      verifiedPortalItem: { count, findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as DatabaseService);
+    const methods = api as unknown as {
+      [
+        K in 'nearbyProvider' | 'nearbySchool' | 'places' | 'uniqueStation'
+      ]: (typeof api)[K];
+    };
+    api['schoolSnapshot'] = {
+      items: new Map(stock.map((v) => [v.id, v])),
+      checkedAt: Date.now(),
+    };
+    jest.spyOn(methods, 'places').mockImplementation(async (source) => ({
+      sites:
+        source === '한성대' ? [campus] : source === '포털기관' ? [station] : [],
+      limited: false,
+    }));
+    jest.spyOn(methods, 'uniqueStation').mockResolvedValue(true);
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
+      await gate;
+      return { items: [], notices: [] };
+    });
+    jest.spyOn(methods, 'nearbySchool').mockImplementation(async () => {
+      await gate;
+      return { part: { items: [], notices: [] }, nextCursor: null };
+    });
+    const query = Object.assign(new NearbyDto(), {
+      lat: campus.lat,
+      lng: campus.lng,
+      category: 'WALLET_BAG' as const,
+    });
+    try {
+      api.nearbyTotal(query);
+      const first = await api.nearby({ ...query, cursor: 'verified' });
+      expect(first).toMatchObject({ refreshing: true, nextCursor: null });
+      expect(first.items).toHaveLength(25);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(api.nearbyTotal(query)).toMatchObject({
+        status: 'counting',
+        total: null,
+        confirmedTotal: 54,
+      });
+      expect(count.mock.calls[0][0].where).toMatchObject({
+        stored: true,
+        category: 'WALLET_BAG',
+        placeKey: { in: ['가상역4호선'] },
+      });
+    } finally {
+      finish();
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(api.nearbyTotal(query)).toEqual({
+      status: 'complete',
+      total: 41,
+      incomplete: [],
+    });
+  });
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
     const count = jest.fn().mockResolvedValue(327);
     const db = {
