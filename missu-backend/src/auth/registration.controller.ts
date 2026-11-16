@@ -1,16 +1,19 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
 import { Public } from './auth.guard';
 import type { SessionRequest } from './session.service';
 import {
   ChallengeDto,
+  NicknameCheckDto,
   ResetPasswordDto,
   SignupDto,
   VerifyDto,
@@ -34,6 +37,16 @@ export class RegistrationController {
     @Req() req: SessionRequest,
   ) {
     return { data: await this.registration.verify(id, dto.code, req) };
+  }
+  // 가입·닉네임 수정 화면의 중복확인 버튼용. 실제 저장 시에도 서버가 다시 검사한다.
+  @Get('nickname-check')
+  async nicknameCheck(
+    @Query() dto: NicknameCheckDto,
+    @Req() req: SessionRequest,
+  ) {
+    return {
+      data: await this.registration.nicknameAvailable(dto.nickname, req),
+    };
   }
   @Post('signup')
   async signup(@Body() dto: SignupDto, @Req() req: SessionRequest) {

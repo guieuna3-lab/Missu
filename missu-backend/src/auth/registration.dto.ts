@@ -48,6 +48,9 @@ export class SignupDto extends ProofDto {
   @Type(() => ConsentDto)
   consents: ConsentDto[];
 }
+export class NicknameCheckDto {
+  @Trim() @IsString() @Length(2, 10) nickname: string;
+}
 export class ResetPasswordDto extends ProofDto {
   @IsNewPassword() newPassword: string;
 }

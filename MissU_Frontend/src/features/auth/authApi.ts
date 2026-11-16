@@ -51,6 +51,37 @@ export async function post<T>(path: string, body?: object, token?: string): Prom
   }
 }
 
+// Sign-up 중복확인 button. The server checks again when the account is created.
+export async function checkNickname(nickname: string): Promise<boolean> {
+  const base = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/+$/, '');
+  if (!base) throw new AuthApiError('미슈 서버 주소를 설정해 주세요.', 'NO_SERVER');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 75000);
+  try {
+    const response = await fetch(
+      base + '/auth/nickname-check?nickname=' + encodeURIComponent(nickname),
+      { credentials: 'omit', signal: controller.signal },
+    );
+    const result = await response.json();
+    if (!response.ok)
+      throw new AuthApiError(
+        typeof result.error?.message === 'string'
+          ? result.error.message
+          : '닉네임을 확인하지 못했어요.',
+        result.error?.code ?? 'SERVER_ERROR',
+      );
+    return result.data.available === true;
+  } catch (error) {
+    if (error instanceof AuthApiError) throw error;
+    throw new AuthApiError(
+      '서버에 연결하지 못했어요. 네트워크를 확인하고 다시 시도해 주세요.',
+      'NETWORK',
+    );
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function login(input: { email: string; password: string }): Promise<AuthSession> {
   const result = await post<{
     user: { email: string; nickname: string; phoneVerified: boolean };
