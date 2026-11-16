@@ -9,6 +9,7 @@ import {
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import type { NearbyService } from './nearby.service';
 import type { DatabaseService } from '../database/database.service';
 
 // 서비스 단위 시험은 저장된 요약이 없는 첫 조회를 사용한다. 실제 변경 감지와
@@ -580,9 +581,10 @@ describe('기관 습득물', () => {
       verifiedPortalItem: { count, findMany: jest.fn().mockResolvedValue([]) },
     } as unknown as DatabaseService);
     const methods = api as unknown as {
-      [
-        K in 'nearbyProvider' | 'nearbySchool' | 'places' | 'uniqueStation'
-      ]: (typeof api)[K];
+      nearbyProvider: (typeof api)['nearbyProvider'];
+      nearbySchool: (typeof api)['nearbySchool'];
+      places: (typeof api)['places'];
+      uniqueStation: (typeof api)['uniqueStation'];
     };
     api['schoolSnapshot'] = {
       items: new Map(stock.map((v) => [v.id, v])),
@@ -604,7 +606,7 @@ describe('기관 습득물', () => {
     });
     jest.spyOn(methods, 'nearbySchool').mockImplementation(async () => {
       await gate;
-      return { part: { items: [], notices: [] }, nextCursor: null };
+      return { part: { items: [], notices: [] }, nextCursor: 'school:2' };
     });
     const query = Object.assign(new NearbyDto(), {
       lat: campus.lat,
@@ -617,7 +619,7 @@ describe('기관 습득물', () => {
       expect(first).toMatchObject({ refreshing: true, nextCursor: null });
       expect(first.items).toHaveLength(25);
       await new Promise<void>((resolve) => setImmediate(resolve));
-      expect(api.nearbyTotal(query)).toMatchObject({
+      expect(await api.nearbyTotal(query)).toMatchObject({
         status: 'counting',
         total: null,
         confirmedTotal: 54,
@@ -631,10 +633,101 @@ describe('기관 습득물', () => {
       finish();
     }
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(api.nearbyTotal(query)).toEqual({
+    expect(await api.nearbyTotal(query)).toEqual({
       status: 'complete',
       total: 41,
       incomplete: [],
+    });
+  });
+  it('다시 연 반경은 이전 회원·기관 합계를 먼저 읽고 정상 재확인이 끝나면 감소도 반영한다', async () => {
+    const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
+    const stored = new Map<string, number>();
+    const db = {
+      lastSearchCount: {
+        findUnique: async ({ where }: { where: { queryKey: string } }) =>
+          stored.has(where.queryKey)
+            ? { total: stored.get(where.queryKey) }
+            : null,
+      },
+      $executeRaw: async (
+        _sql: TemplateStringsArray,
+        key: string,
+        total: number,
+      ) => {
+        stored.set(key, total);
+        return 1;
+      },
+    } as unknown as DatabaseService;
+    const search = jest.fn().mockResolvedValue({ meta: { total: 3 } });
+    function start(campusCount: number) {
+      const api = new InstitutionItemsService({} as ExternalHttpService, db, {
+        search,
+      } as unknown as NearbyService);
+      const methods = api as unknown as {
+        nearbyProvider: (typeof api)['nearbyProvider'];
+        checkedStations: (typeof api)['checkedStations'];
+        schoolStockInArea: (typeof api)['schoolStockInArea'];
+      };
+      let finish!: () => void;
+      const slow = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
+        await slow;
+        return { items: [], notices: [] };
+      });
+      jest.spyOn(methods, 'checkedStations').mockResolvedValue([]);
+      jest
+        .spyOn(methods, 'schoolStockInArea')
+        .mockResolvedValue({
+          site: { ...query, name: '학교', address: '', source: '한성대' },
+          items: Array(campusCount),
+        });
+      return { api, finish };
+    }
+    const first = start(1015);
+    await first.api.nearbyTotal(query);
+    first.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await first.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 1018,
+    });
+    const next = start(201);
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      status: 'counting',
+      lastAreaTotal: 1018,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      confirmedTotal: 201,
+      lastAreaTotal: 1018,
+    });
+    for (const change of [
+      { radiusM: 500 },
+      { lat: 37.6 },
+      { q: '지갑' },
+      { category: 'ELECTRONICS' as const },
+      { registeredDays: '7' },
+    ]) {
+      expect(
+        (await next.api.nearbyTotal({ ...query, ...change })).lastAreaTotal,
+      ).toBeUndefined();
+    }
+    next.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 204,
+    });
+    search.mockResolvedValue({ meta: { total: 0 } });
+    const empty = start(0);
+    await empty.api.nearbyTotal(query);
+    empty.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await empty.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 0,
     });
   });
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
@@ -995,12 +1088,12 @@ describe('기관 습득물', () => {
     expect(fetched).toEqual([1, 2, 3, 4]);
     // 목록을 끝까지 누르지 않은 새 검색도 독립적으로 전체를 계산합니다.
     const fresh = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
-    expect(api.nearbyTotal(fresh)).toMatchObject({
+    expect(await api.nearbyTotal(fresh)).toMatchObject({
       status: 'counting',
       total: null,
     });
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(api.nearbyTotal(fresh)).toEqual({
+    expect(await api.nearbyTotal(fresh)).toEqual({
       status: 'complete',
       total: 2,
       incomplete: [],
@@ -1008,7 +1101,7 @@ describe('기관 습득물', () => {
     const filtered = { ...fresh, category: 'WALLET_BAG' as const };
     api.nearbyTotal(filtered);
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(api.nearbyTotal(filtered)).toMatchObject({
+    expect(await api.nearbyTotal(filtered)).toMatchObject({
       status: 'complete',
       total: 0,
     });
@@ -1198,7 +1291,7 @@ describe('기관 습득물', () => {
     expect(next.nextCursor).toBeNull();
     expect(first.notices).toEqual([]);
     expect(indexCalls).toHaveLength(5);
-    expect(api.nearbyTotal(query)).toEqual({
+    expect(await api.nearbyTotal(query)).toEqual({
       status: 'complete',
       total: 29,
       incomplete: [],

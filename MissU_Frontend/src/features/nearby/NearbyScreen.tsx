@@ -79,8 +79,12 @@ type AreaCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
   confirmedTotal?: number;
+  lastAreaTotal?: number;
   incomplete: string[];
 };
+// 같은 화면에서 장소를 오갈 때 서버 응답 전에도 직전 합계를 그립니다.
+// 기기를 다시 열면 서버가 동일한 조건의 기록을 PostgreSQL에서 읽습니다.
+const recentAreaTotals = new Map<string, number>();
 const emptyItems: MapItem[] = [];
 export function NearbyScreen() {
   const [center, setCenter] = useState(campus);
@@ -154,8 +158,12 @@ export function NearbyScreen() {
   const areaCount = count?.params === params ? count.value : undefined;
   const incompleteSources = areaCount?.incomplete.filter((source) => source !== '경찰') ?? [];
   const agencyTotal = areaCount?.total ?? areaCount?.confirmedTotal;
+  const savedTotal = areaCount?.lastAreaTotal ?? recentAreaTotals.get(params);
   const total =
-    membersReady && result.total != null && agencyTotal != null ? result.total + agencyTotal : null;
+    savedTotal ??
+    (membersReady && result.total != null && agencyTotal != null
+      ? result.total + agencyTotal
+      : null);
   const memberFailed = membersReady && !!result.error;
   const agencyCountFailed = count?.params === params && count.failed;
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
@@ -189,11 +197,20 @@ export function NearbyScreen() {
         value = { status: 'unavailable', total: null, incomplete: [] };
       }
       if (controller.signal.aborted) return;
+      if (value.lastAreaTotal != null) {
+        recentAreaTotals.delete(params);
+        recentAreaTotals.set(params, value.lastAreaTotal);
+        if (recentAreaTotals.size > 32) {
+          const oldest = recentAreaTotals.keys().next();
+          if (!oldest.done) recentAreaTotals.delete(oldest.value);
+        }
+      }
       // 같은 장소와 필터에서 갱신하는 동안에는 마지막으로 확인된 기관 건수를 유지합니다.
       setCount((previous) => ({
         params,
         value:
           value.total == null &&
+          value.lastAreaTotal == null &&
           previous?.params === params &&
           (previous.value.total != null ||
             (value.confirmedTotal == null && previous.value.confirmedTotal != null))
@@ -202,8 +219,7 @@ export function NearbyScreen() {
         refreshing: value.total == null,
         failed: value.status === 'unavailable',
       }));
-      if (value.status === 'complete') return;
-      let delay = 65000;
+      let delay = value.status === 'complete' ? 305000 : 65000;
       if (value.status === 'unavailable') {
         delay = countRetryMs;
         countRetryMs = Math.min(60000, countRetryMs * 2);
@@ -291,7 +307,7 @@ export function NearbyScreen() {
       moreRequest.current?.abort();
       moreRequest.current = null;
     };
-  }, [params, reload]);
+  }, [params, reload, searchedArea]);
   async function loadMoreInstitutions() {
     if (!agenciesReady || !agencies.nextCursor || moreRequest.current) return;
     const controller = new AbortController();

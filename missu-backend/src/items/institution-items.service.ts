@@ -27,6 +27,7 @@ import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import { NearbyService } from './nearby.service';
 import {
   clean,
   custodianPhone,
@@ -57,9 +58,11 @@ type NearbyCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
   confirmedTotal?: number;
+  // 동일 조건의 회원·기관 합계입니다. 기관 소계에 더하지 않습니다.
+  lastAreaTotal?: number;
   incomplete: Source[];
 };
-type NearbyCountJob = { result: NearbyCount };
+type NearbyCountJob = { result: NearbyCount; previous: Promise<number | null> };
 type Custodian = Point & { name: string; address: string; source: Source };
 type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
@@ -145,6 +148,7 @@ export class InstitutionItemsService
   constructor(
     private readonly http: ExternalHttpService,
     @Optional() private readonly db?: DatabaseService,
+    @Optional() private readonly members?: NearbyService,
   ) {}
   private catalog?: CatalogSync;
   private timer?: ReturnType<typeof setInterval>;
@@ -1888,16 +1892,39 @@ export class InstitutionItemsService
     );
     return entry;
   }
-  nearbyTotal(query: NearbyDto): NearbyCount {
+  async nearbyTotal(query: NearbyDto): Promise<NearbyCount> {
     let area: ReturnType<typeof this.area>;
     try {
       area = this.area(query);
     } catch {
       return { status: 'unavailable', total: null, incomplete: [] };
     }
-    if (area.count) return area.count.result;
+    if (area.count) return this.nearbyCountResponse(area.count);
+    // 날짜와 페이지를 제외해야 자정이나 서버 재시작 후에도 같은 반경을 찾을 수 있습니다.
+    const queryKey = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'nearby-v1',
+          query.lat,
+          query.lng,
+          query.radiusM,
+          query.category,
+          query.registeredDays,
+          query.q || '',
+        ]),
+      )
+      .digest('hex');
+    const startedAt = new Date(Date.now());
+    const db = this.db;
     const job: NearbyCountJob = {
       result: { status: 'counting', total: null, incomplete: [] },
+      previous:
+        db && this.members
+          ? db.lastSearchCount
+              .findUnique({ where: { queryKey }, select: { total: true } })
+              .then((row) => row?.total ?? null)
+              .catch(() => null)
+          : Promise.resolve(null),
     };
     area.count = job;
     let confirmedSchool = 0;
@@ -1942,20 +1969,64 @@ export class InstitutionItemsService
         return confirmedSchool;
       })
       .catch(() => null);
-    void Promise.all([area.parts, school]).then(([parts, school]) => {
-      const incomplete: Source[] = [];
-      if (school === null) incomplete.push('한성대');
-      if (parts[0].notices.length) incomplete.push('경찰');
-      if (parts[1].notices.length) incomplete.push('포털기관');
-      job.result = {
-        total: (school || 0) + combine(parts).items.length,
-        status: incomplete.length ? 'partial' : 'complete',
-        incomplete,
-      };
-      if (incomplete.length)
-        area.expires = Math.min(area.expires, Date.now() + 60000);
-    });
-    return job.result;
+    void Promise.all([area.parts, school])
+      .then(async ([parts, school]) => {
+        const incomplete: Source[] = [];
+        if (school === null) incomplete.push('한성대');
+        if (parts[0].notices.length) incomplete.push('경찰');
+        if (parts[1].notices.length) incomplete.push('포털기관');
+        const agencyTotal = (school ?? 0) + combine(parts).items.length;
+        const updated: NearbyCount = {
+          total: agencyTotal,
+          status: incomplete.length ? 'partial' : 'complete',
+          incomplete,
+        };
+        if (db && this.members) {
+          const previous = await job.previous;
+          try {
+            const memberPage = await this.members.search({
+              ...query,
+              cursor: undefined,
+              limit: 1,
+            });
+            const combined = memberPage.meta.total + agencyTotal;
+            // 기관 오류로 줄어든 부분 합계는 직전 기록을 지우지 않습니다. 정상 확인한 0도 저장합니다.
+            updated.lastAreaTotal = incomplete.length
+              ? Math.max(previous ?? 0, combined)
+              : combined;
+            if (!incomplete.length || combined > 0) {
+              const written =
+                await db.$executeRaw`INSERT INTO last_search_counts AS old (query_key,total,police_included,checked_at)
+              VALUES (${queryKey},${combined},${!incomplete.includes('경찰')},${startedAt})
+              ON CONFLICT (query_key) DO UPDATE SET total=EXCLUDED.total,police_included=EXCLUDED.police_included,checked_at=EXCLUDED.checked_at
+              WHERE old.checked_at < EXCLUDED.checked_at AND (${!incomplete.length} OR old.total <= EXCLUDED.total)`;
+              if (!written) {
+                const latest = await db.lastSearchCount.findUnique({
+                  where: { queryKey },
+                  select: { total: true },
+                });
+                if (latest) updated.lastAreaTotal = latest.total;
+              }
+            }
+          } catch {
+            if (previous != null && updated.lastAreaTotal == null)
+              updated.lastAreaTotal = previous;
+            this.logger.warn('주변 합계 저장을 다음 확인 때 다시 시도합니다.');
+          }
+        }
+        job.result = updated;
+        if (incomplete.length)
+          area.expires = Math.min(area.expires, Date.now() + 60000);
+      })
+      .catch(() => {
+        job.result = { status: 'unavailable', total: null, incomplete: [] };
+      });
+    return this.nearbyCountResponse(job);
+  }
+  private async nearbyCountResponse(job: NearbyCountJob): Promise<NearbyCount> {
+    const previous = await job.previous;
+    if (job.result.lastAreaTotal != null || previous == null) return job.result;
+    return { ...job.result, lastAreaTotal: previous };
   }
   private async schoolStockInArea(query: NearbyDto) {
     const { sites, limited } = await this.places('한성대', query, true);
