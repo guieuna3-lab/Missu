@@ -71,8 +71,17 @@ export function Header({
             onPress={() => router.replace('/history')}
             style={styles.member}
           >
-            <Text numberOfLines={1} style={typography.label}>
-              {profile.name} 님
+            {/* Name in bold, 님 lighter and spaced as Korean spelling has it, › says it opens 내것. */}
+            <Text numberOfLines={1} style={[typography.label, styles.memberText]}>
+              <Text style={styles.memberName}>{profile.name}</Text>
+              <Text style={styles.memberSuffix}> 님</Text>
+            </Text>
+            <Text
+              importantForAccessibility="no"
+              accessibilityElementsHidden
+              style={styles.memberChevron}
+            >
+              ›
             </Text>
           </Pressable>
         ) : (
@@ -106,9 +115,15 @@ const styles = StyleSheet.create({
     maxWidth: '55%',
     minWidth: 108,
     minHeight: 44,
-    justifyContent: 'center',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
     alignItems: 'center',
+    gap: 6,
   },
+  memberText: { flexShrink: 1 },
+  memberName: { fontWeight: '700', color: colors.ink },
+  memberSuffix: { color: colors.body },
+  memberChevron: { ...typography.body, fontSize: 18, lineHeight: 24, color: colors.muted },
   login: { minHeight: 32, paddingVertical: 5, paddingHorizontal: 12, borderRadius: 6 },
   titleHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 18 },
   // Keeps the title at the same position on screens without a back button (Figma 02.05).
