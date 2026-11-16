@@ -171,26 +171,39 @@ export function DailyRouteScreen() {
       };
     }, [stop]),
   );
-  useFocusEffect(useCallback(() => {
-    if (!androidRoute || !accessToken) return;
-    let closed = false;
-    let previous = '';
-    const update = async () => {
-      if (AppState.currentState !== 'active') return;
-      try {
-        const state = await routeCommand('status', { token: accessToken });
-        if (closed) return;
-        setActiveId(state.id);
-        const key = JSON.stringify([state.id, state.saved]);
-        if (key !== previous) { previous = key; setRefresh((n) => n + 1); }
-        if (state.message) setMessage(state.message);
-      } catch { /* 화면을 다시 열면 휴대폰 상태를 다시 읽습니다. */ }
-    };
-    void update();
-    const interval = setInterval(() => void update(), 4000);
-    const sub = AppState.addEventListener('change', (s) => { if (s === 'active') void update(); });
-    return () => { closed = true; clearInterval(interval); sub.remove(); };
-  }, [accessToken]));
+  useFocusEffect(
+    useCallback(() => {
+      if (!androidRoute || !accessToken) return;
+      let closed = false;
+      let previous = '';
+      const update = async () => {
+        if (AppState.currentState !== 'active') return;
+        try {
+          const state = await routeCommand('status', { token: accessToken });
+          if (closed) return;
+          setActiveId(state.id);
+          const key = JSON.stringify([state.id, state.saved]);
+          if (key !== previous) {
+            previous = key;
+            setRefresh((n) => n + 1);
+          }
+          if (state.message) setMessage(state.message);
+        } catch {
+          /* 화면을 다시 열면 휴대폰 상태를 다시 읽습니다. */
+        }
+      };
+      void update();
+      const interval = setInterval(() => void update(), 4000);
+      const sub = AppState.addEventListener('change', (s) => {
+        if (s === 'active') void update();
+      });
+      return () => {
+        closed = true;
+        clearInterval(interval);
+        sub.remove();
+      };
+    }, [accessToken]),
+  );
   useEffect(() => {
     const abort = new AbortController();
     if (accessToken)
@@ -252,13 +265,32 @@ export function DailyRouteScreen() {
         await routeCommand('prepare', { token });
         const status = await mapApi<Status>('/me/routes/status', { token });
         const id = Crypto.randomUUID();
-        const session = await mapApi<{ startedAt: string; autoStopsAt: string }>('/me/routes/recordings', {
-          token, method: 'POST', body: { clientRecordingId: id, agreed: true, policyVersion: status.policyVersion, source: 'DEVICE' },
-        });
+        const session = await mapApi<{ startedAt: string; autoStopsAt: string }>(
+          '/me/routes/recordings',
+          {
+            token,
+            method: 'POST',
+            body: {
+              clientRecordingId: id,
+              agreed: true,
+              policyVersion: status.policyVersion,
+              source: 'DEVICE',
+            },
+          },
+        );
         try {
-          await routeCommand('start', { token, id, start: Date.parse(session.startedAt), end: Date.parse(session.autoStopsAt) });
+          await routeCommand('start', {
+            token,
+            id,
+            start: Date.parse(session.startedAt),
+            end: Date.parse(session.autoStopsAt),
+          });
         } catch (error) {
-          await mapApi('/me/routes/recordings/' + id + '/stop', { token, method: 'POST', body: {} }).catch(() => undefined);
+          await mapApi('/me/routes/recordings/' + id + '/stop', {
+            token,
+            method: 'POST',
+            body: {},
+          }).catch(() => undefined);
           throw error;
         }
         setActiveId(id);
@@ -489,7 +521,9 @@ export function DailyRouteScreen() {
             {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
             {!loading && !points.length && <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>}
             <Text>
-              {androidRoute ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. 알림에서 언제든 중지할 수 있어요. 한 번에 최대 24시간 기록하고 각 위치는 48시간 보관해요.' : '동의 후 이 화면을 보는 동안 위치를 기록하고, 내 계정에 최대 48시간 보관해요. 화면을 떠나면 기록이 중지돼요.'}
+              {androidRoute
+                ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. 알림에서 언제든 중지할 수 있어요. 한 번에 최대 24시간 기록하고 각 위치는 48시간 보관해요.'
+                : '동의 후 이 화면을 보는 동안 위치를 기록하고, 내 계정에 최대 48시간 보관해요. 화면을 떠나면 기록이 중지돼요.'}
             </Text>
             {activeId ? (
               <ActionButton label="위치 기록 중지" onPress={() => void stop()} />
