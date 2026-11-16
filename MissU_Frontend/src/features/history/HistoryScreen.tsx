@@ -83,18 +83,11 @@ export function HistoryScreen() {
                 ? `${plural(reports[0].name, reports.length)} · 신고됨`
                 : '신고한 물품이 없어요'}
             </Card>
-            <Card
-              title="내 반환 요청"
-              disabled={sent.length === 0}
-              onPress={
-                sent.length === 1
-                  ? () => router.push({ pathname: '/requests/[id]', params: { id: sent[0].id } })
-                  : () => openList('requests')
-              }
-            >
+            {/* Always opens the list, like the other two cards, so past requests stay reachable. */}
+            <Card title="내 반환 요청" onPress={() => openList('requests')}>
               {sent.length
                 ? `${plural(sent[0].itemName, sent.length)} · 진행 상태 보기`
-                : '진행 중인 반환 요청이 없어요'}
+                : '보낸 반환 요청이 없어요'}
             </Card>
             <Card title="내가 등록한 습득물" onPress={() => openList('found')}>
               {items.length
