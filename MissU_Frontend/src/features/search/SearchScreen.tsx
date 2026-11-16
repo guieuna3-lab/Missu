@@ -103,7 +103,8 @@ async function loadResults(
       status = 'error';
     // 저장 목록의 마지막 페이지가 짧아도 첫 화면을 먼저 표시하고 원본 추가 조회는 더보기에서 진행합니다.
     const savedPage =
-      agency.status === 'fulfilled' && agency.value?.items.some((item) => item.lastVerifiedOn);
+      agency.status === 'fulfilled' &&
+      (agency.value?.verifiedPage || agency.value?.items.some((item) => item.lastVerifiedOn));
     if (
       member.status === 'rejected' ||
       agency.status === 'rejected' ||
