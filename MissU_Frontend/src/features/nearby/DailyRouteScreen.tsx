@@ -14,7 +14,7 @@ import { StreetMap } from './StreetMap';
 import { campus, mapApi, type MapItem, type Coordinates, type RoutePoint } from './mapData';
 import { readDeviceLocation, watchDeviceLocation } from './deviceLocation';
 import { usableLocation } from './locationFix';
-import { androidRoute, routeCommand } from './androidRoute';
+import { backgroundRoute, routeCommand, stopHint } from './backgroundRoute';
 
 function seoulDay(offset: number) {
   return new Date(Date.now() + 9 * 3600000 - offset * 86400000).toISOString().slice(0, 10);
@@ -107,7 +107,7 @@ export function DailyRouteScreen() {
     return id;
   }, []);
   const stop = useCallback(async () => {
-    if (androidRoute && accessToken) {
+    if (backgroundRoute && accessToken) {
       try {
         await routeCommand('stop', { token: accessToken });
         setActiveId(undefined);
@@ -161,7 +161,7 @@ export function DailyRouteScreen() {
   );
   useFocusEffect(
     useCallback(() => {
-      if (androidRoute) return;
+      if (backgroundRoute) return;
       const sub = AppState.addEventListener('change', (s) => {
         if (s !== 'active') void stop();
       });
@@ -173,7 +173,7 @@ export function DailyRouteScreen() {
   );
   useFocusEffect(
     useCallback(() => {
-      if (!androidRoute || !accessToken) return;
+      if (!backgroundRoute || !accessToken) return;
       let closed = false;
       let previous = '';
       const update = async () => {
@@ -261,7 +261,7 @@ export function DailyRouteScreen() {
     const version = ++epoch.current;
     const token = accessToken;
     try {
-      if (androidRoute) {
+      if (backgroundRoute) {
         await routeCommand('prepare', { token });
         const status = await mapApi<Status>('/me/routes/status', { token });
         const id = Crypto.randomUUID();
@@ -295,7 +295,7 @@ export function DailyRouteScreen() {
         }
         setActiveId(id);
         setConfirmed(false);
-        setMessage('휴대폰이 위치를 기록하고 있어요. 알림에서 중지할 수 있어요.');
+        setMessage('휴대폰이 위치를 기록하고 있어요. ' + stopHint);
         return;
       }
       const initial = await readDeviceLocation().catch((error: unknown) => {
@@ -405,7 +405,7 @@ export function DailyRouteScreen() {
       setConfirmed(false);
     } catch (e) {
       if (version === epoch.current) {
-        if (!androidRoute) await stop();
+        if (!backgroundRoute) await stop();
         setMessage(e instanceof Error ? e.message : '기록을 시작하지 못했어요.');
       }
     } finally {
@@ -521,8 +521,10 @@ export function DailyRouteScreen() {
             {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
             {!loading && !points.length && <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>}
             <Text>
-              {androidRoute
-                ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. 알림에서 언제든 중지할 수 있어요. 한 번에 최대 24시간 기록하고 각 위치는 48시간 보관해요.'
+              {backgroundRoute
+                ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. ' +
+                  stopHint +
+                  ' 한 번에 최대 24시간 기록하고 각 위치는 48시간 보관해요.'
                 : '동의 후 이 화면을 보는 동안 위치를 기록하고, 내 계정에 최대 48시간 보관해요. 화면을 떠나면 기록이 중지돼요.'}
             </Text>
             {activeId ? (
