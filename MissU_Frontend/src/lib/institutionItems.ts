@@ -15,6 +15,7 @@ export type InstitutionItem = {
   category: string;
   phone?: string;
   foundPlace?: string;
+  photoUrls?: string[];
 };
 type NearbyInstitution = InstitutionItem & {
   foundLocation: Coordinates & { label: string };
@@ -102,4 +103,7 @@ export function openInstitution(item: InstitutionItem) {
 }
 export function institutionDetail(id: string) {
   return mapApi<InstitutionItem>('/institution-items/detail/' + encodeURIComponent(id));
+}
+export function publicInstitutionPhotos(id: string, signal: AbortSignal) {
+  return mapApi<string[]>('/institution-items/photos/' + encodeURIComponent(id), { signal });
 }
