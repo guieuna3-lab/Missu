@@ -11,6 +11,7 @@ export function Header({
   onBack,
   backLabel = '뒤로 가기',
   accountOrigin,
+  action,
 }: {
   welcome?: boolean;
   /** Shows a screen title instead of the logo. */
@@ -19,6 +20,8 @@ export function Header({
   backLabel?: string;
   /** Shows the account controls beside a titled header. */
   accountOrigin?: LoginOrigin;
+  /** Text button at the right end of a titled header, such as 신고 in the return chat. */
+  action?: { label: string; onPress: () => void; accessibilityLabel?: string; danger?: boolean };
 }) {
   const { profile, startLogin } = usePreview();
   const showAccount = !welcome && (title === undefined || accountOrigin !== undefined);
@@ -39,6 +42,21 @@ export function Header({
             <View style={styles.backSpace} />
           )}
           <Text style={[typography.action, styles.title]}>{title}</Text>
+          {action && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={action.accessibilityLabel ?? action.label}
+              onPress={action.onPress}
+              hitSlop={10}
+              style={({ pressed }) => [styles.action, pressed && { opacity: 0.75 }]}
+            >
+              <Text
+                style={[typography.label, { color: action.danger ? colors.danger : colors.blue }]}
+              >
+                {action.label}
+              </Text>
+            </Pressable>
+          )}
         </View>
       ) : (
         <Text style={[styles.wordmark, welcome && { fontSize: 18, lineHeight: 25 }]}>
@@ -95,5 +113,6 @@ const styles = StyleSheet.create({
   titleHeader: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 18 },
   // Keeps the title at the same position on screens without a back button (Figma 02.05).
   backSpace: { width: 24 },
-  title: { flexShrink: 1, color: colors.ink, fontSize: 15 },
+  title: { flex: 1, color: colors.ink, fontSize: 15 },
+  action: { minHeight: 44, justifyContent: 'center' },
 });

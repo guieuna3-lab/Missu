@@ -10,6 +10,7 @@ export function FormField({
   action,
   reveal,
   hint,
+  hideLabel = false,
   ...input
 }: TextInputProps & {
   label: string;
@@ -25,12 +26,16 @@ export function FormField({
   reveal?: { visible: boolean; onToggle: () => void };
   /** Short guidance shown under the label, such as how freely the field can be filled. */
   hint?: string;
+  /** Keeps the label for screen readers only, such as the chat composer. */
+  hideLabel?: boolean;
 }) {
   return (
     <View style={styles.field}>
-      <Text importantForAccessibility="no" accessibilityElementsHidden style={typography.label}>
-        {required ? `${label} *` : label}
-      </Text>
+      {!hideLabel && (
+        <Text importantForAccessibility="no" accessibilityElementsHidden style={typography.label}>
+          {required ? `${label} *` : label}
+        </Text>
+      )}
       {hint && <Text style={styles.hint}>{hint}</Text>}
       <View style={[styles.box, !!error && styles.boxError]}>
         <TextInput
