@@ -27,4 +27,3 @@
 Apple Developer Program 팀과 App Store Connect 권한을 준비한 뒤 Expo 계정으로 `npx eas-cli login`과 최초 1회 `npx eas-cli init`을 실행합니다. `npx eas-cli build --platform ios --profile production`으로 서명된 앱을 만들고, `npx eas-cli submit --platform ios --latest`로 업로드합니다. App Store Connect의 TestFlight에서 처리 결과를 확인한 후 테스터를 초대합니다.
 
 Safari와 홈 화면에 추가한 웹 아이콘에서는 해당 경로 화면이 열린 동안만 기록합니다. TestFlight 앱 또는 서명해 설치한 앱에서 백그라운드 기록을 시험하세요.
-
