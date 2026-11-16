@@ -16,6 +16,7 @@ export function LoginScreen() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<{ message: string; fields: boolean } | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const edit = (setValue: (value: string) => void) => (value: string) => {
     setValue(value);
@@ -63,7 +64,7 @@ export function LoginScreen() {
         value={password}
         onChangeText={edit(setPassword)}
         error={error?.fields}
-        secureTextEntry
+        reveal={{ visible: showPassword, onToggle: () => setShowPassword((shown) => !shown) }}
         autoCapitalize="none"
         autoComplete="current-password"
         textContentType="password"

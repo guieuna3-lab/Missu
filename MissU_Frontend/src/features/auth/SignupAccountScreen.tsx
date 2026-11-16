@@ -18,6 +18,8 @@ export function SignupAccountScreen() {
     confirm: '',
   });
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({});
+  // One eye button on 비밀번호 also reveals 비밀번호 확인.
+  const [showPassword, setShowPassword] = useState(false);
 
   // Leaving the sign-up flow (back to login, or after completion) discards the draft.
   useEffect(() => () => setDraft(null), [setDraft]);
@@ -82,7 +84,7 @@ export function SignupAccountScreen() {
         value={values.password}
         onChangeText={edit('password')}
         error={errors.password}
-        secureTextEntry
+        reveal={{ visible: showPassword, onToggle: () => setShowPassword((shown) => !shown) }}
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
@@ -94,7 +96,7 @@ export function SignupAccountScreen() {
         value={values.confirm}
         onChangeText={edit('confirm')}
         error={errors.confirm}
-        secureTextEntry
+        secureTextEntry={!showPassword}
         autoCapitalize="none"
         autoComplete="new-password"
         textContentType="newPassword"
