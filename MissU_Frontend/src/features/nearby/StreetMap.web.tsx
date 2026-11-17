@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useRef, useState, type ComponentRef } from '
 import { StyleSheet, Text, View } from 'react-native';
 import type * as Leaflet from 'leaflet';
 import { routeSegments, type Coordinates, type StreetMapProps } from './mapData';
+import { MapLoadingOverlay, useMapDrawn } from './MapLoading';
 
 function pair(p: Coordinates): [number, number] {
   return [p.lat, p.lng];
@@ -13,7 +14,13 @@ export function StreetMap(props: StreetMapProps) {
   const [unavailable, setUnavailable] = useState(false);
   if (key && !unavailable)
     return (
-      <Suspense fallback={null}>
+      <Suspense
+        fallback={
+          <View style={StyleSheet.absoluteFill}>
+            <MapLoadingOverlay />
+          </View>
+        }
+      >
         <GoogleMap {...props} apiKey={key} onFailure={() => setUnavailable(true)} />
       </Suspense>
     );
@@ -26,6 +33,8 @@ function OpenStreetMap(props: StreetMapProps) {
   const select = useRef(props.onSelect);
   const [live, setLive] = useState<{ map: Leaflet.Map; L: typeof Leaflet }>();
   const [failed, setFailed] = useState(false);
+  const [drawn, markDrawn] = useMapDrawn();
+  const drawnRef = useRef(markDrawn);
   useEffect(() => {
     callback.current = props.onMove;
     select.current = props.onSelect;
@@ -50,7 +59,13 @@ function OpenStreetMap(props: StreetMapProps) {
             '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>',
         }).addTo(m);
         tiles.on('tileerror', () => {
-          if (!closed) setFailed(true);
+          if (closed) return;
+          setFailed(true);
+          drawnRef.current();
+        });
+        // 처음 보이는 타일이 모두 그려지면 로딩 안내를 내립니다.
+        tiles.once('load', () => {
+          if (!closed) drawnRef.current();
         });
         tiles.on('tileload', () => {
           if (!closed) setFailed(false);
@@ -133,6 +148,7 @@ function OpenStreetMap(props: StreetMapProps) {
   return (
     <View style={[StyleSheet.absoluteFill, { bottom: 17, zIndex: 0 }]}>
       <View ref={container} style={{ flex: 1, zIndex: 0 }} />
+      {!drawn && <MapLoadingOverlay />}
       {failed && (
         <Text accessibilityRole="alert" style={{ backgroundColor: 'white' }}>
           지도에 연결하지 못했어요. 인터넷 연결을 확인해 주세요.
