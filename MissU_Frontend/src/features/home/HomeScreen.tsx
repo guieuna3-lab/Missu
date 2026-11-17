@@ -7,7 +7,7 @@ import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
-import { DayHeading, RecentItemRow, dayKey, type HomeItem } from './RecentItemRow';
+import { DayHeading, RecentItemRow, dayKey, type HomeItem } from '@/components/ItemRow';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { previewActivity } from '@/lib/preview/fixtures';

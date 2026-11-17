@@ -1,8 +1,7 @@
-import { Image } from 'expo-image';
 import { useState } from 'react';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { ApiPhoto } from '@/components/ApiPhoto';
 import { Icon, type IconName } from '@/components/Icon';
-import { apiBase } from '@/lib/backend';
 
 // 목록·상세 표시 전용 분류입니다. 서버 분류(ELECTRONICS·WALLET_BAG·OTHER)가 거칠어서
 // 물품명 키워드로 아이콘만 고릅니다. 검색·필터 값에는 쓰지 않습니다.
@@ -45,15 +44,6 @@ function kindOf(name: string, category?: string): Kind {
   }
 }
 
-const apiOrigin = (() => {
-  try {
-    return new URL(apiBase).origin;
-  } catch {
-    return '';
-  }
-})();
-const isApiPhoto = (url: string) => !!apiOrigin && url.startsWith(apiOrigin + '/');
-
 /** 첨부 사진이 있으면 사진을, 없거나 불러오지 못하면 물품 종류 아이콘을 보여줍니다. */
 export function ItemThumb({
   name,
@@ -69,27 +59,13 @@ export function ItemThumb({
   const [failedUrl, setFailedUrl] = useState<string>();
   const kind = kinds[kindOf(name, category)];
   const box = { width: size, height: size, borderRadius: Math.round(size * 0.3) };
-  // 웹에서 운영 API 사진은 출처가 달라 일반 이미지 요청이 막힙니다(helmet CORP).
-  // 상세 화면(ItemPhoto)과 같이 쿠키 없는 crossOrigin 요청으로 불러옵니다.
-  if (photoUrl && failedUrl !== photoUrl && Platform.OS === 'web' && isApiPhoto(photoUrl))
-    return (
-      <img
-        alt=""
-        crossOrigin="anonymous"
-        referrerPolicy="no-referrer"
-        src={photoUrl}
-        onError={() => setFailedUrl(photoUrl)}
-        style={{ ...box, objectFit: 'cover', backgroundColor: '#F1F3F5', flexShrink: 0 }}
-      />
-    );
   if (photoUrl && failedUrl !== photoUrl)
     return (
-      <Image
-        source={{ uri: photoUrl }}
-        style={[styles.photo, box]}
-        contentFit="cover"
-        transition={150}
-        accessible={false}
+      <ApiPhoto
+        uri={photoUrl}
+        width={size}
+        height={size}
+        radius={box.borderRadius}
         onError={() => setFailedUrl(photoUrl)}
       />
     );
@@ -102,5 +78,4 @@ export function ItemThumb({
 
 const styles = StyleSheet.create({
   tile: { alignItems: 'center', justifyContent: 'center' },
-  photo: { backgroundColor: '#F1F3F5' },
 });
