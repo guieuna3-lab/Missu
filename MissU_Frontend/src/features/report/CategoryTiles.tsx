@@ -1,15 +1,7 @@
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Icon, type IconName } from '@/components/Icon';
+import { ItemThumb } from '@/components/ItemThumb';
 import { colors, typography } from '@/constants/theme';
 import { categories, categoryLabel, type ItemCategory } from '@/lib/activity/types';
-
-const icons: Partial<Record<ItemCategory, IconName>> = {
-  ELECTRONICS: 'buds',
-  WALLET: 'wallet',
-  BAG: 'bag',
-  KEY: 'key',
-  ID: 'id',
-};
 
 // Figma 04.02 / 05.01 "물품 종류 · 참고 정보": a horizontal row of 80×84 tiles.
 export function CategoryTiles({
@@ -31,7 +23,6 @@ export function CategoryTiles({
       >
         {categories.map((category) => {
           const active = category.value === value;
-          const icon = icons[category.value];
           return (
             <Pressable
               key={category.value}
@@ -41,7 +32,8 @@ export function CategoryTiles({
               onPress={() => onChange(category.value)}
               style={[styles.tile, active && styles.activeTile]}
             >
-              {icon ? <Icon name={icon} /> : <View style={styles.iconSpace} />}
+              {/* 검색의 '자주 찾는 물건'과 같은 종류 아이콘입니다. */}
+              <ItemThumb name="" category={category.value} size={36} />
               <Text style={[styles.tileLabel, active && styles.activeLabel]}>{category.label}</Text>
             </Pressable>
           );
@@ -67,7 +59,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   activeTile: { borderColor: colors.blue, backgroundColor: colors.lightBlue },
-  iconSpace: { width: 24, height: 24 },
   tileLabel: { ...typography.body, fontSize: 11, lineHeight: 16, color: colors.body },
   activeLabel: { color: colors.blue, fontWeight: '700' },
 });
