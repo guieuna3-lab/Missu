@@ -20,7 +20,7 @@ import { formatFoundAt } from '@/lib/items';
 import { nearbyInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { readDeviceLocation } from './deviceLocation';
 import { StreetMap } from './StreetMap';
-import { MapStatusPill } from './MapLoading';
+import { MapLoadingOverlay, MapStatusPill } from './MapLoading';
 import { campus, mapApi, nearbyMembers, type MapItem, type Coordinates } from './mapData';
 import { MapIcon, mapArt } from './mapArt';
 import { categories, defaultFilters, radii, type NearbyFilters } from './nearbyItems';
@@ -514,6 +514,14 @@ export function NearbyScreen() {
               <TextLink label="내 하루 경로" onPress={() => router.push('/daily-route')} />
             </View>
             <View style={[styles.map, expanded && styles.shortMap]}>
+              {/* 내 위치를 찾기 전에는 지도를 띄우지 않으므로 이 단계의 안내를 따로 보여줍니다. */}
+              {!searchedArea && (
+                <MapLoadingOverlay
+                  title="내 위치를 확인하고 있어요"
+                  description="위치를 찾으면 지도를 보여드려요"
+                  dim={false}
+                />
+              )}
               {searchedArea && (
                 <StreetMap
                   center={center}
