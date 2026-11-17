@@ -638,6 +638,7 @@ export class InstitutionItemsService
     checkedAt: Date;
     phone?: string | null;
     foundPlace?: string | null;
+    photoUrl?: string | null;
   }): InstitutionItem {
     return {
       id: r.id,
@@ -657,6 +658,8 @@ export class InstitutionItemsService
       reference: r.id.slice(8).replace(':', ' / '),
       lastVerifiedOn: koreaDay(r.checkedAt.getTime()),
       phone: custodianPhone(r.storage, r.phone),
+      // 저장본의 사진 주소는 만료될 수 있어, 화면은 실패 시 아이콘이나 재조회로 대체합니다.
+      ...(r.photoUrl && { photoUrls: [r.photoUrl] }),
     };
   }
   async preview(q: string, place: string, days: string) {
@@ -731,12 +734,13 @@ export class InstitutionItemsService
       const id = 'lost112:' + row.atcId + ':' + row.fdSn;
       // 늦게 도착한 이전 보관 응답이 더 최근의 반환 확인을 덮어쓰지 않게 합니다.
       await db.$executeRaw`INSERT INTO verified_portal_items AS old
-        (id,name,source,storage,place_key,day,category,stored,checked_at,phone,kind_name,found_place)
+        (id,name,source,storage,place_key,day,category,stored,checked_at,phone,kind_name,found_place,photo_url)
         VALUES (${id},${item?.name ?? ''},${item?.source ?? source},${item?.storage ?? ''},
-          ${stationKey(item?.storage ?? '')},${item?.date ?? (row.fdYmd || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')},${item?.category ?? ''},${stored},${observedAt},${item?.phone ?? null},${row.prdtClNm || null},${row.fdPlace || null})
+          ${stationKey(item?.storage ?? '')},${item?.date ?? (row.fdYmd || '').replace(/^(\d{4})(\d{2})(\d{2})$/, '$1-$2-$3')},${item?.category ?? ''},${stored},${observedAt},${item?.phone ?? null},${row.prdtClNm || null},${row.fdPlace || null},${item?.photoUrls?.[0] ?? null})
         ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,source=EXCLUDED.source,storage=EXCLUDED.storage,
         place_key=EXCLUDED.place_key,day=EXCLUDED.day,category=EXCLUDED.category,stored=EXCLUDED.stored,checked_at=EXCLUDED.checked_at,phone=EXCLUDED.phone,
-        kind_name=COALESCE(EXCLUDED.kind_name,old.kind_name),found_place=COALESCE(EXCLUDED.found_place,old.found_place)
+        kind_name=COALESCE(EXCLUDED.kind_name,old.kind_name),found_place=COALESCE(EXCLUDED.found_place,old.found_place),
+        photo_url=COALESCE(EXCLUDED.photo_url,old.photo_url)
         WHERE old.checked_at < EXCLUDED.checked_at OR (old.checked_at = EXCLUDED.checked_at AND NOT EXCLUDED.stored)`;
     }
     return item;

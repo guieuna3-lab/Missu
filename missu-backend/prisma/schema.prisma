@@ -351,6 +351,7 @@ model VerifiedPortalItem {
   searchFragments String[] @default(dbgenerated()) @map("search_fragments")
   kindName String? @map("kind_name")
   foundPlace String? @map("found_place")
+  photoUrl String? @map("photo_url")
   phone String?
   id String @id
   name String
