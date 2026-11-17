@@ -72,12 +72,17 @@ export class InstitutionItemsController {
   @Header('Cache-Control', 'no-store')
   async nearbyTotal(@Query() query: NearbyDto, @Req() req: SessionRequest) {
     await this.rates.consume('nearby-total:' + req.ip, 60, 60000);
-    return { data: this.service.nearbyTotal(query) };
+    return { data: await this.service.nearbyTotal(query) };
   }
   @Get('detail/:id')
   async detail(@Param('id') id: string, @Req() req: SessionRequest) {
     await this.rates.consume('institution-detail:' + req.ip, 60, 60000);
     return { data: await this.service.detail(id) };
+  }
+  @Get('photos/:id')
+  async photos(@Param('id') id: string, @Req() req: SessionRequest) {
+    await this.rates.consume('institution-photos:' + req.ip, 60, 60000);
+    return { data: await this.service.publicPhotos(id) };
   }
   @Get('preview')
   async preview(

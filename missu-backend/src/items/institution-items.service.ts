@@ -5,6 +5,7 @@ import {
   nextPortalDay,
 } from './catalog-sync';
 import { createHash } from 'node:crypto';
+import { countVerifiedDays } from './verified-search-count';
 import {
   itemSearch,
   publicFoundWhere,
@@ -26,6 +27,7 @@ import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import { NearbyService } from './nearby.service';
 import {
   clean,
   custodianPhone,
@@ -55,9 +57,12 @@ type Provider = keyof typeof government;
 type NearbyCount = {
   status: 'counting' | 'complete' | 'partial' | 'unavailable';
   total: number | null;
+  confirmedTotal?: number;
+  // 동일 조건의 회원·기관 합계입니다. 기관 소계에 더하지 않습니다.
+  lastAreaTotal?: number;
   incomplete: Source[];
 };
-type NearbyCountJob = { result: NearbyCount };
+type NearbyCountJob = { result: NearbyCount; previous: Promise<number | null> };
 type Custodian = Point & { name: string; address: string; source: Source };
 type Located = InstitutionItem & {
   foundLocation: Point & { label: string };
@@ -143,9 +148,11 @@ export class InstitutionItemsService
   constructor(
     private readonly http: ExternalHttpService,
     @Optional() private readonly db?: DatabaseService,
+    @Optional() private readonly members?: NearbyService,
   ) {}
   private catalog?: CatalogSync;
   private timer?: ReturnType<typeof setInterval>;
+  private readonly activeCounts = new Map<string, Promise<number>>();
   private readonly logger = new Logger(InstitutionItemsService.name);
   onApplicationBootstrap() {
     if (!this.db) return;
@@ -173,6 +180,33 @@ export class InstitutionItemsService
     this.timer = setInterval(wake, 60000);
     this.timer.unref();
     wake();
+    if (warmSchool) void this.warmCommonCounts();
+  }
+  private async warmCommonCounts() {
+    // 시작 응답을 막지 않고 자주 찾는 세 검색어를 한 번에 하나씩 준비한다.
+    for (const word of ['이어폰', '지갑', '핸드폰']) {
+      try {
+        await this.verifiedCount(word, '', 'all', Date.now());
+      } catch {
+        this.logger.warn('기관 검색 건수는 다음 조회에서 다시 확인합니다.');
+      }
+    }
+  }
+  private verifiedCount(q: string, place: string, days: string, now: number) {
+    const from = since(days, now);
+    const through = koreaDay(now);
+    const request = JSON.stringify([q, place, days, from, through]);
+    const active = this.activeCounts.get(request);
+    if (active) return active;
+    const pending = countVerifiedDays(
+      this.db!,
+      days,
+      from,
+      through,
+      this.portalWhere(q, place, days),
+    ).finally(() => this.activeCounts.delete(request));
+    this.activeCounts.set(request, pending);
+    return pending;
   }
   async syncStatus() {
     if (!this.catalog) return { enabled: false, providers: [] };
@@ -286,7 +320,7 @@ export class InstitutionItemsService
       loadFailed: results.some((r) => r.status === 'rejected'),
     };
   }
-  private async portalRecord(atcId: string, fdSn: string) {
+  private portalUrl(atcId: string, fdSn: string) {
     const url = new URL(
       'https://minwon24.police.go.kr/cvlcpt/selectFindListDetail.do',
     );
@@ -295,10 +329,36 @@ export class InstitutionItemsService
       pkupCmdtyMngId: atcId,
       sortSn: fdSn,
     }).toString();
+    return url;
+  }
+
+  async publicPhotos(id: string) {
+    const match = /^lost112:([A-Z0-9]{2,32}):(\d{1,6})$/.exec(id);
+    if (!match)
+      return fail(404, 'RESOURCE_NOT_FOUND', '기관 물품을 찾을 수 없어요.');
+    const [, atcId, fdSn] = match;
+    const url = this.portalUrl(atcId, fdSn);
+    try {
+      // 상세를 연 물품 한 건만 확인합니다. 수집 진도나 검색 집계에는 쓰지 않습니다.
+      const row = portalDetail(
+        (await this.text(url.href, url)).body,
+        atcId,
+        fdSn,
+      );
+      return clean(row.csteSteNm) === '보관중' && row.fdFilePathImg
+        ? [row.fdFilePathImg]
+        : [];
+    } catch {
+      return fail(503, 'EXTERNAL_UNAVAILABLE', '기관 사진을 확인할 수 없어요.');
+    }
+  }
+  private async portalRecord(atcId: string, fdSn: string) {
+    const url = this.portalUrl(atcId, fdSn);
     const res = await this.text(url.href, url);
     const row = portalDetail(res.body, atcId, fdSn);
     return {
       custodyStatus: row.csteSteNm,
+      kindName: row.prdtClNm,
       item: await this.verifiedItem(
         row,
         atcId.startsWith('V') ? '포털기관' : '경찰',
@@ -425,7 +485,11 @@ export class InstitutionItemsService
     };
   }
   // 포털 공개 검색과 OpenAPI의 게시 시점·목록이 다를 수 있어 관리번호로 합칩니다.
-  private async publicStation(site: Custodian, days: string) {
+  private async publicStation(
+    site: Custodian,
+    days: string,
+    search: ItemSearch,
+  ) {
     const storage = site.name.replace(/^(.+역)\s+(.+)$/u, '$1($2)');
     if (/[<>:\r\n]/.test(storage)) throw Error('Invalid place');
     const seen = new Set<string>();
@@ -459,10 +523,20 @@ export class InstitutionItemsService
             return [];
           return [
             async () => {
-              const { item } = await this.portalRecord(atcId, fdSn);
+              const { item, kindName } = await this.portalRecord(atcId, fdSn);
               records.set(
                 id,
-                item && stationKey(item.storage) === stationKey(storage)
+                item &&
+                  stationKey(item.storage) === stationKey(storage) &&
+                  matchesName(
+                    search,
+                    item.name,
+                    kindName || '',
+                    ...[
+                      fields.PKUP_CMDTY_LCLSF_NM,
+                      fields.PKUP_CMDTY_MCLSF_NM,
+                    ].map((value) => (value || '').replace(/<(?:HS|HE)>/g, '')),
+                  )
                   ? item
                   : undefined,
               );
@@ -686,7 +760,9 @@ export class InstitutionItemsService
     const road = site && roadKey(site.address);
     if (site && !station && !road) return { items: [], limited: true };
     const filters: Record<string, string> = {
-      numOfRows: '40',
+      // 역별 목록은 기간 조건을 지원하지 않아 오래된 기록도 포함한다.
+      // 넉넉한 묶음으로 읽고 날짜·보관 상태는 기존대로 개별 확인한다.
+      numOfRows: station ? '500' : '40',
       pageNo: String(pageNo),
     };
     if (q) filters.PRDT_NM = q;
@@ -862,6 +938,109 @@ export class InstitutionItemsService
       };
     }
   }
+  private async confirmedSearchPage(
+    search: ItemSearch,
+    place: string,
+    days: string,
+    scope: string,
+    cursor?: string,
+  ) {
+    const after = cursor?.match(
+      /^v\.([0-9a-f]{12})\.(\d{4}-\d{2}-\d{2})\.(hansung:\d{1,12}|lost112:[a-zA-Z0-9]{1,32}:\d{1,6})$/,
+    );
+    if (cursor && (!after || after[1] !== scope))
+      fail(400, 'VALIDATION_ERROR', '다음 페이지 값이 올바르지 않습니다.');
+    const conditions = this.portalWhere(search.q, place, days);
+    const where: Prisma.VerifiedPortalItemWhereInput = after
+      ? {
+          AND: [
+            conditions,
+            {
+              OR: [
+                { day: { lt: after[2] } },
+                { day: after[2], id: { gt: after[3] } },
+              ],
+            },
+          ],
+        }
+      : conditions;
+    const read = (predicate: Prisma.VerifiedPortalItemWhereInput) =>
+      this.db!.verifiedPortalItem.findMany({
+        omit: { searchFragments: true },
+        where: predicate,
+        orderBy: [{ day: 'desc' }, { id: 'asc' }],
+        take: 26,
+      });
+    // 흔한 전국 검색은 최근 일주일만 읽어도 첫 페이지가 찬다. 부족하면 원래 기간 전체를 읽는다.
+    const records = async () => {
+      if (!cursor && !place && days.toLowerCase() === 'all') {
+        const week = await read({
+          ...where,
+          day: { gte: since('7'), lte: koreaDay() },
+        });
+        if (week.length === 26) return week;
+      }
+      return read(where);
+    };
+    const [rows, school] = await Promise.all([
+      records(),
+      this.schoolInventory(search.q, days).catch(() => undefined),
+    ]);
+    if (!school) {
+      if (cursor)
+        return fail(
+          503,
+          'EXTERNAL_UNAVAILABLE',
+          '학교 목록을 다시 확인해 주세요.',
+        );
+      return;
+    }
+    const campus = [...school.values()].filter(
+      (item) =>
+        matchesPlace(place, item.storage, item.foundPlace) &&
+        (!after ||
+          item.date < after[2] ||
+          (item.date === after[2] && item.id > after[3])),
+    );
+    const stored = rows.map((row) => this.savedItem(row));
+    const items = [...stored, ...campus].sort(
+      (a, b) =>
+        b.date.localeCompare(a.date) ||
+        (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+    );
+    // 아직 확인한 후보가 하나도 없으면 원본을 확인한 뒤 결과를 돌려준다.
+    if (!cursor && !items.length) return;
+    if (!cursor)
+      this.refreshPortal(
+        ['search-page', search, days],
+        stored.filter((i) => i.source !== '경찰'),
+        async () => {
+          const [batch] = await Promise.all([
+            this.records('포털기관', search.q, place, days),
+            place ? this.publicPlace(search, days, 1) : undefined,
+          ]);
+          return batch;
+        },
+      );
+    // 목록이 바뀌어도 이전 페이지의 마지막 날짜·관리번호 뒤에서 이어 읽는다.
+    const page = items.slice(0, 25),
+      last = page.at(-1);
+    const live = Buffer.from(
+      JSON.stringify([null, [1, 0], [1, liveFirstOffset]]),
+    ).toString('base64url');
+    return {
+      items: page,
+      verifiedPage: true,
+      notices: [] as string[],
+      unavailableSources: [] as Source[],
+      nextCursor:
+        items.length > 25 && last
+          ? ['v', scope, last.date, last.id].join('.')
+          : place
+            ? 'p.' + scope + '.1.' + live
+            : live,
+    };
+  }
   async search(
     q: string,
     place: string,
@@ -874,6 +1053,20 @@ export class InstitutionItemsService
       /^(.+역)\s+([^()]+(?:호선|선))$/u,
       '$1($2)',
     );
+    const scope = createHash('sha256')
+      .update(JSON.stringify([search, days]))
+      .digest('hex')
+      .slice(0, 12);
+    if (this.db && !strict && (!cursor || cursor.startsWith('v.'))) {
+      const page = await this.confirmedSearchPage(
+        search,
+        storagePlace,
+        days,
+        scope,
+        cursor,
+      );
+      if (page) return page;
+    }
     if (!storagePlace) {
       const result = await this.page(search.q, '', days, false, cursor, strict);
       result.items.sort(
@@ -881,10 +1074,6 @@ export class InstitutionItemsService
       );
       return result;
     }
-    const scope = createHash('sha256')
-      .update(JSON.stringify([search, days]))
-      .digest('hex')
-      .slice(0, 12);
     let primary: string | null | undefined = cursor,
       index: number | null = cursor ? null : 1;
     if (cursor?.startsWith('p.')) {
@@ -961,9 +1150,7 @@ export class InstitutionItemsService
     const [coverage, previous, confirmedPortal, school] = await Promise.all([
       catalogCoverage(db, since(days, now), today),
       db.lastSearchCount.findUnique({ where: { queryKey }, select }),
-      db.verifiedPortalItem.count({
-        where: this.portalWhere(search.q, search.place, days),
-      }),
+      this.verifiedCount(search.q, search.place, days, now),
       this.schoolInventory(search.q, days).catch(() => undefined),
     ]);
     const pending = {
@@ -1607,17 +1794,22 @@ export class InstitutionItemsService
       failed = true;
     }
     if (station) {
-      const publicList = await this.publicStation(site, query.registeredDays);
+      const publicList = await this.publicStation(
+        site,
+        query.registeredDays,
+        itemSearch(query.q || ''),
+      );
       failed ||= publicList.failed;
       if (this.db) {
         const stored = await this.db.verifiedPortalItem.findMany({
           omit: { searchFragments: true },
-          where: {
-            stored: true,
-            placeKey: stationKey(site.name),
-            source: { not: '경찰' },
-            day: { gte: since(query.registeredDays), lte: koreaDay() },
-          },
+          where: this.portalWhere(
+            query.q || '',
+            site.name,
+            query.registeredDays,
+            true,
+            query.category,
+          ),
         });
         const saved = stored.map((r) => this.savedItem(r));
         // 이전에 확인한 물품은 기관 한도 소진 중에도 남겨 두고 오래된 보관 상태를 다시 확인합니다.
@@ -1639,14 +1831,12 @@ export class InstitutionItemsService
       }
     }
     const cutoff = since(query.registeredDays),
-      end = koreaDay(),
-      term = clean(query.q || '');
+      end = koreaDay();
     const located = [...items.values()]
       .filter(
         (i) =>
           i.date >= cutoff &&
           i.date <= end &&
-          clean(i.name).includes(term) &&
           (query.category === 'ALL' || query.category === i.category),
       )
       .map((i) => ({
@@ -1700,7 +1890,14 @@ export class InstitutionItemsService
       if (v.expires <= Date.now()) this.areas.delete(k);
     const cached = this.areas.get(key);
     if (cached) return cached;
-    if (this.areas.size >= 32) throw Error('Nearby lookup busy');
+    if (this.areas.size >= 32) {
+      // 완료된 반경은 새 검색에 자리를 내주고, 실행 중인 작업은 중복 실행하지 않습니다.
+      const settled = [...this.areas].find(([, entry]) =>
+        Number.isFinite(entry.expires),
+      );
+      if (!settled) throw Error('Nearby lookup busy');
+      this.areas.delete(settled[0]);
+    }
     const parts = Promise.all([
       this.nearbyProvider('경찰', query),
       this.nearbyProvider('포털기관', query),
@@ -1720,48 +1917,157 @@ export class InstitutionItemsService
     );
     return entry;
   }
-  nearbyTotal(query: NearbyDto): NearbyCount {
+  async nearbyTotal(query: NearbyDto): Promise<NearbyCount> {
     let area: ReturnType<typeof this.area>;
     try {
       area = this.area(query);
     } catch {
       return { status: 'unavailable', total: null, incomplete: [] };
     }
-    if (area.count) return area.count.result;
+    if (area.count) return this.nearbyCountResponse(area.count);
+    // 날짜와 페이지를 제외해야 자정이나 서버 재시작 후에도 같은 반경을 찾을 수 있습니다.
+    const queryKey = createHash('sha256')
+      .update(
+        JSON.stringify([
+          'nearby-v1',
+          query.lat,
+          query.lng,
+          query.radiusM,
+          query.category,
+          query.registeredDays,
+          query.q || '',
+        ]),
+      )
+      .digest('hex');
+    const startedAt = new Date(Date.now());
+    const db = this.db;
     const job: NearbyCountJob = {
       result: { status: 'counting', total: null, incomplete: [] },
+      previous:
+        db && this.members
+          ? db.lastSearchCount
+              .findUnique({ where: { queryKey }, select: { total: true } })
+              .then((row) => row?.total ?? null)
+              .catch(() => null)
+          : Promise.resolve(null),
     };
     area.count = job;
-    const schoolCount = async () => {
-      const { sites, limited } = await this.places('한성대', query, true);
-      if (!sites.length) {
-        if (limited) throw Error('School lookup unavailable');
-        return 0;
-      }
-      const inventory = await this.schoolInventory(
-        query.q || '',
-        query.registeredDays,
-      );
-      return [...inventory.values()].filter(
-        (item) => query.category === 'ALL' || item.category === query.category,
-      ).length;
+    let confirmedSchool = 0;
+    let confirmedStations = 0;
+    const publishConfirmed = () => {
+      const subtotal = confirmedSchool + confirmedStations;
+      if (job.result.status === 'counting' && subtotal > 0)
+        job.result = {
+          status: 'counting',
+          total: null,
+          confirmedTotal: subtotal,
+          incomplete: [],
+        };
     };
-    void Promise.all([area.parts, schoolCount().catch(() => null)]).then(
-      ([parts, school]) => {
+    if (this.db) {
+      const db = this.db;
+      void this.checkedStations(query)
+        .then(async (sites) => {
+          if (!sites.length) return;
+          const where = this.portalWhere(
+            query.q || '',
+            '',
+            query.registeredDays,
+            false,
+            query.category,
+          );
+          confirmedStations = await db.verifiedPortalItem.count({
+            where: {
+              ...where,
+              source: { not: '경찰' },
+              placeKey: { in: sites.map((s) => stationKey(s.name)) },
+            },
+          });
+          publishConfirmed();
+        })
+        .catch(() => undefined);
+    }
+    const school = this.schoolStockInArea(query)
+      .then(({ items }) => {
+        confirmedSchool = items.length;
+        publishConfirmed();
+        return confirmedSchool;
+      })
+      .catch(() => null);
+    void Promise.all([area.parts, school])
+      .then(async ([parts, school]) => {
         const incomplete: Source[] = [];
         if (school === null) incomplete.push('한성대');
         if (parts[0].notices.length) incomplete.push('경찰');
         if (parts[1].notices.length) incomplete.push('포털기관');
-        job.result = {
-          total: (school || 0) + combine(parts).items.length,
+        const agencyTotal = (school ?? 0) + combine(parts).items.length;
+        const updated: NearbyCount = {
+          total: agencyTotal,
           status: incomplete.length ? 'partial' : 'complete',
           incomplete,
         };
+        if (db && this.members) {
+          const previous = await job.previous;
+          try {
+            const memberPage = await this.members.search({
+              ...query,
+              cursor: undefined,
+              limit: 1,
+            });
+            const combined = memberPage.meta.total + agencyTotal;
+            // 기관 오류로 줄어든 부분 합계는 직전 기록을 지우지 않습니다. 정상 확인한 0도 저장합니다.
+            updated.lastAreaTotal = incomplete.length
+              ? Math.max(previous ?? 0, combined)
+              : combined;
+            if (!incomplete.length || combined > 0) {
+              const written =
+                await db.$executeRaw`INSERT INTO last_search_counts AS old (query_key,total,police_included,checked_at)
+              VALUES (${queryKey},${combined},${!incomplete.includes('경찰')},${startedAt})
+              ON CONFLICT (query_key) DO UPDATE SET total=EXCLUDED.total,police_included=EXCLUDED.police_included,checked_at=EXCLUDED.checked_at
+              WHERE old.checked_at < EXCLUDED.checked_at AND (${!incomplete.length} OR old.total <= EXCLUDED.total)`;
+              if (!written) {
+                const latest = await db.lastSearchCount.findUnique({
+                  where: { queryKey },
+                  select: { total: true },
+                });
+                if (latest) updated.lastAreaTotal = latest.total;
+              }
+            }
+          } catch {
+            if (previous != null && updated.lastAreaTotal == null)
+              updated.lastAreaTotal = previous;
+            this.logger.warn('주변 합계 저장을 다음 확인 때 다시 시도합니다.');
+          }
+        }
+        job.result = updated;
         if (incomplete.length)
           area.expires = Math.min(area.expires, Date.now() + 60000);
-      },
+      })
+      .catch(() => {
+        job.result = { status: 'unavailable', total: null, incomplete: [] };
+      });
+    return this.nearbyCountResponse(job);
+  }
+  private async nearbyCountResponse(job: NearbyCountJob): Promise<NearbyCount> {
+    const previous = await job.previous;
+    if (job.result.lastAreaTotal != null || previous == null) return job.result;
+    return { ...job.result, lastAreaTotal: previous };
+  }
+  private async schoolStockInArea(query: NearbyDto) {
+    const { sites, limited } = await this.places('한성대', query, true);
+    const site = sites[0];
+    if (!site) {
+      if (limited) throw Error('School lookup unavailable');
+      return { site, items: [] };
+    }
+    const inventory = await this.schoolInventory(
+      query.q || '',
+      query.registeredDays,
     );
-    return job.result;
+    const items = [...inventory.values()].filter(
+      (item) => query.category === 'ALL' || item.category === query.category,
+    );
+    return { site, items };
   }
   private async nearbySchool(query: NearbyDto, startPage: number) {
     // 다음 페이지에서 실패해도 같은 위치에서 재시도할 수 있게 합니다.
@@ -1805,7 +2111,143 @@ export class InstitutionItemsService
     });
     return { part, nextCursor };
   }
+  private async confirmedNearby(
+    query: NearbyDto,
+    school: Promise<
+      Awaited<ReturnType<InstitutionItemsService['nearbySchool']>>
+    >,
+  ) {
+    const [campus, stations] = await Promise.all([
+      school,
+      this.checkedStations(query),
+    ]);
+    const checked = await readBatches(
+      stations.map((site) => async () => {
+        const page = await this.savedPage(
+          query.q || '',
+          site.name,
+          query.registeredDays,
+          0,
+          [],
+          0,
+          true,
+          query.category,
+        );
+        const distanceM = Math.round(distance(query, site));
+        return page.items.map((item) => ({
+          ...item,
+          distanceM,
+          foundLocation: {
+            lat: site.lat,
+            lng: site.lng,
+            label: '보관처 · ' + item.storage,
+          },
+        }));
+      }),
+      3,
+    );
+    const items = [
+      ...new Map(
+        [
+          ...campus.part.items,
+          ...checked.flatMap((result) =>
+            result.status === 'fulfilled' ? result.value : [],
+          ),
+        ].map((item) => [item.id, item]),
+      ).values(),
+    ].sort(
+      (a, b) =>
+        a.distanceM - b.distanceM ||
+        b.date.localeCompare(a.date) ||
+        a.id.localeCompare(b.id),
+    );
+    return {
+      items: items.slice(0, 25),
+      notices: [] as string[],
+      nextCursor: null,
+      refreshing: true,
+    };
+  }
+  private async checkedStations(query: NearbyDto) {
+    const { sites } = await this.places('포털기관', query, true);
+    const checked = await readBatches(
+      sites
+        .filter((s) => /역\s+.+$/u.test(s.name))
+        .map(
+          (site) => async () =>
+            (await this.uniqueStation(site)) ? site : null,
+        ),
+      3,
+    );
+    return checked.flatMap((r) =>
+      r.status === 'fulfilled' && r.value ? [r.value] : [],
+    );
+  }
   async nearby(query: NearbyDto) {
+    if (query.cursor === 'verified') {
+      const initial = Object.assign(new NearbyDto(), query, {
+        cursor: undefined,
+      });
+      const school = this.nearbySchool(initial, 1);
+      const full = this.nearbyPage(initial, school);
+      if (!this.db) return full;
+      // 이미 완성된 반경 목록은 즉시 전달한다. 첫 조회 중에는 검증된 행을 먼저
+      // 전달하고 클라이언트가 같은 반경의 최종 목록으로 교체할 수 있게 한다.
+      // 한성대 첫 페이지가 있으면 역 이름 대조나 공공기관 전체 조회를 기다리지 않습니다.
+      const campus = school
+        .then(({ part }) =>
+          part.items.length
+            ? {
+                items: part.items.slice(0, 25),
+                notices: part.notices,
+                nextCursor: null,
+                refreshing: true,
+              }
+            : full,
+        )
+        .catch(() => full);
+      const warmCampus =
+        this.schoolSnapshot &&
+        this.schoolSnapshot.checkedAt + 600000 > Date.now()
+          ? this.schoolStockInArea(initial)
+              .then(({ site, items }) => {
+                if (!site || !items.length) return full;
+                const distanceM = Math.round(distance(initial, site));
+                return {
+                  items: items
+                    .sort(
+                      (a, b) =>
+                        b.date.localeCompare(a.date) ||
+                        a.id.localeCompare(b.id),
+                    )
+                    .slice(0, 25)
+                    .map((item) => ({
+                      ...item,
+                      distanceM,
+                      foundLocation: {
+                        lat: site.lat,
+                        lng: site.lng,
+                        label: '보관처 · ' + item.storage,
+                      },
+                    })),
+                  notices: [],
+                  nextCursor: null,
+                  refreshing: true,
+                };
+              })
+              .catch(() => full)
+          : full;
+      const confirmed = this.confirmedNearby(initial, school)
+        .then((page) => (page.items.length ? page : full))
+        .catch(() => full);
+      return Promise.race([full, warmCampus, campus, confirmed]);
+    }
+    return this.nearbyPage(query);
+  }
+  private async nearbyPage(
+    query: NearbyDto,
+    firstSchool?: ReturnType<InstitutionItemsService['nearbySchool']>,
+  ) {
     const cursor = query.cursor;
     const schoolPage = cursor?.match(/^school:([1-9]\d{0,5})$/);
     if (schoolPage) {
@@ -1821,7 +2263,7 @@ export class InstitutionItemsService
     const offset = more ? Number(more[1]) : 0;
     const [parts, school] = await Promise.all([
       this.area(query).parts,
-      more ? null : this.nearbySchool(query, 1),
+      more ? null : (firstSchool ?? this.nearbySchool(query, 1)),
     ]);
     const agencies = combine(parts);
     const order = (a: Located, b: Located) =>

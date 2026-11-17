@@ -14,6 +14,7 @@ import { StreetMap } from './StreetMap';
 import { campus, mapApi, type MapItem, type Coordinates, type RoutePoint } from './mapData';
 import { readDeviceLocation, watchDeviceLocation } from './deviceLocation';
 import { usableLocation } from './locationFix';
+import { backgroundRoute, routeCommand, stopHint } from './backgroundRoute';
 
 function seoulDay(offset: number) {
   return new Date(Date.now() + 9 * 3600000 - offset * 86400000).toISOString().slice(0, 10);
@@ -106,6 +107,17 @@ export function DailyRouteScreen() {
     return id;
   }, []);
   const stop = useCallback(async () => {
+    if (backgroundRoute && accessToken) {
+      try {
+        await routeCommand('stop', { token: accessToken });
+        setActiveId(undefined);
+        setMessage('휴대폰의 위치 기록을 중지했어요.');
+        setRefresh((n) => n + 1);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : '기록 상태를 확인해 주세요.');
+      }
+      return;
+    }
     const id = localStop();
     if (!id || !accessToken) return;
     try {
@@ -149,6 +161,7 @@ export function DailyRouteScreen() {
   );
   useFocusEffect(
     useCallback(() => {
+      if (backgroundRoute) return;
       const sub = AppState.addEventListener('change', (s) => {
         if (s !== 'active') void stop();
       });
@@ -157,6 +170,39 @@ export function DailyRouteScreen() {
         void stop();
       };
     }, [stop]),
+  );
+  useFocusEffect(
+    useCallback(() => {
+      if (!backgroundRoute || !accessToken) return;
+      let closed = false;
+      let previous = '';
+      const update = async () => {
+        if (AppState.currentState !== 'active') return;
+        try {
+          const state = await routeCommand('status', { token: accessToken });
+          if (closed) return;
+          setActiveId(state.id);
+          const key = JSON.stringify([state.id, state.saved]);
+          if (key !== previous) {
+            previous = key;
+            setRefresh((n) => n + 1);
+          }
+          if (state.message) setMessage(state.message);
+        } catch {
+          /* 화면을 다시 열면 휴대폰 상태를 다시 읽습니다. */
+        }
+      };
+      void update();
+      const interval = setInterval(() => void update(), 4000);
+      const sub = AppState.addEventListener('change', (s) => {
+        if (s === 'active') void update();
+      });
+      return () => {
+        closed = true;
+        clearInterval(interval);
+        sub.remove();
+      };
+    }, [accessToken]),
   );
   useEffect(() => {
     const abort = new AbortController();
@@ -215,6 +261,43 @@ export function DailyRouteScreen() {
     const version = ++epoch.current;
     const token = accessToken;
     try {
+      if (backgroundRoute) {
+        await routeCommand('prepare', { token });
+        const status = await mapApi<Status>('/me/routes/status', { token });
+        const id = Crypto.randomUUID();
+        const session = await mapApi<{ startedAt: string; autoStopsAt: string }>(
+          '/me/routes/recordings',
+          {
+            token,
+            method: 'POST',
+            body: {
+              clientRecordingId: id,
+              agreed: true,
+              policyVersion: status.policyVersion,
+              source: 'DEVICE',
+            },
+          },
+        );
+        try {
+          await routeCommand('start', {
+            token,
+            id,
+            start: Date.parse(session.startedAt),
+            end: Date.parse(session.autoStopsAt),
+          });
+        } catch (error) {
+          await mapApi('/me/routes/recordings/' + id + '/stop', {
+            token,
+            method: 'POST',
+            body: {},
+          }).catch(() => undefined);
+          throw error;
+        }
+        setActiveId(id);
+        setConfirmed(false);
+        setMessage('휴대폰이 위치를 기록하고 있어요. ' + stopHint);
+        return;
+      }
       const initial = await readDeviceLocation().catch((error: unknown) => {
         if (version === epoch.current)
           setDevice({
@@ -322,7 +405,7 @@ export function DailyRouteScreen() {
       setConfirmed(false);
     } catch (e) {
       if (version === epoch.current) {
-        await stop();
+        if (!backgroundRoute) await stop();
         setMessage(e instanceof Error ? e.message : '기록을 시작하지 못했어요.');
       }
     } finally {
@@ -438,8 +521,11 @@ export function DailyRouteScreen() {
             {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
             {!loading && !points.length && <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>}
             <Text>
-              동의 후 이 화면을 보는 동안 위치를 기록하고, 내 계정에 최대 48시간 보관해요. 화면을
-              떠나면 기록이 중지돼요.
+              {backgroundRoute
+                ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. ' +
+                  stopHint +
+                  ' 한 번에 최대 24시간 기록하고 각 위치는 48시간 보관해요.'
+                : '동의 후 이 화면을 보는 동안 위치를 기록하고, 내 계정에 최대 48시간 보관해요. 화면을 떠나면 기록이 중지돼요.'}
             </Text>
             {activeId ? (
               <ActionButton label="위치 기록 중지" onPress={() => void stop()} />

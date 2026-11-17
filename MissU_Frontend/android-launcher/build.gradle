@@ -1,0 +1,44 @@
+plugins {
+    id 'com.android.application' version '8.9.2'
+}
+
+android {
+    namespace 'kr.missu.web'
+    compileSdk 36
+    // Expo의 _expo 폴더도 APK에 포함해야 첫 실행과 오프라인 화면이 열립니다.
+    androidResources {
+        ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+    defaultConfig {
+        applicationId 'kr.missu.web'
+        minSdk 23
+        targetSdk 36
+        versionCode 2
+        versionName '1.1.0'
+    }
+}
+
+def suppliedWeb = providers.gradleProperty('missuWebExport').orNull
+def exportDir = suppliedWeb ? file(suppliedWeb) : layout.buildDirectory.dir('team-web').get().asFile
+def packagedAssets = layout.buildDirectory.dir('generated/routeAssets')
+def exportWeb = tasks.register('exportMissuWeb', Exec) {
+    onlyIf { suppliedWeb == null }
+    workingDir file('..')
+    environment 'EXPO_PUBLIC_API_URL', System.getenv('EXPO_PUBLIC_API_URL') ?: 'https://missu-api-wkdu.onrender.com/api/v1'
+    environment 'EXPO_PUBLIC_POLICY_VERSION', System.getenv('EXPO_PUBLIC_POLICY_VERSION') ?: 'v1.0'
+    commandLine 'node', 'node_modules/expo/bin/cli', 'export', '--platform', 'web', '--output-dir', exportDir
+}
+def stageWeb = tasks.register('stageMissuWeb', Sync) {
+    dependsOn exportWeb
+    from(exportDir) {
+        into 'app'
+        include 'index.html', '_expo/**', 'assets/**', 'manifest.webmanifest', 'missu-*.png'
+    }
+    into packagedAssets
+    doFirst {
+        if (!new File(exportDir, 'index.html').text.contains('name="missu-android-route" content="2"'))
+            throw new GradleException('The web export must include Android route support.')
+    }
+}
+android.sourceSets.main.assets.srcDir(packagedAssets)
+tasks.named('preBuild') { dependsOn stageWeb }

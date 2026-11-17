@@ -9,7 +9,27 @@ import {
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import type { NearbyService } from './nearby.service';
 import type { DatabaseService } from '../database/database.service';
+
+// 서비스 단위 시험은 저장된 요약이 없는 첫 조회를 사용한다. 실제 변경 감지와
+// 재사용은 PostgreSQL 통합 시험에서 검증한다.
+function firstCountDatabase(
+  count: (args: { where: object }) => Promise<number>,
+) {
+  const tx = {
+    $queryRaw: async () => [{ revisions: {}, summary: null }],
+    verifiedPortalItem: {
+      groupBy: async ({ where }: { where: { day: { gte: string } } }) => [
+        { day: where.day.gte, _count: { _all: await count({ where }) } },
+      ],
+    },
+  };
+  return {
+    $transaction: (read: (db: typeof tx) => unknown) => read(tx),
+    $executeRaw: async () => 1,
+  };
+}
 
 const school =
   '<table><th>작성일</th><tr><td><a href="/bbs/hansung/2175/1/artclView.do"><span class="cate-name">접수</span><strong>학교에서 습득한 (이어폰) 보관중</strong></a></td><td class="td-date">2026.11.22</td></tr><tr><td><a href="/bbs/hansung/2175/2/artclView.do">이어폰 반환완료</a></td><td class="td-date">2026.11.22</td></tr></table>';
@@ -83,6 +103,41 @@ describe('기관 습득물', () => {
     const missing = service(() => xml([]));
     await expect(missing.detail('lost112:F0001:1')).rejects.toThrow(
       '관리번호의 물품 정보를 찾을 수 없어요',
+    );
+  });
+  it('한성대 게시글의 본문 사진과 실제 이미지 첨부만 중복 없이 노출한다', () => {
+    const html =
+      '<div class="title"><span class="cate-name">접수</span><strong>충전기</strong>작성일 : 2026.11.13</div>' +
+      '<img src="/logo.png"><div class="txt"><img src="/uploads/item.jpg"><img src="https://example.org/x.png"></div>' +
+      '<a href="/bbs/hansung/2175/33/download.do">충전기.JPG</a>'.repeat(2) +
+      '<a href="/bbs/hansung/2175/34/download.do">목록.pdf</a>';
+    expect(schoolDetail(html, '55')?.photoUrls).toEqual([
+      'https://www.hansung.ac.kr/uploads/item.jpg',
+      'https://www.hansung.ac.kr/bbs/hansung/2175/33/download.do',
+    ]);
+  });
+  it('다른 물품 사진·기본 이미지·반환품을 빼고 요청한 관리번호의 공개 첨부만 읽는다', async () => {
+    const address =
+      '/lost112Minwon/selectLostInfoAttachFile.do?pkupCmdtyMngId=F0001&fileId=C123';
+    const page =
+      '<table><tr><th>관리번호</th><td>F0001-1</td></tr><tr><th>유실물 상태</th><td>보관중</td></tr></table>' +
+      '<div id="imgDiv"><img src="/img/error/lostNonImg_2.png"></div><script>if (el) el.src = "' +
+      address +
+      '";</script>';
+    const read = (html: string) =>
+      service(() => html).publicPhotos('lost112:F0001:1');
+    await expect(read(page)).resolves.toEqual([
+      'https://minwon24.police.go.kr' + address,
+    ]);
+    await expect(
+      read(page.replace('fileId=C123', 'fileId=N')),
+    ).resolves.toEqual([]);
+    await expect(
+      read(page.replace('pkupCmdtyMngId=F0001', 'pkupCmdtyMngId=F0002')),
+    ).resolves.toEqual([]);
+    await expect(read(page.replace('보관중', '반환완료'))).resolves.toEqual([]);
+    await expect(read(page.replace('F0001-1', 'F0001-2'))).rejects.toThrow(
+      '기관 사진',
     );
   });
   it('센터의 잘못 표기된 대표번호를 바로잡고 일반 전화번호는 유지한다', () => {
@@ -232,7 +287,7 @@ describe('기관 습득물', () => {
       const api = new InstitutionItemsService(
         {} as ExternalHttpService,
         {
-          verifiedPortalItem: { count },
+          ...firstCountDatabase(count),
           agencyCountSnapshot: { findMany: async () => [] },
           lastSearchCount: { findUnique: async () => null },
         } as unknown as DatabaseService,
@@ -265,7 +320,7 @@ describe('기관 습득물', () => {
       listTotal: null as number | null,
     }));
     const db = {
-      verifiedPortalItem: { count: async () => 87 },
+      ...firstCountDatabase(async () => 87),
       foundItem: { count: async () => 2 },
       $executeRaw: async () => 1,
       agencyCountSnapshot: { findMany: async () => jobs },
@@ -390,10 +445,328 @@ describe('기관 습득물', () => {
       OR: expect.arrayContaining([{ placeKey: { contains: '가상역2호선' } }]),
     });
   });
+  it('기관 재조회 중에도 학교와 보관 확인 목록을 날짜·관리번호순으로 함께 넘긴다', async () => {
+    const rows = Array.from({ length: 26 }, (_, i) => ({
+      id: 'lost112:V' + (100 + i) + ':1',
+      name: '카드지갑',
+      storage: '가상역',
+      source: '지하철',
+      category: 'WALLET_BAG',
+      day: '2026-11-13',
+      checkedAt: new Date(Date.now()),
+    }));
+    const findMany = jest
+      .fn()
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce(rows.slice(24));
+    const api = new InstitutionItemsService(service(() => xml([]))['http'], {
+      verifiedPortalItem: { findMany },
+    } as unknown as DatabaseService);
+    const internals = api as unknown as PickMethods;
+    type PickMethods = {
+      schoolInventory: (typeof api)['schoolInventory'];
+      records: (typeof api)['records'];
+    };
+    jest
+      .spyOn(internals, 'records')
+      .mockImplementation(() => new Promise(() => {}));
+    jest.spyOn(internals, 'schoolInventory').mockResolvedValue(
+      new Map([
+        [
+          'hansung:2',
+          {
+            id: 'hansung:2',
+            name: '지갑',
+            source: '한성대',
+            storage: '한성대',
+            date: '2026-11-13',
+            dateLabel: '습득일',
+            category: 'WALLET_BAG',
+            url: '',
+            reference: '2',
+          },
+        ],
+      ]),
+    );
+    const first = await api.search('지갑', '', 'all');
+    expect(first).toMatchObject({ verifiedPage: true });
+    expect(first.items.map((i) => i.id)).toEqual([
+      'hansung:2',
+      ...rows.slice(0, 24).map((r) => r.id),
+    ]);
+    const next = await api.search('지갑', '', 'all', first.nextCursor!);
+    expect(next.items.map((i) => i.id)).toEqual(
+      rows.slice(24).map((r) => r.id),
+    );
+    expect(findMany.mock.calls[1][0].where.AND[1].OR).toEqual([
+      { day: { lt: '2026-11-13' } },
+      { day: '2026-11-13', id: { gt: rows[23].id } },
+    ]);
+    await expect(
+      api.search('핸드폰', '', 'all', first.nextCursor!),
+    ).rejects.toThrow();
+  });
+  it.each([true, false])(
+    '반경 전체 조회 중 확인 행이 있을 때만 먼저 표시한다 (%s)',
+    async (hasRows) => {
+      const known = {
+        id: 'lost112:V100:1',
+        name: '갤럭시 버즈',
+        storage: '가상역(2호선)',
+        source: '지하철',
+        day: '2026-11-13',
+        checkedAt: new Date(Date.now()),
+        category: 'ELECTRONICS',
+      };
+      const findMany = jest.fn().mockResolvedValue(hasRows ? [known] : []);
+      const api = new InstitutionItemsService(service(() => xml([]))['http'], {
+        verifiedPortalItem: { findMany },
+      } as unknown as DatabaseService);
+      const internals = api as unknown as {
+        places: (typeof api)['places'];
+        uniqueStation: (typeof api)['uniqueStation'];
+        nearbyPage: (typeof api)['nearbyPage'];
+      };
+      const query = Object.assign(new NearbyDto(), {
+        lat: 37.5,
+        lng: 127,
+        radiusM: 500,
+        q: '이어폰',
+        category: 'ELECTRONICS',
+        cursor: 'verified',
+      });
+      const site = {
+        lat: 37.5,
+        lng: 127,
+        name: '가상역 2호선',
+        address: '테스트로 1',
+        source: '지하철' as const,
+      };
+      jest.spyOn(internals, 'places').mockImplementation(async (source) => ({
+        sites:
+          source === '포털기관'
+            ? [site, { ...site, name: '동명역 2호선' }]
+            : [],
+        limited: false,
+      }));
+      jest
+        .spyOn(internals, 'uniqueStation')
+        .mockImplementation(async (site) => site.name === '가상역 2호선');
+      const full = { items: [], notices: [], nextCursor: null };
+      let release!: () => void;
+      const gate = new Promise<typeof full>((resolve) => {
+        release = () => resolve(full);
+      });
+      jest.spyOn(internals, 'nearbyPage').mockReturnValue(gate);
+      const pending = api.nearby(query);
+      if (hasRows) {
+        const first = await pending;
+        expect(first).toMatchObject({
+          refreshing: true,
+          items: [
+            {
+              id: known.id,
+              distanceM: 0,
+              foundLocation: { lat: 37.5, lng: 127 },
+            },
+          ],
+        });
+        expect(findMany).toHaveBeenCalledTimes(1);
+        expect(findMany.mock.calls[0][0].where).toMatchObject({
+          stored: true,
+          category: 'ELECTRONICS',
+          placeKey: '가상역2호선',
+        });
+      }
+      release();
+      if (!hasRows) expect(await pending).toBe(full);
+      expect(await api.nearby({ ...query, cursor: undefined })).toBe(full);
+    },
+  );
+  it('느린 기관 조회 전에 한성대 첫 목록과 실제 보관 건수를 표시하고 최종 집계로 교체한다', async () => {
+    const day = new Date(Date.now()).toISOString().slice(0, 10);
+    const campus = {
+      name: '한성대학교 상상관',
+      address: '',
+      source: '한성대' as const,
+      lat: 37.5827,
+      lng: 127.0102,
+    };
+    const station = {
+      ...campus,
+      source: '지하철' as const,
+      name: '가상역 4호선',
+    };
+    const sample = {
+      source: '한성대' as const,
+      name: '지갑',
+      category: 'WALLET_BAG',
+      storage: campus.name,
+      date: day,
+      dateLabel: '습득일' as const,
+      reference: '',
+      url: '',
+    };
+    const stock = Array.from({ length: 41 }, (_, i) => ({
+      ...sample,
+      id: 'hansung:' + i,
+    }));
+    const count = jest.fn().mockResolvedValue(13);
+    const api = new InstitutionItemsService(service(() => xml([]))['http'], {
+      verifiedPortalItem: { count, findMany: jest.fn().mockResolvedValue([]) },
+    } as unknown as DatabaseService);
+    const methods = api as unknown as {
+      nearbyProvider: (typeof api)['nearbyProvider'];
+      nearbySchool: (typeof api)['nearbySchool'];
+      places: (typeof api)['places'];
+      uniqueStation: (typeof api)['uniqueStation'];
+    };
+    api['schoolSnapshot'] = {
+      items: new Map(stock.map((v) => [v.id, v])),
+      checkedAt: Date.now(),
+    };
+    jest.spyOn(methods, 'places').mockImplementation(async (source) => ({
+      sites:
+        source === '한성대' ? [campus] : source === '포털기관' ? [station] : [],
+      limited: false,
+    }));
+    jest.spyOn(methods, 'uniqueStation').mockResolvedValue(true);
+    let finish!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
+      await gate;
+      return { items: [], notices: [] };
+    });
+    jest.spyOn(methods, 'nearbySchool').mockImplementation(async () => {
+      await gate;
+      return { part: { items: [], notices: [] }, nextCursor: 'school:2' };
+    });
+    const query = Object.assign(new NearbyDto(), {
+      lat: campus.lat,
+      lng: campus.lng,
+      category: 'WALLET_BAG' as const,
+    });
+    try {
+      api.nearbyTotal(query);
+      const first = await api.nearby({ ...query, cursor: 'verified' });
+      expect(first).toMatchObject({ refreshing: true, nextCursor: null });
+      expect(first.items).toHaveLength(25);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(await api.nearbyTotal(query)).toMatchObject({
+        status: 'counting',
+        total: null,
+        confirmedTotal: 54,
+      });
+      expect(count.mock.calls[0][0].where).toMatchObject({
+        stored: true,
+        category: 'WALLET_BAG',
+        placeKey: { in: ['가상역4호선'] },
+      });
+    } finally {
+      finish();
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await api.nearbyTotal(query)).toEqual({
+      status: 'complete',
+      total: 41,
+      incomplete: [],
+    });
+  });
+  it('다시 연 반경은 이전 회원·기관 합계를 먼저 읽고 정상 재확인이 끝나면 감소도 반영한다', async () => {
+    const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
+    const stored = new Map<string, number>();
+    const db = {
+      lastSearchCount: {
+        findUnique: async ({ where }: { where: { queryKey: string } }) =>
+          stored.has(where.queryKey)
+            ? { total: stored.get(where.queryKey) }
+            : null,
+      },
+      $executeRaw: async (
+        _sql: TemplateStringsArray,
+        key: string,
+        total: number,
+      ) => {
+        stored.set(key, total);
+        return 1;
+      },
+    } as unknown as DatabaseService;
+    const search = jest.fn().mockResolvedValue({ meta: { total: 3 } });
+    function start(campusCount: number) {
+      const api = new InstitutionItemsService({} as ExternalHttpService, db, {
+        search,
+      } as unknown as NearbyService);
+      const methods = api as unknown as {
+        nearbyProvider: (typeof api)['nearbyProvider'];
+        checkedStations: (typeof api)['checkedStations'];
+        schoolStockInArea: (typeof api)['schoolStockInArea'];
+      };
+      let finish!: () => void;
+      const slow = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
+        await slow;
+        return { items: [], notices: [] };
+      });
+      jest.spyOn(methods, 'checkedStations').mockResolvedValue([]);
+      jest.spyOn(methods, 'schoolStockInArea').mockResolvedValue({
+        site: { ...query, name: '학교', address: '', source: '한성대' },
+        items: Array(campusCount),
+      });
+      return { api, finish };
+    }
+    const first = start(1015);
+    await first.api.nearbyTotal(query);
+    first.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await first.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 1018,
+    });
+    const next = start(201);
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      status: 'counting',
+      lastAreaTotal: 1018,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      confirmedTotal: 201,
+      lastAreaTotal: 1018,
+    });
+    for (const change of [
+      { radiusM: 500 },
+      { lat: 37.6 },
+      { q: '지갑' },
+      { category: 'ELECTRONICS' as const },
+      { registeredDays: '7' },
+    ]) {
+      expect(
+        (await next.api.nearbyTotal({ ...query, ...change })).lastAreaTotal,
+      ).toBeUndefined();
+    }
+    next.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await next.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 204,
+    });
+    search.mockResolvedValue({ meta: { total: 0 } });
+    const empty = start(0);
+    await empty.api.nearbyTotal(query);
+    empty.finish();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(await empty.api.nearbyTotal(query)).toMatchObject({
+      status: 'complete',
+      lastAreaTotal: 0,
+    });
+  });
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
     const count = jest.fn().mockResolvedValue(327);
     const db = {
-      verifiedPortalItem: { count },
+      ...firstCountDatabase(count),
       agencyCountSnapshot: { findMany: async () => [] },
       lastSearchCount: { findUnique: async () => null },
     } as unknown as DatabaseService;
@@ -748,12 +1121,12 @@ describe('기관 습득물', () => {
     expect(fetched).toEqual([1, 2, 3, 4]);
     // 목록을 끝까지 누르지 않은 새 검색도 독립적으로 전체를 계산합니다.
     const fresh = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
-    expect(api.nearbyTotal(fresh)).toMatchObject({
+    expect(await api.nearbyTotal(fresh)).toMatchObject({
       status: 'counting',
       total: null,
     });
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(api.nearbyTotal(fresh)).toEqual({
+    expect(await api.nearbyTotal(fresh)).toEqual({
       status: 'complete',
       total: 2,
       incomplete: [],
@@ -761,7 +1134,7 @@ describe('기관 습득물', () => {
     const filtered = { ...fresh, category: 'WALLET_BAG' as const };
     api.nearbyTotal(filtered);
     await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(api.nearbyTotal(filtered)).toMatchObject({
+    expect(await api.nearbyTotal(filtered)).toMatchObject({
       status: 'complete',
       total: 0,
     });
@@ -951,7 +1324,7 @@ describe('기관 습득물', () => {
     expect(next.nextCursor).toBeNull();
     expect(first.notices).toEqual([]);
     expect(indexCalls).toHaveLength(5);
-    expect(api.nearbyTotal(query)).toEqual({
+    expect(await api.nearbyTotal(query)).toEqual({
       status: 'complete',
       total: 29,
       incomplete: [],

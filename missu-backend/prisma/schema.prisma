@@ -375,6 +375,20 @@ model LastSearchCount {
   @@map("last_search_counts")
 }
 
+// 날짜별 변경 번호로 보관 상태와 검색 조건이 그대로인 날짜의 건수를 재사용한다.
+model VerifiedSearchDayVersion {
+  day String @id
+  revision BigInt
+  @@map("verified_search_day_versions")
+}
+
+model VerifiedSearchCountCache {
+  slot Int @id
+  queryKey String @map("query_key")
+  summary Json
+  @@map("verified_search_count_cache")
+}
+
 model AgencyCountBudget {
   day   String @id
   calls Int

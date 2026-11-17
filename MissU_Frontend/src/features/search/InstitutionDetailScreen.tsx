@@ -1,16 +1,74 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
-import { Linking, ScrollView, StyleSheet, Text } from 'react-native';
+import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
 import { Screen } from '@/components/Screen';
 import { typography } from '@/constants/theme';
-import { institutionDetail, type InstitutionItem } from '@/lib/institutionItems';
+import {
+  institutionDetail,
+  publicInstitutionPhotos,
+  type InstitutionItem,
+} from '@/lib/institutionItems';
 
 function back() {
   if (router.canGoBack()) router.back();
   else router.replace('/');
+}
+function InstitutionPhotos({ item }: { item: InstitutionItem }) {
+  const supplied = item.photoUrls;
+  const police = item.id.startsWith('lost112:');
+  const [lookup, setLookup] = useState(police && !supplied?.length);
+  const [publicUrls, setPublicUrls] = useState<string[]>();
+  const [failed, setFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    if (!lookup) return;
+    const controller = new AbortController();
+    void publicInstitutionPhotos(item.id, controller.signal).then(
+      (urls) => {
+        if (!controller.signal.aborted) setPublicUrls(urls);
+      },
+      () => {
+        if (!controller.signal.aborted) setFailed(true);
+      },
+    );
+    return () => controller.abort();
+  }, [lookup, item.id, attempt]);
+
+  const urls = lookup ? publicUrls : supplied;
+  if (!urls?.length && !failed) return null;
+  function onError() {
+    // 예전 공공데이터 사진 주소가 만료됐으면 같은 물품의 경찰민원24 첨부를 다시 확인합니다.
+    if (police && !lookup) setLookup(true);
+    else setFailed(true);
+  }
+  return (
+    <View style={styles.photos}>
+      <Text style={typography.label}>물품 사진</Text>
+      {urls?.map((uri, i) => (
+        <Image
+          key={uri + ':' + attempt}
+          source={{ uri }}
+          resizeMode="contain"
+          accessibilityLabel={item.name + ' 사진 ' + (i + 1)}
+          style={styles.photo}
+          onError={onError}
+        />
+      ))}
+      {failed && (
+        <ActionButton
+          label="기관 사진 다시 불러오기"
+          variant="outline"
+          onPress={() => {
+            setFailed(false);
+            setAttempt((n) => n + 1);
+          }}
+        />
+      )}
+    </View>
+  );
 }
 export function InstitutionDetailScreen({ id }: { id: string }) {
   const [item, setItem] = useState<InstitutionItem>();
@@ -59,6 +117,7 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
             <Text accessibilityRole="header" style={typography.heading}>
               {item.name}
             </Text>
+            <InstitutionPhotos key={item.id} item={item} />
             <Text style={typography.label}>
               {item.source === '한성대'
                 ? '한성대 · 학교 접수'
@@ -98,4 +157,8 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
     </Screen>
   );
 }
-const styles = StyleSheet.create({ content: { padding: 20, gap: 16 } });
+const styles = StyleSheet.create({
+  content: { padding: 20, gap: 16 },
+  photos: { gap: 8 },
+  photo: { width: '100%', height: 220, borderRadius: 12 },
+});

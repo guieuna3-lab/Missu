@@ -10,8 +10,109 @@ import { koreaDay } from '../src/items/institution-records';
 import { harness } from './mvp-support';
 import { randomUUID, createHash } from 'node:crypto';
 import { itemSearch, likeLiteral } from '../src/items/item-search';
+import { countVerifiedDays } from '../src/items/verified-search-count';
 
 describe('기관 전 품목 자동 수집', () => {
+  it('날짜별 집계를 재사용하고 반환·이동·수정·삭제와 기간 변경을 정확히 반영한다', async () => {
+    if (
+      process.env.MISSU_TEST_DATABASE !== '1' ||
+      new URL(process.env.DATABASE_URL!).pathname !== '/missu_test'
+    )
+      throw Error('전용 시험 DB 필요');
+    const db = new DatabaseService();
+    const prefix = randomUUID();
+    const day1 = '2026-06-01',
+      day2 = '2026-06-02';
+    const filters = {
+      stored: true,
+      name: { startsWith: prefix },
+      placeKey: '역',
+    };
+    const read = (from = day1, through = day2) =>
+      countVerifiedDays(db, 'test', from, through, filters);
+    const common = {
+      name: prefix,
+      source: '지하철',
+      storage: '역',
+      placeKey: '역',
+      category: 'OTHER',
+      stored: true,
+      checkedAt: new Date(),
+    };
+    const id = prefix + 'a',
+      id2 = prefix + 'b';
+    const key = createHash('sha256')
+      .update(JSON.stringify([1, 'test', filters]))
+      .digest('hex');
+    const stamp = async () =>
+      (
+        await db.$queryRaw<
+          { stamp: string }[]
+        >`SELECT xmin::text AS stamp FROM verified_search_count_cache WHERE query_key = ${key}`
+      )[0]?.stamp;
+    try {
+      expect(await read()).toBe(0);
+      await db.verifiedPortalItem.createMany({
+        data: [
+          { ...common, id, day: day1 },
+          { ...common, id: id2, day: day2 },
+        ],
+      });
+      expect(await read()).toBe(2);
+      const saved = await stamp();
+      expect(saved).toBeDefined();
+      await db.verifiedPortalItem.update({
+        where: { id },
+        data: { checkedAt: new Date() },
+      });
+      expect(await read()).toBe(2);
+      expect(await stamp()).toBe(saved);
+      await db.verifiedPortalItem.update({
+        where: { id },
+        data: { stored: false },
+      });
+      expect(await read()).toBe(1);
+      await expect(
+        db.$transaction(async (tx) => {
+          await tx.verifiedPortalItem.update({
+            where: { id },
+            data: { stored: true },
+          });
+          throw Error('시험 롤백');
+        }),
+      ).rejects.toThrow('시험 롤백');
+      expect(await read()).toBe(1);
+      await db.verifiedPortalItem.update({
+        where: { id: id2 },
+        data: { day: day1 },
+      });
+      expect(await read(day2)).toBe(0);
+      expect(await read()).toBe(1);
+      await db.verifiedPortalItem.update({
+        where: { id: id2 },
+        data: { name: '다른 품목' },
+      });
+      expect(await read()).toBe(0);
+      await db.verifiedPortalItem.update({
+        where: { id: id2 },
+        data: { name: prefix, placeKey: '다른 역' },
+      });
+      expect(await read()).toBe(0);
+      await db.verifiedPortalItem.update({
+        where: { id: id2 },
+        data: { placeKey: '역' },
+      });
+      expect(await read()).toBe(1);
+      await db.verifiedPortalItem.delete({ where: { id: id2 } });
+      expect(await read()).toBe(0);
+    } finally {
+      await db.verifiedPortalItem.deleteMany({
+        where: { id: { in: [id, id2] } },
+      });
+      await db.$executeRaw`DELETE FROM verified_search_count_cache WHERE query_key = ${key}`;
+      await db.$disconnect();
+    }
+  });
   it('검색 없이 여러 종류를 저장하고 한도 소진 후 다음 한국 날짜에 남은 후보부터 재개한다', async () => {
     if (
       process.env.MISSU_TEST_DATABASE !== '1' ||

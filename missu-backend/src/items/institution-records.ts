@@ -15,6 +15,7 @@ export type InstitutionItem = {
   category: string;
   phone?: string;
   foundPlace?: string;
+  photoUrls?: string[];
 };
 export type Batch = { items: InstitutionItem[]; limited: boolean };
 
@@ -40,6 +41,42 @@ export const schoolList =
   'https://www.hansung.ac.kr' + schoolBoard + 'artclList.do';
 export const schoolArticle = (id: string) =>
   'https://www.hansung.ac.kr' + schoolBoard + id + '/artclView.do';
+
+const raster = /\.(?:jpe?g|png|gif|webp|avif)$/i;
+
+function schoolPhotos(dom: ReturnType<typeof parseDocument>, article: string) {
+  const urls = new Set<string>();
+  const add = (value: string, attachment: boolean) => {
+    if (!value) return;
+    try {
+      const url = new URL(value, article);
+      if (
+        url.origin !== 'https://www.hansung.ac.kr' ||
+        url.username ||
+        url.password
+      )
+        return;
+      if (
+        attachment
+          ? /^\/bbs\/hansung\/2175\/\d+\/download\.do$/.test(url.pathname)
+          : raster.test(url.pathname)
+      )
+        urls.add(url.href);
+    } catch {
+      // 원본의 깨진 사진 주소 하나가 상세 전체를 가리지 않게 합니다.
+    }
+  };
+  const body = DomUtils.findOne(
+    (el) => el.attribs.class?.split(/\s+/).includes('txt'),
+    dom.children,
+  );
+  if (body)
+    for (const img of byTag('img', body.children)) add(img.attribs.src, false);
+  for (const a of byTag('a', dom.children)) {
+    if (raster.test(plain(a).trim())) add(a.attribs.href, true);
+  }
+  return [...urls];
+}
 function schoolRecord(
   id: string,
   title: string,
@@ -92,6 +129,7 @@ export function schoolDetail(html: string, id: string) {
       ? schoolRecord(id, plain(title).trim(), plain(state).trim(), date)
       : undefined;
   const found = schoolFoundDay(html);
+  if (item) item.photoUrls = schoolPhotos(dom, item.url);
   if (item && found)
     return { ...item, date: found, dateLabel: '습득일' as const };
   return item;
@@ -176,6 +214,42 @@ export function policePage(xml: string) {
   };
 }
 // 경찰민원24의 공개 상세에서 보관 상태와 물품 정보만 읽습니다.
+function policePhoto(value: string | undefined, atcId: string) {
+  if (!value) return;
+  try {
+    const url = new URL(value, 'https://minwon24.police.go.kr');
+    if (
+      !['http:', 'https:'].includes(url.protocol) ||
+      url.username ||
+      url.password ||
+      url.port
+    )
+      return;
+    if (
+      url.hostname === 'minwon24.police.go.kr' &&
+      url.pathname === '/lost112Minwon/selectLostInfoAttachFile.do' &&
+      url.searchParams.get('pkupCmdtyMngId') === atcId &&
+      /^[A-Za-z0-9_-]{2,80}$/.test(url.searchParams.get('fileId') || '')
+    ) {
+      const target = new URL(url.pathname, 'https://minwon24.police.go.kr');
+      target.search = new URLSearchParams({
+        pkupCmdtyMngId: atcId,
+        fileId: url.searchParams.get('fileId')!,
+      }).toString();
+      return target.href;
+    }
+    if (
+      ['www.lost112.go.kr', 'lost112.go.kr'].includes(url.hostname) &&
+      url.pathname.startsWith('/lostnfs/images/uploadImg/') &&
+      raster.test(url.pathname) &&
+      !/(?:no[_-]?img|no[_-]?image|lostNonImg)/i.test(url.pathname)
+    ) {
+      return 'https://' + url.hostname + url.pathname;
+    }
+  } catch {
+    // 사진이 없거나 기본 이미지 주소면 물품 정보만 표시합니다.
+  }
+}
 export function portalDetail(html: string, atcId: string, fdSn: string) {
   const dom = parseDocument(html);
   const fields = new Map<string, string>();
@@ -193,6 +267,23 @@ export function portalDetail(html: string, atcId: string, fdSn: string) {
     .filter((el) => el.attribs.class?.split(/\s+/).includes('box-tit1'))
     .map((el) => plain(el).trim())
     .find((title) => title && title !== '상세내용');
+  const preview = DomUtils.findOne(
+    (el) => el.attribs.id === 'imgDiv',
+    dom.children,
+  );
+  // 경찰민원24는 같은 물품의 사진 주소를 본문의 스크립트로 지정하기도 합니다.
+  // 스크립트를 실행하지 않고 해당 관리번호의 공식 첨부 주소만 읽습니다.
+  const image =
+    (preview && byTag('img', preview.children)[0]?.attribs.src) || '';
+  const assigned = byTag('script', dom.children)
+    .map(
+      (el) =>
+        plain(el).match(
+          /\bel\.src\s*=\s*["']([^"']*\/selectLostInfoAttachFile\.do\?[^"']+)["']/,
+        )?.[1],
+    )
+    .map((value) => policePhoto(value, atcId))
+    .find(Boolean);
   return {
     atcId,
     fdSn,
@@ -203,6 +294,7 @@ export function portalDetail(html: string, atcId: string, fdSn: string) {
     csteSteNm: fields.get('유실물 상태')!,
     prdtClNm: fields.get('물품 분류') || '',
     tel: fields.get('보관장소 연락처') || '',
+    fdFilePathImg: policePhoto(image, atcId) || assigned || '',
   };
 }
 
@@ -241,6 +333,7 @@ export function governmentItem(
     /지하철|도시철도|교통공사|메트로|경전철|호선|역무실|역유실물|전철|철도공사/u.test(
       [row.fndKeepOrgnSeNm, row.orgNm, storage].join(' '),
     );
+  const photo = policePhoto(row.fdFilePathImg, reference);
   return {
     id: 'lost112:' + reference + ':' + sn,
     reference: reference + ' / ' + sn,
@@ -252,6 +345,7 @@ export function governmentItem(
     storage,
     category: category((row.prdtClNm || '') + ' ' + name),
     url: policeSite,
+    ...(photo && { photoUrls: [photo] }),
     phone: custodianPhone(storage, row.tel),
   };
 }

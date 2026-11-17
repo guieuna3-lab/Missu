@@ -15,13 +15,17 @@ export type InstitutionItem = {
   category: string;
   phone?: string;
   foundPlace?: string;
+  photoUrls?: string[];
 };
 type NearbyInstitution = InstitutionItem & {
   foundLocation: Coordinates & { label: string };
   distanceM: number;
 };
 type Result<T> = { items: T[]; notices: string[] };
-type InstitutionPage = Result<InstitutionItem> & { nextCursor: string | null };
+type InstitutionPage = Result<InstitutionItem> & {
+  nextCursor: string | null;
+  verifiedPage?: boolean;
+};
 // 같은 화면을 다시 열 때만 짧게 재사용합니다. 오류 응답은 다음 조회에서 다시 확인합니다.
 const pages = new Map<string, { until: number; value: Promise<InstitutionPage> }>();
 // 경찰 조회 상태는 총건수에 반영하고, 개별 오류 문구는 목록에서 생략합니다.
@@ -89,10 +93,9 @@ export function institutionTotal(filters: SearchFilters, signal: AbortSignal) {
 export function nearbyInstitutions(params: string, signal: AbortSignal, cursor?: string) {
   const query = new URLSearchParams(params);
   if (cursor) query.set('cursor', cursor);
-  return institutionPage<Result<NearbyInstitution> & { nextCursor: string | null }>(
-    '/institution-items/nearby?' + query,
-    signal,
-  );
+  return institutionPage<
+    Result<NearbyInstitution> & { nextCursor: string | null; refreshing?: boolean }
+  >('/institution-items/nearby?' + query, signal);
 }
 // 카드와 공유 링크가 같은 상세 주소를 사용합니다. 보관 상태는 서버에서 다시 확인합니다.
 export function openInstitution(item: InstitutionItem) {
@@ -100,4 +103,7 @@ export function openInstitution(item: InstitutionItem) {
 }
 export function institutionDetail(id: string) {
   return mapApi<InstitutionItem>('/institution-items/detail/' + encodeURIComponent(id));
+}
+export function publicInstitutionPhotos(id: string, signal: AbortSignal) {
+  return mapApi<string[]>('/institution-items/photos/' + encodeURIComponent(id), { signal });
 }
