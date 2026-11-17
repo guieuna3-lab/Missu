@@ -42,11 +42,13 @@ export class InstitutionItemsController {
   ) {
     await this.rates.consume('institution-search:' + req.ip, 30, 60000);
     return {
-      data: await this.service.search(
-        query.q,
-        query.place,
-        query.period,
-        query.cursor,
+      data: await this.service.withSavedPhotos(
+        await this.service.search(
+          query.q,
+          query.place,
+          query.period,
+          query.cursor,
+        ),
       ),
     };
   }
@@ -124,6 +126,10 @@ export class InstitutionItemsController {
   @Get('recent')
   async recent(@Req() req: SessionRequest, @Query() query: InstitutionPageDto) {
     await this.rates.consume('institution-search:' + req.ip, 30, 60000);
-    return { data: await this.service.recent(query.cursor) };
+    return {
+      data: await this.service.withSavedPhotos(
+        await this.service.recent(query.cursor),
+      ),
+    };
   }
 }
