@@ -5,10 +5,14 @@ import { Icon, type IconName } from '@/components/Icon';
 
 // 목록·상세 표시 전용 분류입니다. 서버 분류(ELECTRONICS·WALLET_BAG·OTHER)가 거칠어서
 // 물품명 키워드로 아이콘만 고릅니다. 검색·필터 값에는 쓰지 않습니다.
-type Kind = 'electronics' | 'wallet' | 'card' | 'accessory' | 'key' | 'other';
+type Kind =
+  'electronics' | 'earphone' | 'phone' | 'wallet' | 'bag' | 'card' | 'accessory' | 'key' | 'other';
 const kinds: Record<Kind, { icon: IconName; tint: string; background: string }> = {
   electronics: { icon: 'cat-electronics', tint: '#2563EB', background: '#EAF2FF' },
+  earphone: { icon: 'cat-earphone', tint: '#2563EB', background: '#EAF2FF' },
+  phone: { icon: 'cat-phone', tint: '#0284C7', background: '#E6F6FD' },
   wallet: { icon: 'cat-wallet', tint: '#E5484D', background: '#FDEEEF' },
+  bag: { icon: 'cat-bag', tint: '#EA580C', background: '#FFF1E6' },
   card: { icon: 'cat-card', tint: '#12A150', background: '#E8F7EE' },
   accessory: { icon: 'cat-accessory', tint: '#D99A00', background: '#FFF6DB' },
   key: { icon: 'cat-key', tint: '#7C4DFF', background: '#F3EDFF' },
@@ -16,23 +20,22 @@ const kinds: Record<Kind, { icon: IconName; tint: string; background: string }> 
 };
 
 function kindOf(name: string, category?: string): Kind {
-  // 순서가 중요합니다: '카드지갑'은 지갑, '전자담배'는 전자기기가 아닙니다.
-  if (/지갑|가방|백팩|파우치|쇼핑백/u.test(name)) return 'wallet';
+  // 순서가 중요합니다: '카드지갑'은 지갑, '전자담배'는 전자기기가 아니고, '갤럭시 버즈'는 이어폰입니다.
+  if (/지갑/u.test(name)) return 'wallet';
+  if (/가방|백팩|파우치|쇼핑백|에코백|클러치/u.test(name)) return 'bag';
   if (/카드|신분증|학생증|면허증|여권/u.test(name)) return 'card';
   if (/담배/u.test(name)) return 'other';
+  if (/키링|열쇠|차키|키홀더/u.test(name)) return 'key';
   if (/반지|목걸이|귀걸이|팔찌|시계|귀금속|안경|선글라스/u.test(name)) return 'accessory';
-  if (/열쇠|키링|차키/u.test(name)) return 'key';
-  if (
-    /노트북|휴대폰|핸드폰|스마트폰|이어폰|버즈|에어팟|태블릿|아이패드|충전기|헤드폰|전자/u.test(
-      name,
-    )
-  )
-    return 'electronics';
+  if (/이어폰|버즈|에어팟|헤드폰|헤드셋/u.test(name)) return 'earphone';
+  if (/휴대폰|핸드폰|스마트폰|아이폰|갤럭시/u.test(name)) return 'phone';
+  if (/노트북|태블릿|아이패드|충전기|전자/u.test(name)) return 'electronics';
   switch (category) {
     case 'ELECTRONICS':
       return 'electronics';
-    case 'WALLET':
     case 'BAG':
+      return 'bag';
+    case 'WALLET':
     case 'WALLET_BAG':
       return 'wallet';
     case 'KEY':

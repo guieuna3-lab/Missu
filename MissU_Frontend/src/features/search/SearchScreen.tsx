@@ -36,7 +36,7 @@ import { SortSheet, sortLabels } from './SortSheet';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
 const pageSize = 25;
-const popular = ['지갑', '이어폰', '휴대폰', '카드', '열쇠', '가방'];
+const popular = ['지갑', '이어폰', '휴대폰', '카드', '키링', '가방'];
 type SearchItem = PublicItem | InstitutionItem;
 type SearchState = {
   status: 'idle' | 'loading' | 'success' | 'error';

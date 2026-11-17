@@ -36,6 +36,9 @@ const icons = {
   'cat-accessory': require('../../assets/icons/cat-accessory.svg'),
   'cat-key': require('../../assets/icons/cat-key.svg'),
   'cat-other': require('../../assets/icons/cat-other.svg'),
+  'cat-earphone': require('../../assets/icons/cat-earphone.svg'),
+  'cat-phone': require('../../assets/icons/cat-phone.svg'),
+  'cat-bag': require('../../assets/icons/cat-bag.svg'),
   // Institution detail info rows (single-color, tinted).
   'info-date': require('../../assets/icons/info-date.svg'),
   'info-place': require('../../assets/icons/info-place.svg'),
