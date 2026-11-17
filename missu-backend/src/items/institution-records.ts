@@ -214,7 +214,7 @@ export function policePage(xml: string) {
   };
 }
 // 경찰민원24의 공개 상세에서 보관 상태와 물품 정보만 읽습니다.
-function policePhoto(value: string | undefined, atcId: string) {
+export function policePhoto(value: string | undefined, atcId: string) {
   if (!value) return;
   try {
     const url = new URL(value, 'https://minwon24.police.go.kr');

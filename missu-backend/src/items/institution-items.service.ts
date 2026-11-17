@@ -40,6 +40,7 @@ import {
   schoolArticle,
   policeSite,
   policePage,
+  policePhoto,
   portalDetail,
   roadKey,
   schoolPage,
@@ -332,6 +333,36 @@ export class InstitutionItemsService
     return url;
   }
 
+  /**
+   * 실시간 목록(경찰 등)은 사진 주소가 없어, 저장본에 확인된 사진이 있으면 붙입니다.
+   * 보강에 실패해도 목록 응답은 그대로 돌려줍니다.
+   */
+  async withSavedPhotos<T extends { items: InstitutionItem[] }>(
+    result: T,
+  ): Promise<T> {
+    const ids = result.items
+      .filter((i) => !i.photoUrls?.length && i.id.startsWith('lost112:'))
+      .map((i) => i.id);
+    if (!this.db || !ids.length) return result;
+    try {
+      const rows = await this.db.verifiedPortalItem.findMany({
+        where: { id: { in: ids }, photoUrl: { not: null } },
+        select: { id: true, photoUrl: true },
+      });
+      if (!rows.length) return result;
+      const photos = new Map(rows.map((r) => [r.id, r.photoUrl!]));
+      return {
+        ...result,
+        items: result.items.map((i) =>
+          photos.has(i.id) && !i.photoUrls?.length
+            ? { ...i, photoUrls: [photos.get(i.id)!] }
+            : i,
+        ),
+      };
+    } catch {
+      return result;
+    }
+  }
   async publicPhotos(id: string) {
     const match = /^lost112:([A-Z0-9]{2,32}):(\d{1,6})$/.exec(id);
     if (!match)
@@ -345,9 +376,16 @@ export class InstitutionItemsService
         atcId,
         fdSn,
       );
-      return clean(row.csteSteNm) === '보관중' && row.fdFilePathImg
-        ? [row.fdFilePathImg]
-        : [];
+      if (clean(row.csteSteNm) !== '보관중' || !row.fdFilePathImg) return [];
+      // 확인한 사진 주소를 저장본에도 남겨 다음 목록 응답에서 썸네일로 쓰게 합니다.
+      const saved = policePhoto(row.fdFilePathImg, atcId);
+      if (saved && this.db)
+        await this.db
+          .$executeRaw`UPDATE verified_portal_items SET photo_url=${saved}
+          WHERE id=${id} AND photo_url IS DISTINCT FROM ${saved}`.catch(
+          () => 0,
+        );
+      return [row.fdFilePathImg];
     } catch {
       return fail(503, 'EXTERNAL_UNAVAILABLE', '기관 사진을 확인할 수 없어요.');
     }

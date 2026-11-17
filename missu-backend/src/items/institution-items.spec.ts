@@ -1520,3 +1520,64 @@ describe('기관 목록 저장본의 사진', () => {
     expect(byId.get('lost112:V112:1')).not.toHaveProperty('photoUrls');
   });
 });
+
+describe('실시간 목록의 저장본 사진 보강', () => {
+  type Row = Parameters<
+    InstitutionItemsService['withSavedPhotos']
+  >[0]['items'][number];
+  const photo =
+    'https://www.lost112.go.kr/lostnfs/images/uploadImg/2026/11/buds.jpg';
+  const base = {
+    source: '경찰' as const,
+    date: '2026-11-14',
+    dateLabel: '습득일' as const,
+    storage: '연일지구대',
+    reference: 'F1 / 1',
+    url: '',
+    category: 'ELECTRONICS',
+  };
+  it('사진이 없는 경찰 물품에 저장본 사진을 붙이고 나머지는 그대로 둔다', async () => {
+    const findMany = jest
+      .fn()
+      .mockResolvedValue([{ id: 'lost112:F1:1', photoUrl: photo }]);
+    const api = new InstitutionItemsService(
+      {} as ExternalHttpService,
+      {
+        verifiedPortalItem: { findMany },
+      } as unknown as DatabaseService,
+    );
+    const kept = ['https://example.com/a.jpg'];
+    const result = await api.withSavedPhotos({
+      items: <Row[]>[
+        { ...base, id: 'lost112:F1:1', name: '삼성 무선 이어폰' },
+        { ...base, id: 'lost112:F2:1', name: '버즈 케이스' },
+        { ...base, id: 'lost112:F3:1', name: '에어팟', photoUrls: kept },
+        { ...base, id: 'hansung:9', name: '우산', source: '한성대' as const },
+      ],
+      nextCursor: 'c',
+    });
+    expect(findMany.mock.calls[0][0].where.id.in).toEqual([
+      'lost112:F1:1',
+      'lost112:F2:1',
+    ]);
+    expect(result.nextCursor).toBe('c');
+    expect(result.items.map((i) => i.photoUrls)).toEqual([
+      [photo],
+      undefined,
+      kept,
+      undefined,
+    ]);
+  });
+  it('저장본 조회가 실패해도 목록을 그대로 돌려준다', async () => {
+    const api = new InstitutionItemsService(
+      {} as ExternalHttpService,
+      {
+        verifiedPortalItem: {
+          findMany: jest.fn().mockRejectedValue(Error('db down')),
+        },
+      } as unknown as DatabaseService,
+    );
+    const result = { items: [{ ...base, id: 'lost112:F1:1', name: '이어폰' }] };
+    await expect(api.withSavedPhotos(result)).resolves.toBe(result);
+  });
+});
