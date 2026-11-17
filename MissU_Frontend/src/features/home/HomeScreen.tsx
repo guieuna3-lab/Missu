@@ -144,21 +144,6 @@ export function HomeScreen() {
           </View>
           <Text style={[typography.body, { color: colors.blue }]}>보기 →</Text>
         </Pressable>
-        <Text style={[typography.label, styles.sectionTitle]}>이런 분들을 도와드려요</Text>
-        <View style={styles.audience}>
-          {(
-            [
-              { icon: 'heart', label: 'ADHD' },
-              { icon: 'child', label: '아이 물건' },
-              { icon: 'shield', label: '공개 정보 조회' },
-            ] as const
-          ).map((chip) => (
-            <View key={chip.icon} style={styles.chip}>
-              <Icon name={chip.icon} />
-              <Text style={[typography.label, { color: colors.body }]}>{chip.label}</Text>
-            </View>
-          ))}
-        </View>
         <Text style={[typography.label, styles.sectionTitle, { marginTop: 20 }]}>
           최근 등록된 습득물
         </Text>
@@ -233,19 +218,5 @@ const styles = StyleSheet.create({
   itemText: { flex: 1, gap: 2 },
   secondary: { ...typography.body, fontSize: 12, lineHeight: 18, color: colors.muted },
   sectionTitle: { color: colors.muted, marginTop: 16, marginBottom: 8 },
-  audience: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    minHeight: 34,
-    // Width follows the label, so every chip has the same padding on both sides.
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-    backgroundColor: colors.white,
-  },
   items: { gap: 8 },
 });

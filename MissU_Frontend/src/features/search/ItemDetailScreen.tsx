@@ -1,9 +1,10 @@
 import { InstitutionDetailScreen } from './InstitutionDetailScreen';
 import { useEffect, useState } from 'react';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Header } from '@/components/Header';
+import { LoadingState } from '@/components/LoadingState';
 import { Chip, InfoCard, InfoRow, StepGuide } from '@/components/InfoList';
 import { PhotoPager } from '@/components/PhotoPager';
 import { Screen } from '@/components/Screen';
@@ -102,13 +103,16 @@ function ItemDetail({ id }: { id: string }) {
   return (
     <Screen>
       <Header title="습득물 상세" onBack={back} />
-      <ScrollView contentContainerStyle={status === 'success' && item ? undefined : styles.content}>
-        {status === 'loading' && (
-          <View style={styles.card}>
-            <ActivityIndicator color={colors.blue} />
-            <Text style={typography.body}>물품 정보를 불러오고 있어요.</Text>
-          </View>
-        )}
+      <ScrollView
+        contentContainerStyle={
+          status === 'loading'
+            ? styles.fill
+            : status === 'success' && item
+              ? undefined
+              : styles.content
+        }
+      >
+        {status === 'loading' && <LoadingState title="물품 정보를 불러오고 있어요" />}
         {status === 'error' && (
           <>
             <Text accessibilityRole="alert" style={typography.heading}>
@@ -210,7 +214,7 @@ function ItemDetail({ id }: { id: string }) {
 }
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingVertical: 24, gap: 16 },
-  card: { backgroundColor: colors.white, padding: 16, borderRadius: 12, gap: 8 },
+  fill: { flexGrow: 1 },
   photoRetry: { marginHorizontal: 20, marginTop: 12 },
   hero: {
     paddingHorizontal: 20,
