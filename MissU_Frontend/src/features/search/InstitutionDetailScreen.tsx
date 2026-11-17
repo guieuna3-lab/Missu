@@ -7,6 +7,7 @@ import { InfoCard, InfoRow, StepGuide } from '@/components/InfoList';
 import { ItemThumb } from '@/components/ItemThumb';
 import { PhotoPager } from '@/components/PhotoPager';
 import { LineBadge, subwayStop } from '@/components/LineBadge';
+import { LoadingState } from '@/components/LoadingState';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import {
@@ -108,7 +109,7 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
   return (
     <Screen>
       <Header title="기관 습득물 상세" onBack={back} />
-      <ScrollView contentContainerStyle={item ? undefined : styles.content}>
+      <ScrollView contentContainerStyle={item ? undefined : !error ? styles.fill : styles.content}>
         {error ? (
           <>
             <Text accessibilityRole="alert">{error}</Text>
@@ -121,7 +122,10 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
             />
           </>
         ) : !item ? (
-          <Text>기관의 보관 정보를 확인하고 있어요.</Text>
+          <LoadingState
+            title="보관 정보를 확인하고 있어요"
+            description={'기관에 직접 조회하고 있어서\n몇 초 걸릴 수 있어요'}
+          />
         ) : (
           <>
             <View style={styles.hero}>
@@ -211,6 +215,7 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
 }
 const styles = StyleSheet.create({
   content: { padding: 20, gap: 16 },
+  fill: { flexGrow: 1 },
   photoRetry: { margin: 16 },
   hero: {
     flexDirection: 'row',
