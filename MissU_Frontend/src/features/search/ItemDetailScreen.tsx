@@ -1,19 +1,11 @@
 import { InstitutionDetailScreen } from './InstitutionDetailScreen';
 import { useEffect, useState } from 'react';
 import { Redirect, router, useLocalSearchParams } from 'expo-router';
-import {
-  ActivityIndicator,
-  Image,
-  Platform,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
-import { Card } from '@/components/Card';
 import { Header } from '@/components/Header';
-import { Icon } from '@/components/Icon';
+import { Chip, InfoCard, InfoRow, StepGuide } from '@/components/InfoList';
+import { PhotoPager } from '@/components/PhotoPager';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { categoryLabel } from '@/lib/activity/types';
@@ -52,16 +44,30 @@ function LegacyFoundLocation({
     };
   }, [point, token]);
   return (
-    <Card title="습득 위치">
-      {address === undefined
-        ? '저장된 위치의 주소를 확인하고 있어요.'
-        : (address ??
-          '주소 확인 불가 · 위도 ' + point.lat.toFixed(5) + ', 경도 ' + point.lng.toFixed(5))}
-    </Card>
+    <InfoRow
+      icon="info-place"
+      label="습득 위치"
+      value={
+        address === undefined
+          ? '주소 확인 중'
+          : (address ?? '위도 ' + point.lat.toFixed(5) + ', 경도 ' + point.lng.toFixed(5))
+      }
+      sub={address === null ? '주소를 확인하지 못했어요' : undefined}
+    />
   );
 }
 
+const seoulDay = (time: number) => new Date(time + 9 * 3_600_000).toISOString().slice(0, 10);
+/** 습득일이 오늘·어제면 그 말을 덧붙입니다. */
+function dayHint(iso: string, now: number) {
+  const day = seoulDay(Date.parse(iso));
+  if (day === seoulDay(now)) return '오늘';
+  if (day === seoulDay(now - 86_400_000)) return '어제';
+  return undefined;
+}
+
 function ItemDetail({ id }: { id: string }) {
+  const [today] = useState(Date.now);
   const { profile, startLogin, accessToken } = usePreview();
   const [item, setItem] = useState<PublicItem>();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
@@ -96,7 +102,7 @@ function ItemDetail({ id }: { id: string }) {
   return (
     <Screen>
       <Header title="습득물 상세" onBack={back} />
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView contentContainerStyle={status === 'success' && item ? undefined : styles.content}>
         {status === 'loading' && (
           <View style={styles.card}>
             <ActivityIndicator color={colors.blue} />
@@ -120,62 +126,67 @@ function ItemDetail({ id }: { id: string }) {
         )}
         {status === 'success' && item && (
           <>
-            <View style={[styles.card, styles.photo]}>
-              <Text style={typography.label}>물품 사진 · 1 / {item.photos}</Text>
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.photoRow}
-              >
-                {Array.from({ length: item.photos }, (_, index) => (
-                  <View
-                    key={index}
-                    accessibilityLabel={`물품 사진 ${index + 1}`}
-                    style={styles.thumbnail}
-                  >
-                    {item.photoUrls?.[index] ? (
-                      <ItemPhoto
-                        uri={item.photoUrls[index]}
-                        label={`물품 사진 ${index + 1}`}
-                        onError={() => setPhotoFailed(true)}
-                      />
-                    ) : (
-                      <Icon name="camera" />
-                    )}
-                  </View>
-                ))}
-              </ScrollView>
-              {photoFailed && (
-                <ActionButton label="사진 다시 불러오기" variant="outline" onPress={reloadItem} />
-              )}
-            </View>
-            <Text accessibilityRole="header" style={typography.heading}>
-              {item.name}
-            </Text>
-            <Text style={[typography.label, styles.blue]}>
-              {item.statusLabel ?? '보관 중'} · {formatFoundAt(item.foundAt)}
-            </Text>
-            <Text style={typography.body}>종류 · {categoryLabel(item.category)}</Text>
-            {item.legacyLocation ? (
-              <LegacyFoundLocation point={item.legacyLocation} token={accessToken} />
-            ) : (
-              <Card title="습득 위치">{item.location}</Card>
+            <PhotoPager
+              uris={item.photoUrls ?? []}
+              label={item.name}
+              onError={() => setPhotoFailed(true)}
+            />
+            {photoFailed && (
+              <ActionButton
+                label="사진 다시 불러오기"
+                variant="outline"
+                style={styles.photoRetry}
+                onPress={reloadItem}
+              />
             )}
-            <Card title="보관·수령 안내">
-              {item.storage}
-              {'\n'}
-              {item.collectionGuide}
-            </Card>
-            <Text style={typography.body}>
-              {profile
-                ? '반환 요청 시 주인 확인 정보를 작성합니다.'
-                : '공개 정보는 조회할 수 있어요.\n주인 확인 요청은 로그인 후 가능합니다.'}
-            </Text>
+            <View style={styles.hero}>
+              <Text accessibilityRole="header" style={styles.title}>
+                {item.name}
+              </Text>
+              <View style={styles.chips}>
+                <Chip label={item.statusLabel ?? '보관 중'} tone="green" />
+                <Chip label={categoryLabel(item.category)} />
+                <Chip label="미슈 회원 등록" />
+              </View>
+            </View>
+            <View style={styles.body}>
+              <InfoCard>
+                <InfoRow
+                  icon="info-date"
+                  label="습득 일시"
+                  value={formatFoundAt(item.foundAt)}
+                  sub={dayHint(item.foundAt, today)}
+                />
+                {item.legacyLocation ? (
+                  <LegacyFoundLocation point={item.legacyLocation} token={accessToken} />
+                ) : (
+                  <InfoRow icon="info-place" label="습득 위치" value={item.location} />
+                )}
+                <InfoRow
+                  icon="info-storage"
+                  label="보관처"
+                  value={item.storage}
+                  sub={item.collectionGuide || undefined}
+                  last
+                />
+              </InfoCard>
+              <StepGuide
+                title="내 물건이라면 이렇게 찾아요"
+                steps={[
+                  profile
+                    ? '주인만 아는 특징을 적어 확인을 요청해요.'
+                    : '로그인하고 주인만 아는 특징을 적어 확인을 요청해요.',
+                  '보관자가 실물과 비교해 승인하면 수령 방법을 안내받아요.',
+                  '물건을 받은 뒤 앱에서 수령을 확인하면 끝나요.',
+                ]}
+              />
+            </View>
           </>
         )}
       </ScrollView>
       {item && status === 'success' && (
         <ActionBar>
+          {!profile && <Text style={styles.barHint}>공개 정보는 누구나 볼 수 있어요</Text>}
           <ActionButton
             label={profile ? '내 물건 확인 요청' : '로그인하고 내 물건 확인'}
             onPress={
@@ -197,44 +208,21 @@ function ItemDetail({ id }: { id: string }) {
     </Screen>
   );
 }
-function ItemPhoto({ uri, label, onError }: { uri: string; label: string; onError: () => void }) {
-  // 웹은 운영 API가 허용한 출처에서 쿠키 없이 서명된 사진을 불러옵니다.
-  if (Platform.OS === 'web')
-    return (
-      <img
-        alt={label}
-        crossOrigin="anonymous"
-        referrerPolicy="no-referrer"
-        src={uri}
-        onError={onError}
-        style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 12 }}
-      />
-    );
-  return (
-    <Image
-      accessibilityLabel={label}
-      source={{ uri }}
-      style={styles.thumbnail}
-      resizeMode="cover"
-      onError={onError}
-    />
-  );
-}
-
 const styles = StyleSheet.create({
   content: { paddingHorizontal: 20, paddingVertical: 24, gap: 16 },
   card: { backgroundColor: colors.white, padding: 16, borderRadius: 12, gap: 8 },
-  photo: { backgroundColor: '#E8F0FE' },
-  photoRow: { gap: 8 },
-  thumbnail: {
-    width: 88,
-    height: 64,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
+  photoRetry: { marginHorizontal: 20, marginTop: 12 },
+  hero: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 18,
+    gap: 8,
     backgroundColor: colors.white,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.line,
   },
-  blue: { color: colors.blue },
+  title: { ...typography.heading, fontSize: 22, lineHeight: 30 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  body: { padding: 20, gap: 12 },
+  barHint: { ...typography.body, fontSize: 12, textAlign: 'center', color: colors.muted },
 });

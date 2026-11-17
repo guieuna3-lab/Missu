@@ -15,14 +15,14 @@ import {
 } from 'react-native';
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
-import { Card } from '@/components/Card';
 import { FormField } from '@/components/FormField';
 import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { Header } from '@/components/Header';
+import { RecentItemRow } from '@/components/ItemRow';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { formatFoundAt, itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
+import { itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
 import {
   searchInstitutions,
   openInstitution,
@@ -284,17 +284,33 @@ export default function SearchScreen() {
         onSubmitEditing={() => void search()}
         error={validation || undefined}
       />
-      <ActionButton
-        label="기간·장소 조건"
-        variant="outline"
-        onPress={state.status === 'loading' ? undefined : () => openConditions()}
-      />
-      {(filters.period !== 'all' || filters.place.trim()) && (
-        <Text style={typography.body}>
-          {periods.find((p) => p.value === filters.period)?.label} ·{' '}
-          {filters.place.trim() || '전체 장소'}
-        </Text>
-      )}
+      <View style={styles.filters}>
+        {[
+          {
+            key: 'period',
+            label: '기간 · ' + periods.find((p) => p.value === filters.period)?.label,
+            on: filters.period !== 'all',
+          },
+          {
+            key: 'place',
+            label: '장소 · ' + (filters.place.trim() || '전체'),
+            on: !!filters.place.trim(),
+          },
+        ].map((f) => (
+          <Pressable
+            key={f.key}
+            accessibilityRole="button"
+            accessibilityLabel={f.label + ', 검색 조건 바꾸기'}
+            disabled={state.status === 'loading'}
+            onPress={() => openConditions()}
+            style={[styles.filter, f.on && styles.filterOn]}
+          >
+            <Text style={[styles.filterText, f.on && styles.filterTextOn]} numberOfLines={1}>
+              {f.label}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
       {state.status === 'idle' && (
         <>
           <View style={styles.intro}>
@@ -443,27 +459,16 @@ export default function SearchScreen() {
             contentContainerStyle={styles.content}
             ListHeaderComponent={<View style={styles.stack}>{heading}</View>}
             ItemSeparatorComponent={() => <View style={styles.separator} />}
-            renderItem={({ item }) =>
-              'source' in item ? (
-                <Card title={item.name} onPress={() => openInstitution(item)}>
-                  {item.source} · 보관처 {item.storage}
-                  {'\n'}
-                  {item.dateLabel} {item.date}
-                  {item.dateLabel === '게시일' && ' · 습득일 미공개'} · {item.reference}
-                  {item.lastVerifiedOn && '\n마지막 보관 확인 ' + item.lastVerifiedOn}
-                  {'\n'}기관 물품 상세 보기
-                </Card>
-              ) : (
-                <Card
-                  title={item.name}
-                  onPress={() => router.push({ pathname: '/items/[id]', params: { id: item.id } })}
-                >
-                  {item.location} · {formatFoundAt(item.foundAt).slice(5)}
-                  {'\n'}
-                  회원 등록 · {item.statusLabel ?? '보관 중'}
-                </Card>
-              )
-            }
+            renderItem={({ item }) => (
+              <RecentItemRow
+                item={item}
+                onPress={() =>
+                  'source' in item
+                    ? openInstitution(item)
+                    : router.push({ pathname: '/items/[id]', params: { id: item.id } })
+                }
+              />
+            )}
             ListFooterComponent={
               state.status === 'success' ? (
                 <View>
@@ -524,6 +529,19 @@ const styles = StyleSheet.create({
   ink: { color: colors.ink },
   hint: { fontSize: 12, lineHeight: 18 },
   feedback: { gap: 16, paddingVertical: 16 },
-  separator: { height: 16 },
+  separator: { height: 8 },
+  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: -4 },
+  filter: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.white,
+    maxWidth: '100%',
+  },
+  filterOn: { borderColor: colors.blue, backgroundColor: colors.lightBlue },
+  filterText: { ...typography.label, fontSize: 13, color: '#4E5968' },
+  filterTextOn: { color: colors.blue, fontWeight: '700' },
   footer: { marginTop: 16 },
 });
