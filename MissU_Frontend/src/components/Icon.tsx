@@ -36,6 +36,10 @@ const icons = {
   'cat-accessory': require('../../assets/icons/cat-accessory.svg'),
   'cat-key': require('../../assets/icons/cat-key.svg'),
   'cat-other': require('../../assets/icons/cat-other.svg'),
+  // Institution detail info rows (single-color, tinted).
+  'info-date': require('../../assets/icons/info-date.svg'),
+  'info-place': require('../../assets/icons/info-place.svg'),
+  'info-storage': require('../../assets/icons/info-storage.svg'),
 };
 export type IconName = keyof typeof icons;
 
