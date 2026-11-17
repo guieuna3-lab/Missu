@@ -10,7 +10,7 @@ export const categories: { value: ItemCategory; label: string }[] = [
   { value: 'ELECTRONICS', label: '전자기기' },
   { value: 'WALLET', label: '지갑' },
   { value: 'BAG', label: '가방' },
-  { value: 'KEY', label: '열쇠' },
+  { value: 'KEY', label: '키링·열쇠' },
   { value: 'ID', label: '신분증' },
   { value: 'OTHER', label: '기타' },
 ];

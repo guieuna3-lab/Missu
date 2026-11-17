@@ -6,6 +6,7 @@ import { FormMessage, TextLink } from '@/components/FormField';
 import { requestErrorMessage } from '@/lib/mockRequest';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ChoiceRow } from '@/components/ChoiceRow';
+import { ItemThumb } from '@/components/ItemThumb';
 import { Header } from '@/components/Header';
 import type { IconName } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
@@ -13,7 +14,7 @@ import { colors, typography } from '@/constants/theme';
 import { LoginGateScreen } from '@/features/auth/LoginGateScreen';
 import { useActivity } from '@/lib/activity/ActivityProvider';
 import { foundItemStatus } from '@/lib/activity/transitions';
-import { categoryLabel, foundItemStatusLabel, type ItemCategory } from '@/lib/activity/types';
+import { categoryLabel, foundItemStatusLabel } from '@/lib/activity/types';
 import { formatDate } from '@/lib/dateTime';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { receivedRequests, requestStatusLabel, sentRequests } from './activitySummary';
@@ -25,15 +26,6 @@ const tabs: { key: HistoryTab; label: string }[] = [
   { key: 'requests', label: '내 반환 요청' },
   { key: 'found', label: '등록한 습득물' },
 ];
-
-const categoryIcons: Record<ItemCategory, IconName> = {
-  ELECTRONICS: 'buds',
-  WALLET: 'wallet',
-  BAG: 'bag',
-  KEY: 'key',
-  ID: 'id',
-  OTHER: 'box',
-};
 
 type Selection = { id: string; name: string; type: 'lost' | 'found' };
 export function HistoryListScreen() {
@@ -81,7 +73,8 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
     tab === 'lost'
       ? activity.lostReports.map((report) => ({
           key: report.id,
-          icon: categoryIcons[report.category],
+          icon: undefined,
+          thumb: <ItemThumb name={report.name} category={report.category} size={40} />,
           title: report.name,
           description: `${categoryLabel(report.category)} · ${formatDate(report.lostFrom)}`,
           onPress: () => router.push({ pathname: '/my-reports/[id]', params: { id: report.id } }),
@@ -90,6 +83,7 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
         ? sentRequests(activity, memberName).map((request) => ({
             key: request.id,
             icon: 'search' as IconName,
+            thumb: undefined,
             title: request.itemName,
             description: `${requestStatusLabel[request.status]} · ${formatDate(request.createdAt)}`,
             onPress: () => router.push({ pathname: '/requests/[id]', params: { id: request.id } }),
@@ -98,7 +92,15 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
             const received = receivedRequests(activity).filter((r) => r.itemId === item.id);
             return {
               key: item.id,
-              icon: categoryIcons[item.category],
+              icon: undefined,
+              thumb: (
+                <ItemThumb
+                  name={item.name}
+                  category={item.category}
+                  photoUrl={item.attachments?.[0]?.preview}
+                  size={40}
+                />
+              ),
               title: item.name,
               status:
                 foundItemStatus(item, received) === 'returned'
@@ -160,6 +162,7 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
               <View style={styles.item}>
                 <ChoiceRow
                   icon={row.icon}
+                  leading={row.thumb}
                   title={'status' in row && row.status ? row.title + ' · ' + row.status : row.title}
                   description={row.description}
                   onPress={row.onPress}

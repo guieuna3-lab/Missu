@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { unavailableHint } from '@/constants/messages';
 import { colors, typography } from '@/constants/theme';
@@ -6,12 +7,15 @@ import { Icon, type IconName } from './Icon';
 // Figma Library "Choice Row" (350×82): icon, title, one-line description and a chevron.
 export function ChoiceRow({
   icon,
+  leading,
   title,
   description,
   onPress,
   disabled = false,
 }: {
-  icon: IconName;
+  icon?: IconName;
+  /** 아이콘 대신 앞에 둘 요소(물품 썸네일 등). 있으면 icon보다 우선합니다. */
+  leading?: ReactNode;
   title: string;
   description: string;
   onPress?: () => void;
@@ -28,7 +32,7 @@ export function ChoiceRow({
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && styles.pressed]}
     >
-      <Icon name={icon} size={28} />
+      {leading ?? (icon && <Icon name={icon} size={28} />)}
       <View style={styles.text}>
         <Text style={styles.title}>{title}</Text>
         <Text numberOfLines={1} style={styles.description}>
