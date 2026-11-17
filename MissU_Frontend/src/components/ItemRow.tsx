@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { ItemThumb } from '@/components/ItemThumb';
 import { LineBadge, subwayStop } from '@/components/LineBadge';
+import { formatDistance } from '@/lib/searchRank';
 import { colors, typography } from '@/constants/theme';
 import type { InstitutionItem } from '@/lib/institutionItems';
 import type { PublicItem } from '@/lib/items';
@@ -51,7 +52,16 @@ function relativeTime(iso: string, now: number) {
   return '';
 }
 
-export function RecentItemRow({ item, onPress }: { item: HomeItem; onPress: () => void }) {
+export function RecentItemRow({
+  item,
+  onPress,
+  distanceM,
+}: {
+  item: HomeItem;
+  onPress: () => void;
+  /** 가까운 순일 때 기준 장소와의 거리(m). 있으면 화살표 대신 거리를 보여줍니다. */
+  distanceM?: number;
+}) {
   // 화면을 연 시각 기준입니다. 렌더마다 바뀌지 않게 한 번만 읽습니다.
   const [now] = useState(Date.now);
   const stop = subwayStop('source' in item ? item.source : undefined, item.storage);
@@ -117,7 +127,11 @@ export function RecentItemRow({ item, onPress }: { item: HomeItem; onPress: () =
         </View>
         {!!owner && <Text style={styles.cta}>혹시 내 물건인가요? →</Text>}
       </View>
-      <Text style={styles.chevron}>›</Text>
+      {distanceM !== undefined ? (
+        <Text style={styles.distance}>{formatDistance(distanceM)}</Text>
+      ) : (
+        <Text style={styles.chevron}>›</Text>
+      )}
     </Pressable>
   );
 }
@@ -174,6 +188,18 @@ const styles = StyleSheet.create({
   dot: { color: colors.divider },
   cta: { ...typography.label, fontSize: 12, lineHeight: 18, fontWeight: '700', color: colors.blue },
   chevron: { fontSize: 22, lineHeight: 24, color: colors.divider },
+  distance: {
+    ...typography.label,
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: '700',
+    color: colors.blue,
+    backgroundColor: colors.lightBlue,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    overflow: 'hidden',
+  },
   day: { ...typography.label, color: colors.muted, marginTop: 4 },
   dayLead: { fontWeight: '700', color: colors.ink },
 });

@@ -4,11 +4,18 @@ import { FormField, FormMessage } from '@/components/FormField';
 import { typography } from '@/constants/theme';
 import { mapApi } from '@/features/nearby/mapData';
 
-type Place = { providerPlaceId: string; name: string; address: string };
+type Place = {
+  providerPlaceId: string;
+  name: string;
+  address: string;
+  lat?: number;
+  lng?: number;
+};
 type Props = ComponentProps<typeof FormField> & {
   value: string;
   onChangeText: (value: string) => void;
-  onPick?: (name: string) => void;
+  /** 후보를 고르면 이름과(있으면) 좌표·주소를 알려줍니다. */
+  onPick?: (name: string, place?: { lat?: number; lng?: number; address: string }) => void;
 };
 export function PlaceSearchField({ value, onChangeText, onPick, ...props }: Props) {
   const [editing, setEditing] = useState(false);
@@ -52,7 +59,7 @@ export function PlaceSearchField({ value, onChangeText, onPick, ...props }: Prop
             setEditing(false);
             Keyboard.dismiss();
             onChangeText(p.name);
-            onPick?.(p.name);
+            onPick?.(p.name, { lat: p.lat, lng: p.lng, address: p.address });
           }}
         >
           <Text style={typography.label}>{p.name}</Text>

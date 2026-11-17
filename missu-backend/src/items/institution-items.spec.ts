@@ -7,6 +7,8 @@ import {
   schoolPage,
 } from './institution-records';
 import { InstitutionItemsService } from './institution-items.service';
+import { periodOf } from './institution-items.controller';
+import type { InstitutionItem } from './institution-records';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
 import type { NearbyService } from './nearby.service';
@@ -1579,5 +1581,100 @@ describe('실시간 목록의 저장본 사진 보강', () => {
     );
     const result = { items: [{ ...base, id: 'lost112:F1:1', name: '이어폰' }] };
     await expect(api.withSavedPhotos(result)).resolves.toBe(result);
+  });
+});
+
+describe('검색 기간 직접 설정과 가까운 순', () => {
+  it('직접 고른 시작일을 일수로 바꾸고 6개월을 넘으면 전체로 본다', () => {
+    expect(periodOf({ period: '30' })).toBe('30');
+    const today = new Date(Date.now() + 9 * 3600000);
+    const ago = (n: number) =>
+      new Date(today.getTime() - n * 86400000).toISOString().slice(0, 10);
+    expect(periodOf({ period: 'all', from: ago(0) })).toBe('1');
+    expect(periodOf({ period: 'all', from: ago(16) })).toBe('17');
+    expect(periodOf({ period: 'all', from: ago(400) })).toBe('all');
+  });
+  it('일수 기간의 시작일은 6개월 경계보다 앞서지 않는다', () => {
+    const ms = Date.parse('2026-11-17T03:00:00Z');
+    expect(sinceFound('17', ms)).toBe('2026-11-01');
+    expect(sinceFound('183', ms) >= sinceFound('all', ms)).toBe(true);
+  });
+  const base = {
+    source: '지하철' as const,
+    dateLabel: '습득일' as const,
+    reference: 'V1 / 1',
+    url: '',
+    category: 'OTHER',
+  };
+  it('끝일 이후 물품을 빼고 다음 페이지 값은 유지한다', () => {
+    const api = new InstitutionItemsService({} as ExternalHttpService);
+    const result = api.untilDay(
+      {
+        items: [
+          {
+            ...base,
+            id: 'a',
+            name: 'A',
+            storage: '혜화역(4호선)',
+            date: '2026-11-10',
+          },
+          {
+            ...base,
+            id: 'b',
+            name: 'B',
+            storage: '혜화역(4호선)',
+            date: '2026-11-16',
+          },
+        ],
+        nextCursor: 'n',
+      },
+      '2026-11-12',
+    );
+    expect(result.items.map((i) => i.id)).toEqual(['a']);
+    expect(result.nextCursor).toBe('n');
+  });
+  it('보관처 위치를 찾은 물품에만 거리를 붙인다', async () => {
+    const saved = process.env.KAKAO_REST_API_KEY;
+    process.env.KAKAO_REST_API_KEY = 'test';
+    try {
+      const api = new InstitutionItemsService({} as ExternalHttpService);
+      const lookup = jest
+        .spyOn(
+          api as unknown as { storagePoint: (n: string) => Promise<unknown> },
+          'storagePoint',
+        )
+        .mockImplementation(async (name: string) =>
+          name === '혜화역(4호선)'
+            ? { lat: 37.5822, lng: 127.0019 }
+            : undefined,
+        );
+      const result = await api.withDistances(
+        {
+          items: <InstitutionItem[]>[
+            {
+              ...base,
+              id: 'a',
+              name: 'A',
+              storage: '혜화역(4호선)',
+              date: '2026-11-10',
+            },
+            {
+              ...base,
+              id: 'b',
+              name: 'B',
+              storage: '알 수 없는 곳',
+              date: '2026-11-10',
+            },
+          ],
+        },
+        '37.5884,127.0060',
+      );
+      expect(lookup).toHaveBeenCalledTimes(2);
+      expect(result.items[0].distanceM).toBeGreaterThan(500);
+      expect(result.items[0].distanceM).toBeLessThan(1000);
+      expect(result.items[1]).not.toHaveProperty('distanceM');
+    } finally {
+      process.env.KAKAO_REST_API_KEY = saved;
+    }
   });
 });

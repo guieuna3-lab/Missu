@@ -333,6 +333,63 @@ export class InstitutionItemsService
     return url;
   }
 
+  /** 직접 고른 기간의 끝일 이후 물품을 뺍니다. 다음 페이지 값은 그대로 둡니다. */
+  untilDay<T extends { items: InstitutionItem[] }>(result: T, to?: string): T {
+    if (!to) return result;
+    return { ...result, items: result.items.filter((i) => i.date <= to) };
+  }
+  /**
+   * 가까운 순 정렬용으로 보관처 위치를 찾아 기준 좌표와의 거리를 붙입니다.
+   * 보관처 이름을 카카오 장소 검색으로 찾고(응답 캐시), 한 번에 최대 20곳만 확인합니다.
+   * 위치를 못 찾은 물품은 거리 없이 그대로 둡니다.
+   */
+  async withDistances<T extends { items: InstitutionItem[] }>(
+    result: T,
+    near?: string,
+  ): Promise<T> {
+    if (!near || !process.env.KAKAO_REST_API_KEY) return result;
+    const [lat, lng] = near.split(',').map(Number);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return result;
+    const names = [
+      ...new Set(result.items.map((i) => i.storage).filter(Boolean)),
+    ].slice(0, 20);
+    const points = new Map<string, Point>();
+    await Promise.all(
+      names.map(async (name) => {
+        const point = await this.storagePoint(name).catch(() => undefined);
+        if (point) points.set(name, point);
+      }),
+    );
+    if (!points.size) return result;
+    return {
+      ...result,
+      items: result.items.map((i) => {
+        const point = points.get(i.storage);
+        return point
+          ? { ...i, distanceM: Math.round(distance({ lat, lng }, point)) }
+          : i;
+      }),
+    };
+  }
+  private async storagePoint(name: string): Promise<Point | undefined> {
+    // "혜화역(4호선)" → "혜화역 4호선"
+    const query = name.replace(/\s*\(([^()]+)\)\s*/gu, ' $1 ').trim();
+    const url = new URL('https://dapi.kakao.com/v2/local/search/keyword.json');
+    url.search = new URLSearchParams({ query, size: '1' }).toString();
+    const json = JSON.parse(
+      (
+        await this.text(url.href, url, {
+          Authorization: 'KakaoAK ' + process.env.KAKAO_REST_API_KEY,
+        })
+      ).body,
+    ) as { documents?: KakaoPlace[] };
+    const doc = json.documents?.[0];
+    if (!doc) return;
+    const point = { lat: Number(doc.y), lng: Number(doc.x) };
+    return Number.isFinite(point.lat) && Number.isFinite(point.lng)
+      ? point
+      : undefined;
+  }
   /**
    * 실시간 목록(경찰 등)은 사진 주소가 없어, 저장본에 확인된 사진이 있으면 붙입니다.
    * 보강에 실패해도 목록 응답은 그대로 돌려줍니다.
