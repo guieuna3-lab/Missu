@@ -3,13 +3,22 @@ import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { colors, typography } from '@/constants/theme';
 
 /** 지도가 그려질 때까지 지도 위를 덮는 안내. 터치는 막지 않습니다. */
-export function MapLoadingOverlay() {
+export function MapLoadingOverlay({
+  title = '지도를 불러오고 있어요',
+  description = '잠시만 기다려 주세요',
+  dim = true,
+}: {
+  title?: string;
+  description?: string;
+  /** false면 흐린 덮개 없이 카드만 띄워 위의 검색창·필터가 그대로 보이게 합니다. */
+  dim?: boolean;
+}) {
   return (
-    <View style={styles.veil} pointerEvents="none">
+    <View style={[styles.veil, !dim && styles.clear]} pointerEvents="none">
       <View style={styles.card} accessibilityRole="progressbar" accessibilityLiveRegion="polite">
         <ActivityIndicator size="large" color={colors.blue} />
-        <Text style={styles.title}>지도를 불러오고 있어요</Text>
-        <Text style={styles.sub}>잠시만 기다려 주세요</Text>
+        <Text style={styles.title}>{title}</Text>
+        <Text style={styles.sub}>{description}</Text>
       </View>
     </View>
   );
@@ -53,6 +62,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(245, 246, 248, 0.6)',
     zIndex: 5,
   },
+  clear: { backgroundColor: 'transparent', zIndex: 0 },
   card: {
     alignItems: 'center',
     gap: 8,
