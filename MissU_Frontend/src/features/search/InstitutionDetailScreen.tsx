@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { router } from 'expo-router';
-import { Image, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Image,
+  Linking,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Header } from '@/components/Header';
 import { Icon, type IconName } from '@/components/Icon';
@@ -65,6 +73,9 @@ function InstitutionPhotos({ item }: { item: InstitutionItem }) {
   const [publicUrls, setPublicUrls] = useState<string[]>();
   const [failed, setFailed] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  const [page, setPage] = useState(0);
+  // Screen은 최대 600pt 폭이라 그 안에서 꽉 차게 맞춥니다.
+  const width = Math.min(useWindowDimensions().width, 600);
   useEffect(() => {
     if (!lookup) return;
     const controller = new AbortController();
@@ -86,23 +97,37 @@ function InstitutionPhotos({ item }: { item: InstitutionItem }) {
     if (police && !lookup) setLookup(true);
     else setFailed(true);
   }
+  const count = urls?.length ?? 0;
   return (
-    <View style={styles.photos}>
-      <Text style={typography.label}>물품 사진</Text>
-      {urls?.map((uri, i) => (
-        <Image
-          key={uri + ':' + attempt}
-          source={{ uri }}
-          resizeMode="contain"
-          accessibilityLabel={item.name + ' 사진 ' + (i + 1)}
-          style={styles.photo}
-          onError={onError}
-        />
-      ))}
+    <View style={count > 0 && styles.photos}>
+      {/* 화면 가로폭을 꽉 채우고, 여러 장이면 옆으로 넘깁니다. */}
+      <ScrollView
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+      >
+        {urls?.map((uri, i) => (
+          <Image
+            key={uri + ':' + attempt}
+            source={{ uri }}
+            resizeMode="cover"
+            accessibilityLabel={item.name + ' 사진 ' + (i + 1)}
+            style={{ width, height: Math.round(width * 0.75) }}
+            onError={onError}
+          />
+        ))}
+      </ScrollView>
+      {count > 1 && (
+        <View style={styles.pageBadge} accessibilityLabel={`사진 ${page + 1} / ${count}`}>
+          <Text style={styles.pageText}>{`${page + 1} / ${count}`}</Text>
+        </View>
+      )}
       {failed && (
         <ActionButton
           label="기관 사진 다시 불러오기"
           variant="outline"
+          style={styles.photoRetry}
           onPress={() => {
             setFailed(false);
             setAttempt((n) => n + 1);
@@ -190,8 +215,8 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
                 </View>
               </View>
             </View>
+            <InstitutionPhotos key={item.id} item={item} />
             <View style={styles.body}>
-              <InstitutionPhotos key={item.id} item={item} />
               <View style={styles.card}>
                 <InfoRow
                   icon="info-date"
@@ -257,8 +282,18 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
 }
 const styles = StyleSheet.create({
   content: { padding: 20, gap: 16 },
-  photos: { gap: 8, padding: 14, borderRadius: 16, backgroundColor: colors.white },
-  photo: { width: '100%', height: 220, borderRadius: 12 },
+  photos: { backgroundColor: colors.ink },
+  pageBadge: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  pageText: { ...typography.label, fontSize: 12, lineHeight: 18, color: colors.white },
+  photoRetry: { margin: 16 },
   hero: {
     flexDirection: 'row',
     alignItems: 'center',
