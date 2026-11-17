@@ -16,6 +16,8 @@ export type InstitutionItem = {
   phone?: string;
   foundPlace?: string;
   photoUrls?: string[];
+  /** 검색 기준 장소에서 보관처까지의 거리(m). 가까운 순 정렬을 요청했을 때만 채웁니다. */
+  distanceM?: number;
 };
 export type Batch = { items: InstitutionItem[]; limited: boolean };
 
@@ -370,11 +372,14 @@ export function roadKey(address: string) {
 export const koreaDay = (ms = Date.now()) =>
   new Date(ms + 9 * 3600000).toISOString().slice(0, 10);
 // 월말을 대상 월의 마지막 날로 맞춥니다. 예: 8월 31일 → 2월 28일(윤년은 29일).
-export function sinceFound(days = 'all', ms = Date.now()) {
+export function sinceFound(days = 'all', ms = Date.now()): string {
   const today = new Date(koreaDay(ms) + 'T00:00:00Z');
-  if (days === '7' || days === '30') {
+  // '7'·'30' 외에 직접 고른 시작일도 일수(최대 6개월)로 받습니다.
+  if (/^\d{1,3}$/.test(days) && Number(days) >= 1 && Number(days) <= 183) {
     today.setUTCDate(today.getUTCDate() - Number(days) + 1);
-    return today.toISOString().slice(0, 10);
+    const since = today.toISOString().slice(0, 10);
+    const floor: string = sinceFound('all', ms);
+    return since < floor ? floor : since;
   }
   const last = new Date(
     Date.UTC(today.getUTCFullYear(), today.getUTCMonth() - 5, 0),

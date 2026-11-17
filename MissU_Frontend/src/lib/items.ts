@@ -17,10 +17,31 @@ export type PublicItem = {
   foundAt: string;
   location: string;
   legacyLocation?: { lat: number; lng: number };
+  /** 공개 습득 위치 좌표(가까운 순 정렬용). */
+  point?: { lat: number; lng: number };
   storage: string;
   collectionGuide: string;
 };
-export type SearchFilters = { query: string; period: 'all' | '7' | '30'; place: string };
+export type SearchFilters = {
+  query: string;
+  /** 'custom'이면 from~to(YYYY-MM-DD, 서울 날짜)를 씁니다. */
+  period: 'all' | '7' | '30' | 'custom';
+  place: string;
+  from?: string;
+  to?: string;
+  /** 가까운 순 기준 좌표. 장소 후보를 고르거나 내 위치를 쓰면 채웁니다. */
+  near?: { lat: number; lng: number; label: string };
+};
+/** 검색 조건의 시작·끝 시각(ms). 정해진 기간이 없으면 undefined. */
+export function periodRange(filters: SearchFilters, now = Date.now()) {
+  if (filters.period === 'custom')
+    return {
+      from: filters.from ? Date.parse(filters.from + 'T00:00:00+09:00') : undefined,
+      to: filters.to ? Date.parse(filters.to + 'T23:59:59.999+09:00') : undefined,
+    };
+  if (filters.period === 'all') return { from: undefined, to: undefined };
+  return { from: now - Number(filters.period) * 86_400_000, to: undefined };
+}
 // UI fixtures only. No auth state, contact information or private ownership clues.
 export const mockItems: PublicItem[] = [
   {
@@ -82,7 +103,9 @@ export const mockItems: PublicItem[] = [
 export function filterItems(items: PublicItem[], filters: SearchFilters, now = Date.now()) {
   const words = filters.query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const place = filters.place.trim().toLocaleLowerCase();
-  const cutoff = filters.period === 'all' ? -Infinity : now - Number(filters.period) * 86_400_000;
+  const range = periodRange(filters, now);
+  const cutoff = range.from ?? -Infinity;
+  const until = range.to ?? Infinity;
   return items.filter((item) => {
     const haystack = `${item.name} ${item.description}`.toLocaleLowerCase();
     const time = new Date(item.foundAt).getTime();
@@ -90,7 +113,7 @@ export function filterItems(items: PublicItem[], filters: SearchFilters, now = D
       words.every((word) => haystack.includes(word)) &&
       item.location.toLocaleLowerCase().includes(place) &&
       time >= cutoff &&
-      time <= now
+      time <= Math.min(now, until)
     );
   });
 }
@@ -120,6 +143,10 @@ export function fromServer(item: ServerItem): PublicItem {
     foundAt: item.foundAt,
     createdAt: item.createdAt,
     location: item.foundLocation.label,
+    ...(Number.isFinite(item.foundLocation.lat) &&
+      Number.isFinite(item.foundLocation.lng) && {
+        point: { lat: item.foundLocation.lat, lng: item.foundLocation.lng },
+      }),
     ...(isCurrentLocationLabel(item.foundLocation.label) &&
       Number.isFinite(item.foundLocation.lat) &&
       Number.isFinite(item.foundLocation.lng) && {
@@ -149,8 +176,9 @@ export const itemRepository = {
     if (cursor) q.set('cursor', cursor);
     if (filters.query.trim()) q.set('q', filters.query.trim());
     if (filters.place.trim()) q.set('place', filters.place.trim());
-    if (filters.period !== 'all')
-      q.set('foundFrom', new Date(searchTime - Number(filters.period) * 86400000).toISOString());
+    const range = periodRange(filters, searchTime);
+    if (range.from !== undefined) q.set('foundFrom', new Date(range.from).toISOString());
+    if (range.to !== undefined) q.set('foundTo', new Date(range.to).toISOString());
     const page = await api<{
       data: ServerItem[];
       meta: { total?: number; nextCursor: string | null };

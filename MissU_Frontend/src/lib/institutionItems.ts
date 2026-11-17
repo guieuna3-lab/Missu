@@ -15,6 +15,8 @@ export type InstitutionItem = {
   category: string;
   phone?: string;
   foundPlace?: string;
+  /** 검색 기준 장소에서 보관처까지의 거리(m). 가까운 순일 때 서버가 채웁니다. */
+  distanceM?: number;
   photoUrls?: string[];
 };
 type NearbyInstitution = InstitutionItem & {
@@ -63,11 +65,18 @@ export function recentInstitutions(cursor?: string) {
   );
 }
 function institutionQuery(filters: SearchFilters) {
-  return new URLSearchParams({
+  const params = new URLSearchParams({
     q: filters.query.trim(),
     place: filters.place.trim(),
-    period: filters.period,
+    period: filters.period === 'custom' ? 'all' : filters.period,
   });
+  if (filters.period === 'custom') {
+    if (filters.from) params.set('from', filters.from);
+    if (filters.to) params.set('to', filters.to);
+  }
+  if (filters.near)
+    params.set('near', filters.near.lat.toFixed(6) + ',' + filters.near.lng.toFixed(6));
+  return params;
 }
 export function searchInstitutions(filters: SearchFilters, cursor?: string) {
   const params = institutionQuery(filters);

@@ -2,13 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import {
   ActivityIndicator,
-  BackHandler,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -16,9 +14,9 @@ import {
 import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { FormField } from '@/components/FormField';
-import { PlaceSearchField } from '@/features/place/PlaceSearchField';
 import { Header } from '@/components/Header';
 import { RecentItemRow } from '@/components/ItemRow';
+import { ItemThumb } from '@/components/ItemThumb';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
@@ -31,14 +29,14 @@ import {
   type InstitutionItem,
 } from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
+import { distanceOf, sortResults, type SearchSort } from '@/lib/searchRank';
+import { seoulDate } from './RangeCalendar';
+import { SearchConditionsSheet } from './SearchConditionsSheet';
+import { SortSheet, sortLabels } from './SortSheet';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
-const periods = [
-  { value: 'all', label: '최근 6개월' },
-  { value: '7', label: '최근 7일' },
-  { value: '30', label: '최근 30일' },
-] as const;
 const pageSize = 25;
+const popular = ['지갑', '이어폰', '휴대폰', '카드', '열쇠', '가방'];
 type SearchItem = PublicItem | InstitutionItem;
 type SearchState = {
   status: 'idle' | 'loading' | 'success' | 'error';
@@ -132,9 +130,11 @@ async function loadResults(
 export default function SearchScreen() {
   const { profile } = usePreview();
   const [filters, setFilters] = useState(initialFilters);
-  const [draft, setDraft] = useState(initialFilters);
   const [conditions, setConditions] = useState(false);
-  const [choosingPeriod, setChoosingPeriod] = useState(false);
+  const [sorting, setSorting] = useState(false);
+  const [sort, setSort] = useState<SearchSort>('recent');
+  const [sortLoading, setSortLoading] = useState(false);
+  const [today] = useState(() => seoulDate());
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -179,15 +179,6 @@ export default function SearchScreen() {
     },
     [],
   );
-  useEffect(() => {
-    if (!conditions) return;
-    const subscription = BackHandler.addEventListener('hardwareBackPress', () => {
-      setConditions(false);
-      return true;
-    });
-    return () => subscription.remove();
-  }, [conditions]);
-
   async function search(values = filters) {
     if (pending.current) return;
     if (!values.query.trim()) {
@@ -202,18 +193,26 @@ export default function SearchScreen() {
     setValidation('');
     setState({ ...initialState, status: 'loading' });
     setAgencyCount(null);
-    setCountFilters({ ...values });
+    setCountFilters(
+      values.period === 'custom' && values.to && values.to < today ? null : { ...values },
+    );
     searchTime.current = Date.now();
+    let loaded: SearchState | undefined;
     try {
       const result = await loadResults(values, initialState, searchTime.current, (memberTotal) => {
         if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
       });
-      if (id === requestId.current) setState(result);
+      if (id === requestId.current) {
+        setState(result);
+        loaded = result;
+      }
     } catch {
       if (id === requestId.current) setState({ ...initialState, status: 'error' });
     } finally {
       if (id === requestId.current) pending.current = false;
     }
+    if (loaded && sort !== 'recent' && (sort !== 'distance' || values.near))
+      void loadForSort(loaded);
   }
   async function showMore() {
     if (pending.current) return;
@@ -236,18 +235,61 @@ export default function SearchScreen() {
       }
     }
   }
-  function openConditions(reset = false) {
+  function openConditions() {
     Keyboard.dismiss();
-    setDraft(reset ? { ...initialFilters, query: filters.query } : filters);
-    setChoosingPeriod(false);
     setValidation('');
     setConditions(true);
   }
+  function applyConditions(next: SearchFilters) {
+    setConditions(false);
+    // 기준 좌표가 없어지면 가까운 순을 쓸 수 없어 최신순으로 돌아갑니다.
+    if (!next.near && sort === 'distance') setSort('recent');
+    if (next.query.trim()) void search(next);
+    else setFilters(next);
+  }
+  /** 가까운 순·정확도순은 결과를 더 불러와(최대 100건) 그 안에서 정렬합니다. */
+  async function loadForSort(base: SearchState) {
+    if (pending.current || base.status !== 'success') return;
+    const id = ++requestId.current;
+    pending.current = true;
+    setSortLoading(true);
+    let current = base;
+    try {
+      for (
+        let round = 0;
+        round < 4 &&
+        current.items.length < 100 &&
+        (current.memberCursor !== null || current.agencyCursor !== null);
+        round++
+      ) {
+        const next = await loadResults(filters, current, searchTime.current);
+        if (next.items.length === current.items.length) break;
+        current = next;
+      }
+      if (id === requestId.current) setState(current);
+    } catch {
+      // 더 불러오지 못해도 이미 받은 결과로 정렬합니다.
+    } finally {
+      if (id === requestId.current) {
+        pending.current = false;
+        setSortLoading(false);
+      }
+    }
+  }
   function back() {
-    if (conditions) setConditions(false);
-    else if (router.canGoBack()) router.back();
+    if (router.canGoBack()) router.back();
     else router.replace('/home');
   }
+  const conditionCount =
+    (filters.period !== 'all' ? 1 : 0) + (filters.place || filters.near ? 1 : 0);
+  const hasMore = state.memberCursor !== null || state.agencyCursor !== null;
+  const displayed = sortResults(
+    sort === 'recent' ? state.items.slice(0, state.visible) : state.items,
+    sort,
+    filters,
+  );
+  // 직접 고른 기간이 오늘 전에 끝나면 기관 합계가 끝일을 반영하지 못해 건수를 세지 않습니다.
+  const endsBeforeToday = filters.period === 'custom' && !!filters.to && filters.to < today;
   const snapshot =
     agencyCount?.status === 'complete' || agencyCount?.confirmedTotal === undefined
       ? agencyCount?.lastComplete
@@ -265,6 +307,7 @@ export default function SearchScreen() {
   else if (agencyCount?.status === 'unavailable' || state.memberNotice)
     countLabel = '습득물 건수를 불러오지 못했어요';
   else if (agencyCount?.status === 'counting') countLabel = '확인된 습득물 집계 중';
+  if (endsBeforeToday) countLabel = '직접 고른 기간의 습득물';
   const heading = (
     <>
       <FormField
@@ -284,45 +327,68 @@ export default function SearchScreen() {
         onSubmitEditing={() => void search()}
         error={validation || undefined}
       />
-      <View style={styles.filters}>
-        {[
-          {
-            key: 'period',
-            label: '기간 · ' + periods.find((p) => p.value === filters.period)?.label,
-            on: filters.period !== 'all',
-          },
-          {
-            key: 'place',
-            label: '장소 · ' + (filters.place.trim() || '전체'),
-            on: !!filters.place.trim(),
-          },
-        ].map((f) => (
+      <View style={styles.controls}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`기간 · 장소 조건${conditionCount ? `, ${conditionCount}개 적용됨` : ''}, 바꾸기`}
+          disabled={state.status === 'loading'}
+          onPress={openConditions}
+          style={[styles.filter, conditionCount > 0 && styles.filterOn]}
+        >
+          <Icon name="info-date" size={15} tintColor={conditionCount ? colors.blue : colors.body} />
+          <Text style={[styles.filterText, conditionCount > 0 && styles.filterTextOn]}>
+            기간 · 장소
+          </Text>
+          {conditionCount > 0 && <Text style={styles.filterCount}>{conditionCount}</Text>}
+        </Pressable>
+        {state.status !== 'idle' && (
           <Pressable
-            key={f.key}
             accessibilityRole="button"
-            accessibilityLabel={f.label + ', 검색 조건 바꾸기'}
-            disabled={state.status === 'loading'}
-            onPress={() => openConditions()}
-            style={[styles.filter, f.on && styles.filterOn]}
+            accessibilityLabel={`정렬: ${sortLabels[sort]}, 바꾸기`}
+            onPress={() => setSorting(true)}
+            style={styles.sortButton}
           >
-            <Text style={[styles.filterText, f.on && styles.filterTextOn]} numberOfLines={1}>
-              {f.label}
-            </Text>
+            <Text style={styles.sortText}>{sortLabels[sort]}</Text>
+            <Text style={styles.sortCaret}>▾</Text>
           </Pressable>
-        ))}
+        )}
       </View>
       {state.status === 'idle' && (
         <>
-          <View style={styles.intro}>
-            <Icon name="search" />
-            <Text style={typography.label}>어떤 물건을 찾고 있나요?</Text>
-            <Text style={typography.body}>
-              {'물품명이나 특징을 입력하면\n등록된 습득물을 찾아드려요.'}
-            </Text>
+          <Text style={styles.sectionTitle}>자주 찾는 물건</Text>
+          <View style={styles.popular}>
+            {popular.map((label) => (
+              <Pressable
+                key={label}
+                accessibilityRole="button"
+                accessibilityLabel={`${label} 검색`}
+                onPress={() => {
+                  const next = { ...filters, query: label };
+                  setFilters(next);
+                  void search(next);
+                }}
+                style={({ pressed }) => [styles.popularTile, pressed && styles.pressed]}
+              >
+                <ItemThumb name={label} size={44} />
+                <Text style={styles.popularText}>{label}</Text>
+              </Pressable>
+            ))}
           </View>
-          <Text style={[typography.body, styles.hint]}>
-            근처 탭에서는 주변 습득물을 지도에서 볼 수 있어요.
-          </Text>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="근처에서 찾기, 잃어버린 곳 주변 습득물을 지도로 보기"
+            onPress={() => router.push('/nearby')}
+            style={({ pressed }) => [styles.nearCard, pressed && styles.pressed]}
+          >
+            <View style={styles.nearIcon}>
+              <Icon name="info-place" size={24} tintColor="#12A150" />
+            </View>
+            <View style={styles.nearText}>
+              <Text style={styles.nearTitle}>근처에서 찾기</Text>
+              <Text style={styles.nearSub}>잃어버린 곳 주변 습득물을 지도로 봐요</Text>
+            </View>
+            <Text style={styles.chevron}>›</Text>
+          </Pressable>
         </>
       )}
       {state.status === 'loading' && confirmedCount === null && (
@@ -371,14 +437,15 @@ export default function SearchScreen() {
             .join(' ')}
         </Text>
       )}
+      {sort !== 'recent' && state.items.length > 0 && hasMore && (
+        <Text style={[typography.body, styles.sortNote]}>
+          {`앞쪽 ${state.items.length}건 중에서 ${sortLabels[sort]}으로 정렬했어요. 더 불러오면 다시 정렬해요.`}
+        </Text>
+      )}
       {state.status === 'success' && !state.items.length && (
         <>
           <Text style={typography.body}>검색어를 줄이거나 기간·장소 조건을 넓혀 보세요.</Text>
-          <ActionButton
-            label="검색 조건 다시 설정"
-            variant="outline"
-            onPress={() => openConditions(true)}
-          />
+          <ActionButton label="검색 조건 다시 설정" variant="outline" onPress={openConditions} />
         </>
       )}
     </>
@@ -389,124 +456,86 @@ export default function SearchScreen() {
         style={styles.page}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
-        <Header
-          title={conditions ? '검색 조건' : '습득물 검색'}
-          onBack={back}
-          accountOrigin={conditions ? undefined : 'search'}
-        />
-        {conditions ? (
-          <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.content}>
-            <View style={styles.stack}>
-              <Text accessibilityRole="header" style={typography.heading}>
-                검색 범위를 정해 주세요
-              </Text>
-              <FormField
-                label="물품명·특징"
-                value={draft.query}
-                onChangeText={(query) => {
-                  setDraft((f) => ({ ...f, query }));
-                  setValidation('');
-                }}
-                error={validation || undefined}
-              />
-              <View style={styles.field}>
-                <Text style={typography.label}>기간</Text>
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`기간: ${periods.find((p) => p.value === draft.period)?.label}`}
-                  accessibilityState={{ expanded: choosingPeriod }}
-                  onPress={() => setChoosingPeriod((v) => !v)}
-                  style={styles.select}
-                >
-                  <Text style={[typography.body, styles.ink]}>
-                    {periods.find((p) => p.value === draft.period)?.label}
-                  </Text>
-                </Pressable>
-                {choosingPeriod &&
-                  periods.map((p) => (
-                    <Pressable
-                      key={p.value}
-                      accessibilityRole="radio"
-                      accessibilityState={{ checked: p.value === draft.period }}
-                      onPress={() => {
-                        setDraft((f) => ({ ...f, period: p.value }));
-                        setChoosingPeriod(false);
-                      }}
-                      style={[styles.option, p.value === draft.period && styles.intro]}
-                    >
-                      <Text style={typography.label}>
-                        {p.label}
-                        {p.value === draft.period ? ' · 선택됨' : ''}
-                      </Text>
-                    </Pressable>
-                  ))}
+        <Header title="습득물 검색" onBack={back} accountOrigin="search" />
+        <FlatList
+          data={displayed}
+          keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={styles.content}
+          ListHeaderComponent={<View style={styles.stack}>{heading}</View>}
+          ItemSeparatorComponent={() => <View style={styles.separator} />}
+          renderItem={({ item, index }) => {
+            const distance = sort === 'distance' ? distanceOf(item, filters.near) : undefined;
+            const unknownStart =
+              sort === 'distance' &&
+              distance === undefined &&
+              (index === 0 || distanceOf(displayed[index - 1], filters.near) !== undefined);
+            return (
+              <View>
+                {unknownStart && <Text style={styles.divider}>위치 정보가 없는 물품</Text>}
+                <RecentItemRow
+                  item={item}
+                  distanceM={distance}
+                  onPress={() =>
+                    'source' in item
+                      ? openInstitution(item)
+                      : router.push({ pathname: '/items/[id]', params: { id: item.id } })
+                  }
+                />
               </View>
-              <PlaceSearchField
-                label="장소"
-                placeholder="전체 장소"
-                value={draft.place}
-                onChangeText={(place) => setDraft((f) => ({ ...f, place }))}
-                returnKeyType="search"
-                onSubmitEditing={() => void search(draft)}
-              />
-            </View>
-          </ScrollView>
-        ) : (
-          <FlatList
-            data={state.items.slice(0, state.visible)}
-            keyExtractor={(item) => item.id}
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={styles.content}
-            ListHeaderComponent={<View style={styles.stack}>{heading}</View>}
-            ItemSeparatorComponent={() => <View style={styles.separator} />}
-            renderItem={({ item }) => (
-              <RecentItemRow
-                item={item}
-                onPress={() =>
-                  'source' in item
-                    ? openInstitution(item)
-                    : router.push({ pathname: '/items/[id]', params: { id: item.id } })
-                }
-              />
-            )}
-            ListFooterComponent={
-              state.status === 'success' ? (
-                <View>
-                  {(state.visible < state.items.length ||
-                    state.memberCursor !== null ||
-                    state.agencyCursor !== null) && (
-                    <ActionButton
-                      label="습득물 더보기"
-                      variant="outline"
-                      loading={loadingMore}
-                      onPress={() => void showMore()}
-                    />
-                  )}
-                  {state.items.length > 0 && (
-                    <Text style={[typography.body, styles.footer]}>
-                      공개 정보는 누구나 볼 수 있어요.
-                      {!profile && '\n회원 등록 물품은 로그인 후 반환을 요청할 수 있어요.'}
-                    </Text>
-                  )}
-                </View>
-              ) : undefined
-            }
-          />
-        )}
+            );
+          }}
+          ListFooterComponent={
+            state.status === 'success' ? (
+              <View>
+                {(state.visible < state.items.length ||
+                  state.memberCursor !== null ||
+                  state.agencyCursor !== null) && (
+                  <ActionButton
+                    label="습득물 더보기"
+                    variant="outline"
+                    loading={loadingMore}
+                    onPress={() => void showMore()}
+                  />
+                )}
+                {state.items.length > 0 && (
+                  <Text style={[typography.body, styles.footer]}>
+                    공개 정보는 누구나 볼 수 있어요.
+                    {!profile && '\n회원 등록 물품은 로그인 후 반환을 요청할 수 있어요.'}
+                  </Text>
+                )}
+              </View>
+            ) : undefined
+          }
+        />
         <ActionBar>
           <ActionButton
-            label={
-              conditions
-                ? '검색 결과 보기'
-                : state.status === 'idle'
-                  ? '습득물 검색'
-                  : '다시 검색하기'
-            }
-            loading={state.status === 'loading'}
-            onPress={() => void search(conditions ? draft : filters)}
+            label={state.status === 'idle' ? '습득물 검색' : '다시 검색하기'}
+            loading={state.status === 'loading' || sortLoading}
+            onPress={() => void search(filters)}
           />
         </ActionBar>
-        {!conditions && <BottomNavigation selected="home" />}
+        <BottomNavigation selected="home" />
+        {conditions && (
+          <SearchConditionsSheet
+            value={filters}
+            onClose={() => setConditions(false)}
+            onApply={applyConditions}
+          />
+        )}
+        {sorting && (
+          <SortSheet
+            value={sort}
+            query={filters.query}
+            nearLabel={filters.near?.label}
+            onClose={() => setSorting(false)}
+            onChange={(next) => {
+              setSorting(false);
+              setSort(next);
+              if (next !== 'recent') void loadForSort(state);
+            }}
+          />
+        )}
       </KeyboardAvoidingView>
     </Screen>
   );
@@ -515,23 +544,19 @@ const styles = StyleSheet.create({
   page: { flex: 1 },
   content: { paddingHorizontal: 20, paddingVertical: 24 },
   stack: { gap: 16, marginBottom: 16 },
-  intro: { backgroundColor: colors.lightBlue, padding: 16, borderRadius: 12, gap: 8 },
-  field: { gap: 8 },
-  select: {
-    minHeight: 52,
-    padding: 16,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 12,
-  },
-  option: { padding: 16, backgroundColor: colors.white, borderRadius: 12 },
-  ink: { color: colors.ink },
-  hint: { fontSize: 12, lineHeight: 18 },
   feedback: { gap: 16, paddingVertical: 16 },
   separator: { height: 8 },
-  filters: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: -4 },
+  controls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: -4,
+  },
   filter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    minHeight: 36,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
@@ -543,5 +568,58 @@ const styles = StyleSheet.create({
   filterOn: { borderColor: colors.blue, backgroundColor: colors.lightBlue },
   filterText: { ...typography.label, fontSize: 13, color: '#4E5968' },
   filterTextOn: { color: colors.blue, fontWeight: '700' },
+  filterCount: { ...typography.label, fontSize: 12, color: colors.body },
+  // 조건 탭과 같은 높이·세로 가운데로 맞춥니다.
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    minHeight: 36,
+    paddingLeft: 10,
+  },
+  sortText: { ...typography.label, fontSize: 13, fontWeight: '700' },
+  sortCaret: { ...typography.label, fontSize: 11, color: colors.body },
+  sortNote: { fontSize: 12, lineHeight: 18, color: colors.muted },
+  sectionTitle: { ...typography.label, fontSize: 15, fontWeight: '700', marginTop: 4 },
+  popular: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  popularTile: {
+    width: '31.5%',
+    flexGrow: 1,
+    alignItems: 'center',
+    gap: 8,
+    paddingTop: 14,
+    paddingBottom: 12,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+  },
+  popularText: { ...typography.label, fontSize: 13, fontWeight: '700' },
+  pressed: { opacity: 0.7 },
+  nearCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: colors.white,
+  },
+  nearIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#E8F7EE',
+  },
+  nearText: { flex: 1, gap: 2 },
+  nearTitle: { ...typography.label, fontSize: 14, fontWeight: '700' },
+  nearSub: { ...typography.body, fontSize: 12, lineHeight: 18, color: colors.muted },
+  chevron: { fontSize: 22, lineHeight: 24, color: colors.divider },
+  divider: {
+    ...typography.body,
+    fontSize: 12,
+    textAlign: 'center',
+    color: colors.muted,
+    marginBottom: 8,
+  },
   footer: { marginTop: 16 },
 });
