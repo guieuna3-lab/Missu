@@ -1,11 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  distanceOf,
-  formatDistance,
-  relevance,
-  sortResults,
-} from '../src/lib/searchRank.ts';
+import { distanceOf, formatDistance, relevance, sortResults } from '../src/lib/searchRank.ts';
 
 const near = { lat: 37.5884, lng: 127.006, label: '한성대입구역' };
 const filters = { query: '이어폰', period: 'all', place: '', near };
