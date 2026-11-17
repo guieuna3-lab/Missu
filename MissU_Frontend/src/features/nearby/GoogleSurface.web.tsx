@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ComponentRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { setOptions, importLibrary } from '@googlemaps/js-api-loader';
 import { routeSegments, type StreetMapProps } from './mapData';
+import { MapLoadingOverlay, useMapDrawn } from './MapLoading';
 
 // 지도 키가 설정된 웹에서만 Google의 지도 코드를 불러옵니다.
 type Props = StreetMapProps & { apiKey: string; onFailure: () => void };
@@ -10,6 +11,8 @@ export default function GoogleSurface(props: Props) {
   const container = useRef<ComponentRef<typeof View>>(null);
   const current = useRef(props);
   const [map, setMap] = useState<google.maps.Map>();
+  const [drawn, markDrawn] = useMapDrawn();
+  const drawnRef = useRef(markDrawn);
   useEffect(() => {
     current.current = props;
   }, [props]);
@@ -36,6 +39,10 @@ export default function GoogleSurface(props: Props) {
         listener = next.addListener('idle', () => {
           const c = next.getCenter();
           if (c) current.current.onMove?.(c.toJSON());
+        });
+        // 처음 보이는 지도 타일이 모두 그려지면 로딩 안내를 내립니다.
+        next.addListener('tilesloaded', () => {
+          if (!closed) drawnRef.current();
         });
         setMap(next);
       })
@@ -101,5 +108,10 @@ export default function GoogleSurface(props: Props) {
       }
     };
   }, [map, props.position, props.startPoint, props.pins, props.path, props.selectedId]);
-  return <View ref={container} style={[StyleSheet.absoluteFill, { bottom: 17 }]} />;
+  return (
+    <View style={[StyleSheet.absoluteFill, { bottom: 17 }]}>
+      <View ref={container} style={StyleSheet.absoluteFill} />
+      {!drawn && <MapLoadingOverlay />}
+    </View>
+  );
 }

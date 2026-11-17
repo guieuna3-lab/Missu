@@ -20,6 +20,7 @@ import { formatFoundAt } from '@/lib/items';
 import { nearbyInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { readDeviceLocation } from './deviceLocation';
 import { StreetMap } from './StreetMap';
+import { MapStatusPill } from './MapLoading';
 import { campus, mapApi, nearbyMembers, type MapItem, type Coordinates } from './mapData';
 import { MapIcon, mapArt } from './mapArt';
 import { categories, defaultFilters, radii, type NearbyFilters } from './nearbyItems';
@@ -167,6 +168,9 @@ export function NearbyScreen() {
   const memberFailed = membersReady && !!result.error;
   const agencyCountFailed = count?.params === params && count.failed;
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
+  // 목록의 '불러오는 중' 안내와 같은 조건으로 지도 위에도 진행 상태를 보여줍니다.
+  const findingItems =
+    !!searchedArea && (loading || (!items.length && (!membersReady || !agenciesReady)));
   const notice = [
     agenciesReady ? agencies.notices.join(' ') : '기관 보관품을 확인하고 있어요.',
     membersReady && items.length ? result.error : '',
@@ -523,6 +527,7 @@ export function NearbyScreen() {
                   }}
                 />
               )}
+              {findingItems && <MapStatusPill label="주변 습득물을 찾고 있어요" />}
               <View style={styles.tools} pointerEvents="box-none">
                 <Pressable
                   accessibilityRole="button"
