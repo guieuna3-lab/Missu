@@ -1448,3 +1448,75 @@ describe('기관 습득물', () => {
     expect(recovered.items).toHaveLength(1);
   });
 });
+
+describe('기관 목록 저장본의 사진', () => {
+  const photo =
+    'https://www.lost112.go.kr/lostnfs/images/uploadImg/2026/11/wallet.jpg';
+  it('확인한 보관품의 첫 사진 주소를 저장본에 함께 쓴다', async () => {
+    const values: unknown[][] = [];
+    const api = new InstitutionItemsService(
+      {} as ExternalHttpService,
+      {
+        $executeRaw: async (_sql: TemplateStringsArray, ...args: unknown[]) => {
+          values.push(args);
+          return 1;
+        },
+      } as unknown as DatabaseService,
+    );
+    const item = await (
+      api as unknown as {
+        verifiedItem: (
+          row: Record<string, string>,
+          source: '포털기관',
+          observedAt: Date,
+        ) => Promise<{ photoUrls?: string[] } | undefined>;
+      }
+    ).verifiedItem(
+      {
+        atcId: 'V0002122L11170002',
+        fdSn: '1',
+        fdPrdtNm: '카드지갑',
+        depPlace: '미아사거리역(4호선)',
+        fdYmd: '20261117',
+        csteSteNm: '보관중',
+        orgNm: '서울교통공사',
+        fdFilePathImg: photo,
+      },
+      '포털기관',
+      new Date('2026-11-17T09:00:00+09:00'),
+    );
+    expect(item?.photoUrls).toEqual([photo]);
+    expect(values).toHaveLength(1);
+    expect(values[0].at(-1)).toBe(photo);
+  });
+  it('저장본 목록에 사진 주소가 있으면 photoUrls로 돌려준다', async () => {
+    const row = {
+      id: 'lost112:V111:2',
+      source: '지하철',
+      name: '카드지갑',
+      storage: '가상역(2호선)',
+      day: '2026-05-14',
+      category: 'WALLET_BAG',
+      checkedAt: new Date('2026-11-13T23:00:00+09:00'),
+    };
+    const findMany = jest.fn().mockResolvedValue([
+      { ...row, photoUrl: photo },
+      { ...row, id: 'lost112:V112:1', photoUrl: null },
+    ]);
+    const api = new InstitutionItemsService(
+      {
+        request: async () => {
+          throw Error('offline');
+        },
+      } as unknown as ExternalHttpService,
+      { verifiedPortalItem: { findMany } } as unknown as DatabaseService,
+    );
+    const cursor = Buffer.from(JSON.stringify([null, null, [0, 0]])).toString(
+      'base64url',
+    );
+    const result = await api.search('지갑', '가상역 2호선', 'all', cursor);
+    const byId = new Map(result.items.map((i) => [i.id, i]));
+    expect(byId.get('lost112:V111:2')?.photoUrls).toEqual([photo]);
+    expect(byId.get('lost112:V112:1')).not.toHaveProperty('photoUrls');
+  });
+});
