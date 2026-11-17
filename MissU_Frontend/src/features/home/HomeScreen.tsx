@@ -1,23 +1,18 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback, useRef } from 'react';
-import { itemRepository, formatFoundAt, type PublicItem } from '@/lib/items';
-import {
-  recentInstitutions,
-  previewInstitutions,
-  openInstitution,
-  type InstitutionItem,
-} from '@/lib/institutionItems';
+import { itemRepository } from '@/lib/items';
+import { recentInstitutions, previewInstitutions, openInstitution } from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { Header } from '@/components/Header';
 import { Icon } from '@/components/Icon';
+import { DayHeading, RecentItemRow, dayKey, type HomeItem } from './RecentItemRow';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { previewActivity } from '@/lib/preview/fixtures';
 import { isPreview } from '@/lib/preview/PreviewProvider';
 
-type HomeItem = PublicItem | InstitutionItem;
 const pageSize = 10;
 // 기관 날짜의 정밀도는 일 단위입니다. 서울 날짜의 시작을 기준으로 회원 등록 시각과 비교합니다.
 const recentTime = (item: HomeItem) =>
@@ -177,45 +172,23 @@ export function HomeScreen() {
             <Text style={styles.secondary}>현재 확인된 최근 습득물이 없어요.</Text>
           )}
           {state === 'ready' &&
-            recent.slice(0, visibleCount).map((item) => (
-              <Pressable
-                key={item.id}
-                accessibilityRole="button"
-                onPress={() =>
-                  'source' in item
-                    ? openInstitution(item)
-                    : router.push({ pathname: '/items/[id]', params: { id: item.id } })
-                }
-                style={styles.item}
-              >
-                <Icon name="search" />
-                <View style={styles.itemText}>
-                  <Text style={typography.label}>{item.name}</Text>
-                  <Text style={styles.secondary}>
-                    {'source' in item
-                      ? item.source + ' · ' + item.storage
-                      : '회원 · ' + item.location}
-                  </Text>
-                  <Text style={styles.secondary}>
-                    {'source' in item
-                      ? item.dateLabel +
-                        ' ' +
-                        item.date +
-                        (item.dateLabel === '게시일' ? ' · 습득일 미공개' : '')
-                      : item.createdAt
-                        ? '등록일 ' + formatFoundAt(item.createdAt).slice(0, 10)
-                        : '습득일 ' + formatFoundAt(item.foundAt).slice(0, 10)}
-                  </Text>
+            recent.slice(0, visibleCount).map((item, index, shown) => {
+              const time = recentTime(item);
+              const newDay = index === 0 || dayKey(time) !== dayKey(recentTime(shown[index - 1]));
+              return (
+                <View key={item.id} style={styles.items}>
+                  {newDay && <DayHeading time={time} />}
+                  <RecentItemRow
+                    item={item}
+                    onPress={() =>
+                      'source' in item
+                        ? openInstitution(item)
+                        : router.push({ pathname: '/items/[id]', params: { id: item.id } })
+                    }
+                  />
                 </View>
-                {(!('source' in item) || item.source === '한성대') && (
-                  <View style={styles.status}>
-                    <Text style={[typography.label, { color: colors.green }]}>
-                      {'source' in item ? '학교 접수' : item.statusLabel}
-                    </Text>
-                  </View>
-                )}
-              </Pressable>
-            ))}
+              );
+            })}
           {state === 'ready' &&
             cursor !== undefined &&
             (recent.length > visibleCount || !!cursor || !!agencyCursor) && (
@@ -275,24 +248,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white,
   },
   items: { gap: 8 },
-  item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 64,
-    padding: 12,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.line,
-    backgroundColor: colors.white,
-  },
-  status: {
-    minWidth: 58,
-    minHeight: 24,
-    paddingHorizontal: 8,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.greenBg,
-  },
 });

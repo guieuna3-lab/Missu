@@ -29,6 +29,13 @@ const icons = {
   check: require('../../assets/icons/check.svg'),
   book: require('../../assets/icons/book.svg'),
   bus: require('../../assets/icons/bus.svg'),
+  // Home recent list: single-color line art, recolored per category with tintColor.
+  'cat-electronics': require('../../assets/icons/cat-electronics.svg'),
+  'cat-wallet': require('../../assets/icons/cat-wallet.svg'),
+  'cat-card': require('../../assets/icons/cat-card.svg'),
+  'cat-accessory': require('../../assets/icons/cat-accessory.svg'),
+  'cat-key': require('../../assets/icons/cat-key.svg'),
+  'cat-other': require('../../assets/icons/cat-other.svg'),
 };
 export type IconName = keyof typeof icons;
 
