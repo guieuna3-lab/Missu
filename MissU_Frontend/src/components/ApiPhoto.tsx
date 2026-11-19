@@ -57,6 +57,7 @@ function PhotoImage({
         crossOrigin="anonymous"
         referrerPolicy="no-referrer"
         src={uri}
+        decoding="async"
         onLoad={() => finish(false)}
         onError={() => finish(true)}
         style={{
@@ -75,6 +76,9 @@ function PhotoImage({
       source={{ uri }}
       style={[styles.photo, { width, height, borderRadius: radius }]}
       contentFit="cover"
+      // 목록은 화면 진입 시에만 마운트합니다. 추가 지연 로딩 때문에 시간 초과되지 않게 합니다.
+      loading="eager"
+      cachePolicy="memory-disk"
       transition={150}
       accessible={!!label}
       accessibilityLabel={label}
