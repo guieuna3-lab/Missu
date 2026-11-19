@@ -17,8 +17,11 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
   let service: SearchResultsService;
   const owner = '00000000-0000-4000-8000-000000000001';
   const day = (ago: number) => koreaDay(Date.now() - ago * 86400000);
-  const query = (sort: 'recent' | 'relevance', cursor?: string, q = '이어폰') =>
-    Object.assign(new SearchResultsDto(), { q, sort, cursor });
+  const query = (
+    sort: 'recent' | 'relevance' | 'distance',
+    cursor?: string,
+    q = '이어폰',
+  ) => Object.assign(new SearchResultsDto(), { q, sort, cursor });
   beforeAll(async () => {
     const parsed = new URL(url!);
     if (
@@ -108,10 +111,7 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
         kindName: i.name,
       })),
     });
-    institution = new InstitutionItemsService(
-      new ExternalHttpService(),
-      db,
-    );
+    institution = new InstitutionItemsService(new ExternalHttpService(), db);
     jest.spyOn(institution, 'schoolForMatching').mockResolvedValue([
       {
         id: 'hansung:99991',
@@ -148,7 +148,9 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
   });
   it('학교 장애 중에도 DB 물품을 표시하고 페이지 사이 출처를 바꾸지 않는다', async () => {
     const read = jest.mocked(institution.schoolForMatching);
-    read.mockRejectedValueOnce(Error('temporary')).mockRejectedValueOnce(Error('temporary'));
+    read
+      .mockRejectedValueOnce(Error('temporary'))
+      .mockRejectedValueOnce(Error('temporary'));
     const first = await service.search(query('relevance'));
     expect(first.items).toHaveLength(25);
     expect(first.notices).toHaveLength(1);
@@ -157,7 +159,9 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
     const next = await service.search(query('relevance', first.nextCursor!));
     expect(read.mock.calls).toHaveLength(calls);
     expect(next.notices).toEqual(first.notices);
-    expect(new Set([...first.items, ...next.items].map((i) => i.id)).size).toBe(50);
+    expect(new Set([...first.items, ...next.items].map((i) => i.id)).size).toBe(
+      50,
+    );
     const recovered = await service.search(query('relevance'));
     expect(recovered.notices).toEqual([]);
     expect(recovered.items.some((i) => i.id.startsWith('hansung:'))).toBe(true);
@@ -220,5 +224,124 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
     ).toBe(true);
     const phone = await service.search(query('relevance', undefined, '핸드폰'));
     expect(phone.items.map((i) => i.name)).toEqual(['아이폰']);
+  });
+
+  it('과거 하루의 목록을 끝까지 읽은 수와 독립 건수가 같다', async () => {
+    const filters = { from: day(8), to: day(8), place: '강남역' };
+    const count = await service.count(Object.assign(query('recent'), filters));
+    let cursor: string | undefined;
+    const ids: string[] = [];
+    do {
+      const result = await service.search(
+        Object.assign(query('recent', cursor), filters),
+      );
+      ids.push(...result.items.map((item) => item.id));
+      expect(
+        result.items.every(
+          (item) =>
+            ('source' in item
+              ? item.date
+              : koreaDay(item.foundAt.getTime())) === day(8),
+        ),
+      ).toBe(true);
+      cursor = result.nextCursor ?? undefined;
+    } while (cursor);
+    expect(count.total).toBeGreaterThan(25);
+    expect(count.total).toBe(ids.length);
+    expect(new Set(ids).size).toBe(ids.length);
+    const sortedCount = await service.count(
+      Object.assign(query('distance'), filters, { near: '37.5,127' }),
+    );
+    expect(sortedCount.total).toBe(count.total);
+  });
+
+  it('전체 거리순에서 최근 100건 밖 물품도 앞에 오고 위치 미확인은 뒤에 남는다', async () => {
+    await db.$executeRaw`INSERT INTO institution_place_points(storage,lat,lng,located_at,retry_at)
+      VALUES ('가까운 시험센터',37.5001,127,now() - interval '1 day',now()),
+        ('반환센터',38,128,now() - interval '1 day',now()),
+        ('한성대학교 상상관 글로벌원스톱센터',37.5824,127.0102,now() - interval '1 day',now())
+      ON CONFLICT(storage) DO UPDATE SET lat=EXCLUDED.lat,lng=EXCLUDED.lng,located_at=EXCLUDED.located_at`;
+    await db.verifiedPortalItem.update({
+      where: { id: 'lost112:QAEXACT:1' },
+      data: { storage: '가까운 시험센터' },
+    });
+    await db.verifiedPortalItem.update({
+      where: { id: 'lost112:QAALIAS:1' },
+      data: { storage: '위치 미확인 시험센터' },
+    });
+    let cursor: string | undefined;
+    const rows: Awaited<ReturnType<SearchResultsService['search']>>['items'] =
+      [];
+    try {
+      do {
+        const result = await service.search(
+          Object.assign(query('distance', cursor), {
+            near: '37.500100,127.000000',
+          }),
+        );
+        rows.push(...result.items);
+        cursor = result.nextCursor ?? undefined;
+        if (cursor) {
+          await expect(
+            service.search(
+              Object.assign(query('distance', cursor), { near: '37.6,127' }),
+            ),
+          ).rejects.toMatchObject({ status: 400 });
+        }
+      } while (cursor);
+      expect(rows[0].id).toBe('lost112:QAEXACT:1');
+      expect(rows.at(-1)?.id).toBe('lost112:QAALIAS:1');
+      expect(rows).toHaveLength(284);
+      expect(new Set(rows.map((r) => r.id)).size).toBe(284);
+      const distances = rows.map((r) =>
+        'distanceM' in r ? (r.distanceM as number) : Infinity,
+      );
+      expect(distances).toEqual([...distances].sort((a, b) => a - b));
+    } finally {
+      await db.verifiedPortalItem.updateMany({
+        where: { id: { in: ['lost112:QAEXACT:1', 'lost112:QAALIAS:1'] } },
+        data: { storage: '반환센터' },
+      });
+    }
+  }, 60000);
+
+  it('홈 목록은 공공포털 실시간 조회 없이 저장 자료를 합쳐 순서를 유지한다', async () => {
+    const oldRead = jest
+      .spyOn(institution, 'recent')
+      .mockRejectedValue(Error('No live calls'));
+    const first = await service.recent();
+    expect(first.items).toHaveLength(25);
+    const next = await service.recent(first.nextCursor!);
+    expect(new Set([...first.items, ...next.items].map((r) => r.id)).size).toBe(
+      50,
+    );
+    expect(oldRead).not.toHaveBeenCalled();
+    oldRead.mockRestore();
+  });
+  it('서버 재시작 후 학교의 마지막 전체 목록을 DB에서 복원한다', async () => {
+    const saved = [
+      {
+        id: 'hansung:777',
+        name: '검정 지갑',
+        date: day(1),
+        dateLabel: '게시일',
+        source: '한성대',
+        storage: '한성대학교 상상관 글로벌원스톱센터',
+        category: 'WALLET',
+        reference: '777',
+        url: 'https://www.hansung.ac.kr/',
+      },
+    ];
+    await db.$executeRaw`INSERT INTO institution_school_snapshot(id,items,checked_at)
+      VALUES(1,${JSON.stringify(saved)}::jsonb,now())
+      ON CONFLICT(id) DO UPDATE SET items=EXCLUDED.items,checked_at=EXCLUDED.checked_at`;
+    const http = new ExternalHttpService();
+    const calls = jest
+      .spyOn(http, 'request')
+      .mockRejectedValue(Error('offline'));
+    const restarted = new InstitutionItemsService(http, db);
+    expect(await restarted.schoolForMatching()).toEqual(saved);
+    expect(calls).not.toHaveBeenCalled();
+    await db.$executeRaw`DELETE FROM institution_school_snapshot WHERE id=1`;
   });
 });
