@@ -118,7 +118,7 @@ export class InstitutionItemsController {
   }
   @Get('photos/:id')
   async photos(@Param('id') id: string, @Req() req: SessionRequest) {
-    await this.rates.consume('institution-photos:' + req.ip, 60, 60000);
+    await this.rates.consume('institution-photos:' + req.ip, 180, 60000);
     return { data: await this.service.publicPhotos(id) };
   }
   @Get('preview')
