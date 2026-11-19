@@ -6,7 +6,6 @@ import {
 } from './catalog-sync';
 import { createHash } from 'node:crypto';
 import { countVerifiedDays } from './verified-search-count';
-import { searchWhereSql } from './search-order';
 import {
   itemSearch,
   publicFoundWhere,
@@ -234,25 +233,8 @@ export class InstitutionItemsService
 
   private warmingPoints = false;
   private stoppedPoints = false;
-  private readonly priorityPlaces = new Set<string>();
-  /** 위치가 없는 보관처는 뒤에서 준비합니다. 검색 응답은 카카오 호출을 기다리지 않습니다. */
-  async queueSearchLocations(
-    q: string,
-    place: string,
-    from: string,
-    through: string,
-  ) {
-    if (!this.db || !process.env.KAKAO_REST_API_KEY) return;
-    const rows = await this.db.$queryRaw<{ storage: string }[]>(Prisma.sql`
-      SELECT DISTINCT storage FROM verified_portal_items
-      WHERE stored AND day BETWEEN ${from} AND ${through}
-        AND ${searchWhereSql(itemSearch(q, place), true)} LIMIT 2000`);
-    for (const row of rows) {
-      if (this.priorityPlaces.size >= 2000) break;
-      this.priorityPlaces.add(row.storage);
-    }
-    void this.warmStoragePoints();
-  }
+  private pointsInitialized = false;
+  private nextPlaceDiscovery = 0;
   private async warmStoragePoints() {
     if (
       !this.db ||
@@ -263,17 +245,35 @@ export class InstitutionItemsService
       return;
     this.warmingPoints = true;
     try {
-      const priority = [...this.priorityPlaces];
-      this.priorityPlaces.clear();
-      const names = await this.db.$queryRaw<{ storage: string }[]>(Prisma.sql`
-        SELECT v.storage FROM (
-          SELECT storage, count(*) AS frequency FROM verified_portal_items
-          WHERE stored AND day >= ${since()} GROUP BY storage
-          UNION ALL SELECT '한성대학교 상상관 글로벌원스톱센터', 2147483647
-        ) v LEFT JOIN institution_place_points p ON p.storage = v.storage
-        WHERE v.storage <> '' AND (p.storage IS NULL OR (p.lat IS NULL AND p.retry_at <= now()))
-        ORDER BY (v.storage = ANY(ARRAY[${priority.length ? Prisma.join(priority) : Prisma.sql`''`}]::text[])) DESC,
-          v.frequency DESC LIMIT 120`);
+      if (!this.pointsInitialized) {
+        const existing = await this.db.$queryRaw<{ storage: string }[]>`
+          SELECT storage FROM institution_place_points LIMIT 1`;
+        this.pointsInitialized = true;
+        // 배포 직후 이미 준비한 보관처를 재사용합니다. 전체 물품을 재집계하지 않습니다.
+        this.nextPlaceDiscovery = existing.length ? Date.now() + 900000 : 0;
+      }
+      if (Date.now() >= this.nextPlaceDiscovery) {
+        this.nextPlaceDiscovery = Date.now() + 900000;
+        await this.db.$transaction(
+          async (tx) => {
+            await tx.$executeRaw`SET LOCAL jit = off`;
+            await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
+            await tx.$executeRaw`
+            INSERT INTO institution_place_points(storage,retry_at)
+            SELECT DISTINCT storage,now() FROM verified_portal_items
+            WHERE stored AND day >= ${since()} AND storage <> ''
+            UNION SELECT '한성대학교 상상관 글로벌원스톱센터',now()
+            ON CONFLICT(storage) DO NOTHING`;
+          },
+          { timeout: 25000 },
+        );
+      }
+      // 매분에는 작은 보관처 대기열만 읽습니다. 검색할 때마다 수만 물품을
+      // 다시 읽어 좌표를 준비하던 작업이 실제 검색과 자원을 다투지 않게 합니다.
+      const names = await this.db.$queryRaw<{ storage: string }[]>`
+        SELECT storage FROM institution_place_points
+        WHERE lat IS NULL AND retry_at <= now()
+        ORDER BY (storage = '한성대학교 상상관 글로벌원스톱센터') DESC,retry_at,storage LIMIT 120`;
       await readBatches(
         names.map(({ storage }) => async () => {
           if (this.stoppedPoints) return;

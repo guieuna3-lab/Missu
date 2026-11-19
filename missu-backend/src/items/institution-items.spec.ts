@@ -98,6 +98,30 @@ describe('기관 습득물', () => {
         return new Response(read(new URL(url)));
       },
     } as ExternalHttpService);
+  it('이미 준비한 보관처는 재시작과 매분 처리에서 전체 물품을 다시 읽지 않는다', async () => {
+    const query = jest
+      .fn()
+      .mockResolvedValueOnce([{ storage: '기존 보관처' }])
+      .mockResolvedValue([]);
+    const transaction = jest.fn();
+    const s = new InstitutionItemsService(
+      {} as ExternalHttpService,
+      {
+        $queryRaw: query,
+        $transaction: transaction,
+      } as unknown as DatabaseService,
+    );
+    const warm = () =>
+      (
+        s as unknown as { warmStoragePoints(): Promise<void> }
+      ).warmStoragePoints();
+    await warm();
+    await warm();
+    expect(transaction).not.toHaveBeenCalled();
+    expect(query).toHaveBeenCalledTimes(3);
+    for (const [sql] of query.mock.calls)
+      expect(String(sql)).not.toContain('verified_portal_items');
+  });
   it('상세에서 기관이 확인한 반환과 조회되지 않는 관리번호를 구분한다', async () => {
     const returned = service(() => xml([{ ...row, csteSteNm: '반환완료' }]));
     await expect(returned.detail('lost112:F0001:1')).rejects.toThrow(
