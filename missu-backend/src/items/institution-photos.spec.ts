@@ -13,20 +13,40 @@ function setup(request: jest.Mock, photoUrls = [address]) {
   return { service, detail };
 }
 describe('학교 공개 사진 전달', () => {
+  it('목록과 상세가 원본 한 번을 공유하고 240px 미리보기는 더 작다', async () => {
+    const input = await sharp({
+      create: { width: 1600, height: 1200, channels: 3, background: '#789abc' },
+    })
+      .jpeg()
+      .toBuffer();
+    const request = jest
+      .fn()
+      .mockImplementation(async () => new Response(new Uint8Array(input)));
+    const { service } = setup(request);
+    const [thumb, full] = await Promise.all([
+      service.image('hansung:226144', '0', 'thumb'),
+      service.image('hansung:226144', '0'),
+    ]);
+    expect((await sharp(thumb).metadata()).width).toBe(240);
+    expect((await sharp(full).metadata()).width).toBe(1600);
+    expect(thumb.length).toBeLessThan(full.length);
+    expect(request).toHaveBeenCalledTimes(1);
+    await expect(service.image('hansung:226144', '0', '5000')).rejects.toThrow(
+      '사진 크기',
+    );
+  });
   it('다운로드 MIME 사진을 게시글 출처로 요청하고 실제 WebP로 변환·재사용한다', async () => {
     const input = await sharp({
       create: { width: 20, height: 10, channels: 3, background: '#345678' },
     })
       .jpeg()
       .toBuffer();
-    const request = jest
-      .fn()
-      .mockImplementation(
-        async () =>
-          new Response(new Uint8Array(input), {
-            headers: { 'Content-Type': 'application/x-msdownload' },
-          }),
-      );
+    const request = jest.fn().mockImplementation(
+      async () =>
+        new Response(new Uint8Array(input), {
+          headers: { 'Content-Type': 'application/x-msdownload' },
+        }),
+    );
     const { service } = setup(request);
     const [a, b] = await Promise.all([
       service.image('hansung:226144', '0'),
@@ -65,13 +85,11 @@ describe('학교 공개 사진 전달', () => {
     expect(request).not.toHaveBeenCalled();
   });
   it('과대 파일과 공개 사진 없는 물품을 거절한다', async () => {
-    const request = jest
-      .fn()
-      .mockResolvedValue(
-        new Response('too large', {
-          headers: { 'content-length': String(11 * 1024 * 1024) },
-        }),
-      );
+    const request = jest.fn().mockResolvedValue(
+      new Response('too large', {
+        headers: { 'content-length': String(11 * 1024 * 1024) },
+      }),
+    );
     await expect(
       setup(request).service.image('hansung:1', '0'),
     ).rejects.toThrow('원본 사진');
