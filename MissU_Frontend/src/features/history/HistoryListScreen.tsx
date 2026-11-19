@@ -7,8 +7,8 @@ import { requestErrorMessage } from '@/lib/mockRequest';
 import { BottomNavigation } from '@/components/BottomNavigation';
 import { ChoiceRow } from '@/components/ChoiceRow';
 import { ItemThumb } from '@/components/ItemThumb';
+import { ItemPhotoThumb } from '@/components/ItemPhotoThumb';
 import { Header } from '@/components/Header';
-import type { IconName } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { LoginGateScreen } from '@/features/auth/LoginGateScreen';
@@ -73,7 +73,6 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
     tab === 'lost'
       ? activity.lostReports.map((report) => ({
           key: report.id,
-          icon: undefined,
           thumb: <ItemThumb name={report.name} category={report.category} size={40} />,
           title: report.name,
           description: `${categoryLabel(report.category)} · ${formatDate(report.lostFrom)}`,
@@ -82,8 +81,8 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
       : tab === 'requests'
         ? sentRequests(activity, memberName).map((request) => ({
             key: request.id,
-            icon: 'search' as IconName,
-            thumb: undefined,
+            // 다른 목록과 같은 물품별 표시를 쓰고, 공개 사진이 있으면 먼저 보여줍니다.
+            thumb: <ItemPhotoThumb id={request.itemId} name={request.itemName} size={40} />,
             title: request.itemName,
             description: `${requestStatusLabel[request.status]} · ${formatDate(request.createdAt)}`,
             onPress: () => router.push({ pathname: '/requests/[id]', params: { id: request.id } }),
@@ -92,12 +91,12 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
             const received = receivedRequests(activity).filter((r) => r.itemId === item.id);
             return {
               key: item.id,
-              icon: undefined,
               thumb: (
-                <ItemThumb
+                <ItemPhotoThumb
+                  id={item.id}
                   name={item.name}
                   category={item.category}
-                  photoUrl={item.attachments?.[0]?.preview}
+                  photoUrls={item.attachments?.map((photo) => photo.preview)}
                   size={40}
                 />
               ),
@@ -161,7 +160,6 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
             <View style={styles.row} key={row.key}>
               <View style={styles.item}>
                 <ChoiceRow
-                  icon={row.icon}
                   leading={row.thumb}
                   title={'status' in row && row.status ? row.title + ' · ' + row.status : row.title}
                   description={row.description}
