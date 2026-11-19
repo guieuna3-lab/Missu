@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { ChoiceRow } from '@/components/ChoiceRow';
+import { ItemPhotoThumb } from '@/components/ItemPhotoThumb';
 import { typography } from '@/constants/theme';
 import { api } from '@/lib/backend';
 import { usePreview } from '@/lib/preview/PreviewProvider';
@@ -67,7 +68,7 @@ export function ReportMatches({ id }: { id: string }) {
           {result.data.map((item) => (
             <ChoiceRow
               key={item.id}
-              icon="search"
+              leading={<ItemPhotoThumb id={item.id} name={item.name} size={40} />}
               title={item.name}
               description={
                 item.source + ' · ' + item.place + ' · ' + item.dateLabel + ' ' + item.day
