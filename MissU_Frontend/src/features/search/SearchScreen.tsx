@@ -73,6 +73,7 @@ async function loadResults(
       memberTotal: page.memberTotal ?? previous.memberTotal,
       memberCursor: page.nextCursor,
       agencyCursor: null,
+      agencyNotice: page.notices?.join(' ') || undefined,
     };
   }
   const rows = new Map(previous.items.map((item) => [item.id, item]));
