@@ -113,7 +113,9 @@ export function SearchConditionsSheet({
       </SearchSheet>
     );
 
-  const placeChosen = draft.near ? draft.near.label : draft.place;
+  // 입력 중인 글자는 선택 완료가 아닙니다. 후보를 골라 좌표를 받은 뒤에만
+  // 입력창을 접어야 장소 후보 조회가 중단되지 않습니다.
+  const placeChosen = draft.near?.label;
   return (
     <SearchSheet
       title="기간 · 장소"
