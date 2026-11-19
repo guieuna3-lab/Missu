@@ -7,3 +7,5 @@ expo-env.d.ts
 .env.*
 !.env.example
 *.tsbuildinfo
+# Firebase 앱 구성은 APK 제작 환경에서만 제공한다.
+android-launcher/google-services.json
