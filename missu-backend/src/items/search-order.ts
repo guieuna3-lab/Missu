@@ -54,7 +54,7 @@ const orSql = (parts: Prisma.Sql[]) =>
     : Prisma.sql`FALSE`;
 const contains = (column: Prisma.Sql, word: string) =>
   Prisma.sql`${column} ILIKE ${'%' + likeLiteral(word) + '%'}`;
-const normalized = (column: Prisma.Sql) =>
+export const normalizedSql = (column: Prisma.Sql) =>
   Prisma.sql`regexp_replace(lower(coalesce(${column}, '')), '[[:space:]()·-]', '', 'g')`;
 
 /** DB 전체 검색 후보를 제한 전에 정렬합니다. 사용자 입력은 모두 매개변수로 전달합니다. */
@@ -62,9 +62,10 @@ export function relevanceSql(
   name: Prisma.Sql,
   features: Prisma.Sql,
   search: ItemSearch,
+  alreadyNormalized = false,
 ) {
-  const title = normalized(name),
-    extra = normalized(features),
+  const title = alreadyNormalized ? name : normalizedSql(name),
+    extra = alreadyNormalized ? features : normalizedSql(features),
     whole = compactName(search.q);
   if (!whole) return Prisma.sql`0`;
   const nameHits = search.terms.map(
