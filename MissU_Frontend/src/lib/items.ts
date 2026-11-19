@@ -3,6 +3,7 @@ import { api, apiBase, ApiError } from './backend.ts';
 import type { ItemCategory } from './activity/types';
 
 export type PublicItem = {
+  distanceM?: number;
   createdAt?: string;
   id: string;
   name: string;
@@ -118,6 +119,7 @@ export function filterItems(items: PublicItem[], filters: SearchFilters, now = D
   });
 }
 export type ServerItem = {
+  distanceM?: number;
   createdAt?: string;
   id: string;
   name: string;
@@ -133,6 +135,7 @@ export type ServerItem = {
 export function fromServer(item: ServerItem): PublicItem {
   const photoUrls = item.photos.map((p) => new URL(p.url, apiBase).href);
   return {
+    distanceM: item.distanceM,
     id: item.id,
     name: item.name,
     description: item.publicFeatures ?? '',
