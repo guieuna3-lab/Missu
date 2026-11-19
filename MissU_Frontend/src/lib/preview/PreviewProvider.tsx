@@ -4,6 +4,7 @@ import {
   routeCommand,
 } from '@/features/nearby/backgroundRoute';
 import { logout, type AuthSession } from '@/features/auth/authApi';
+import { disconnectPush, nativePush, syncPush } from '@/features/notifications/push';
 import { router, type Href } from 'expo-router';
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { AppState, Platform } from 'react-native';
@@ -15,9 +16,11 @@ const previewMode = __DEV__ && !apiBase ? process.env.EXPO_PUBLIC_MISSU_PREVIEW 
 export const isPreview = previewMode === 'guest' || previewMode === 'member';
 
 /** Where the login started (Figma `loginReturnTo`). */
-export type LoginOrigin = 'home' | 'mine' | 'report' | 'search' | 'routes' | { itemId: string };
+export type LoginOrigin =
+  'home' | 'mine' | 'report' | 'search' | 'routes' | 'notifications' | { itemId: string };
 
 function getSearchReturnTo(origin: LoginOrigin | null): Href | undefined {
+  if (origin === 'notifications') return '/notifications';
   if (origin === 'routes') return '/daily-route';
   if (origin === 'search') return '/search';
   if (origin && typeof origin === 'object') {
@@ -61,6 +64,13 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
   const [accessToken, setAccessToken] = useState<string | null>(null);
   useEffect(() => {
+    if (!nativePush) return;
+    const open = () => router.push('/notifications');
+    window.addEventListener('missu-open-notifications', open);
+    if (accessToken && profile) void syncPush(profile.email, accessToken).catch(() => undefined);
+    return () => window.removeEventListener('missu-open-notifications', open);
+  }, [accessToken, profile]);
+  useEffect(() => {
     if (Platform.OS !== 'ios' || !backgroundRoute) return;
     // 위치 이벤트에 의해 백그라운드에서 시작한 경우에는 로그인 화면으로 간주하지 않습니다.
     if (AppState.currentState === 'active') reconcileRouteAccount(accessToken);
@@ -82,7 +92,10 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
         sessionId,
         accessToken,
         sessionExpired,
-        markSessionExpired: () => setSessionExpired(true),
+        markSessionExpired: () => {
+          setSessionExpired(true);
+          if (accessToken) void disconnectPush(accessToken).catch(() => undefined);
+        },
         activityPreset,
         updateProfile: (next) =>
           setProfile((current) => (current ? { ...current, ...next } : current)),
@@ -97,7 +110,11 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           if (Platform.OS === 'ios' && backgroundRoute) reconcileRouteAccount(null);
           else if (backgroundRoute && accessToken)
             void routeCommand('stop', { token: accessToken }).catch(() => undefined);
-          if (accessToken) void logout(accessToken).catch(() => undefined);
+          if (accessToken)
+            void disconnectPush(accessToken)
+              .catch(() => undefined)
+              .then(() => logout(accessToken))
+              .catch(() => undefined);
           setAccessToken(null);
           setProfile(null);
         },
