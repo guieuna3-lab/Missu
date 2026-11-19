@@ -13,6 +13,11 @@
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:usesCleartextTraffic="false">
         <service android:name=".RouteService" android:foregroundServiceType="location" android:exported="false" />
+        <service android:name=".MatchPushService" android:exported="false">
+            <intent-filter><action android:name="com.google.firebase.MESSAGING_EVENT" /></intent-filter>
+        </service>
+        <meta-data android:name="firebase_messaging_auto_init_enabled" android:value="false" />
+        <meta-data android:name="firebase_analytics_collection_enabled" android:value="false" />
         <activity android:name=".MissuLauncher" android:launchMode="singleTop" android:configChanges="orientation|keyboardHidden|screenSize" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
