@@ -145,21 +145,26 @@ export class InstitutionPhotosService {
         )
       )
         throw new Error('Not a raster photo');
-      const image = sharp(input, { limitInputPixels: 24_000_000 }).rotate();
-      const [full, thumb] = await Promise.all(
-        [1600, 240].map((edge) =>
-          image
-            .clone()
-            .resize({
-              width: edge,
-              height: edge,
-              fit: 'inside',
-              withoutEnlargement: true,
-            })
-            .webp({ quality: edge === 240 ? 72 : 82 })
-            .toBuffer(),
-        ),
-      );
+      const full = await sharp(input, { limitInputPixels: 24_000_000 })
+        .rotate()
+        .resize({
+          width: 1600,
+          height: 1600,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 82 })
+        .toBuffer();
+      // 큰 원본을 두 번 동시에 펼치지 않고, 이미 줄인 사진에서 미리보기를 만듭니다.
+      const thumb = await sharp(full)
+        .resize({
+          width: 240,
+          height: 240,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 72 })
+        .toBuffer();
       return { full, thumb };
     } catch {
       return fail(
