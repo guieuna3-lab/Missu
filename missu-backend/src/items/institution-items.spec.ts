@@ -11,7 +11,6 @@ import { periodOf } from './institution-items.controller';
 import type { InstitutionItem } from './institution-records';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
-import type { NearbyService } from './nearby.service';
 import type { DatabaseService } from '../database/database.service';
 
 // 서비스 단위 시험은 저장된 요약이 없는 첫 조회를 사용한다. 실제 변경 감지와
@@ -533,262 +532,57 @@ describe('기관 습득물', () => {
       api.search('핸드폰', '', 'all', first.nextCursor!),
     ).rejects.toThrow();
   });
-  it.each([true, false])(
-    '반경 전체 조회 중 확인 행이 있을 때만 먼저 표시한다 (%s)',
-    async (hasRows) => {
-      const known = {
-        id: 'lost112:V100:1',
-        name: '갤럭시 버즈',
-        storage: '가상역(2호선)',
-        source: '지하철',
-        day: '2026-11-13',
-        checkedAt: new Date(Date.now()),
-        category: 'ELECTRONICS',
-      };
-      const findMany = jest.fn().mockResolvedValue(hasRows ? [known] : []);
-      const api = new InstitutionItemsService(service(() => xml([]))['http'], {
-        verifiedPortalItem: { findMany },
-      } as unknown as DatabaseService);
-      const internals = api as unknown as {
-        places: (typeof api)['places'];
-        uniqueStation: (typeof api)['uniqueStation'];
-        nearbyPage: (typeof api)['nearbyPage'];
-      };
-      const query = Object.assign(new NearbyDto(), {
-        lat: 37.5,
-        lng: 127,
-        radiusM: 500,
-        q: '이어폰',
-        category: 'ELECTRONICS',
-        cursor: 'verified',
-      });
-      const site = {
-        lat: 37.5,
-        lng: 127,
-        name: '가상역 2호선',
-        address: '테스트로 1',
-        source: '지하철' as const,
-      };
-      jest.spyOn(internals, 'places').mockImplementation(async (source) => ({
-        sites:
-          source === '포털기관'
-            ? [site, { ...site, name: '동명역 2호선' }]
-            : [],
-        limited: false,
-      }));
-      jest
-        .spyOn(internals, 'uniqueStation')
-        .mockImplementation(async (site) => site.name === '가상역 2호선');
-      const full = { items: [], notices: [], nextCursor: null };
-      let release!: () => void;
-      const gate = new Promise<typeof full>((resolve) => {
-        release = () => resolve(full);
-      });
-      jest.spyOn(internals, 'nearbyPage').mockReturnValue(gate);
-      const pending = api.nearby(query);
-      if (hasRows) {
-        const first = await pending;
-        expect(first).toMatchObject({
-          refreshing: true,
-          items: [
-            {
-              id: known.id,
-              distanceM: 0,
-              foundLocation: { lat: 37.5, lng: 127 },
-            },
-          ],
-        });
-        expect(findMany).toHaveBeenCalledTimes(1);
-        expect(findMany.mock.calls[0][0].where).toMatchObject({
-          stored: true,
-          category: 'ELECTRONICS',
-          placeKey: '가상역2호선',
-        });
-      }
-      release();
-      if (!hasRows) expect(await pending).toBe(full);
-      expect(await api.nearby({ ...query, cursor: undefined })).toBe(full);
-    },
-  );
-  it('느린 기관 조회 전에 한성대 첫 목록과 실제 보관 건수를 표시하고 최종 집계로 교체한다', async () => {
-    const day = new Date(Date.now()).toISOString().slice(0, 10);
-    const campus = {
-      name: '한성대학교 상상관',
-      address: '',
-      source: '한성대' as const,
-      lat: 37.5827,
-      lng: 127.0102,
+  it('학교 저장 목록은 기관 네트워크를 기다리지 않고 건수와 더보기를 함께 준다', async () => {
+    process.env.SIGNING_KEY = '2'.repeat(64);
+    process.env.PII_KEY = '1'.repeat(64);
+    process.env.DATABASE_URL = 'postgresql://postgres@127.0.0.1:55439/sort_test';
+    const http = {
+      request: jest.fn().mockRejectedValue(Error('network must not run')),
     };
-    const station = {
-      ...campus,
-      source: '지하철' as const,
-      name: '가상역 4호선',
-    };
-    const sample = {
-      source: '한성대' as const,
-      name: '지갑',
-      category: 'WALLET_BAG',
-      storage: campus.name,
-      date: day,
-      dateLabel: '습득일' as const,
-      reference: '',
-      url: '',
-    };
-    const stock = Array.from({ length: 41 }, (_, i) => ({
-      ...sample,
-      id: 'hansung:' + i,
-    }));
-    const count = jest.fn().mockResolvedValue(13);
-    const api = new InstitutionItemsService(service(() => xml([]))['http'], {
-      verifiedPortalItem: { count, findMany: jest.fn().mockResolvedValue([]) },
-    } as unknown as DatabaseService);
-    const methods = api as unknown as {
-      nearbyProvider: (typeof api)['nearbyProvider'];
-      nearbySchool: (typeof api)['nearbySchool'];
-      places: (typeof api)['places'];
-      uniqueStation: (typeof api)['uniqueStation'];
-    };
-    api['schoolSnapshot'] = {
-      items: new Map(stock.map((v) => [v.id, v])),
-      checkedAt: Date.now(),
-    };
-    jest.spyOn(methods, 'places').mockImplementation(async (source) => ({
-      sites:
-        source === '한성대' ? [campus] : source === '포털기관' ? [station] : [],
-      limited: false,
-    }));
-    jest.spyOn(methods, 'uniqueStation').mockResolvedValue(true);
-    let finish!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      finish = resolve;
-    });
-    jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
-      await gate;
-      return { items: [], notices: [] };
-    });
-    jest.spyOn(methods, 'nearbySchool').mockImplementation(async () => {
-      await gate;
-      return { part: { items: [], notices: [] }, nextCursor: 'school:2' };
-    });
-    const query = Object.assign(new NearbyDto(), {
-      lat: campus.lat,
-      lng: campus.lng,
-      category: 'WALLET_BAG' as const,
-    });
-    try {
-      api.nearbyTotal(query);
-      const first = await api.nearby({ ...query, cursor: 'verified' });
-      expect(first).toMatchObject({ refreshing: true, nextCursor: null });
-      expect(first.items).toHaveLength(25);
-      await new Promise<void>((resolve) => setImmediate(resolve));
-      expect(await api.nearbyTotal(query)).toMatchObject({
-        status: 'counting',
-        total: null,
-        confirmedTotal: 54,
-      });
-      expect(count.mock.calls[0][0].where).toMatchObject({
-        stored: true,
-        category: 'WALLET_BAG',
-        placeKey: { in: ['가상역4호선'] },
-      });
-    } finally {
-      finish();
-    }
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(await api.nearbyTotal(query)).toEqual({
-      status: 'complete',
-      total: 41,
-      incomplete: [],
-    });
-  });
-  it('다시 연 반경은 이전 회원·기관 합계를 먼저 읽고 정상 재확인이 끝나면 감소도 반영한다', async () => {
-    const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
-    const stored = new Map<string, number>();
     const db = {
-      lastSearchCount: {
-        findUnique: async ({ where }: { where: { queryKey: string } }) =>
-          stored.has(where.queryKey)
-            ? { total: stored.get(where.queryKey) }
-            : null,
-      },
-      $executeRaw: async (
-        _sql: TemplateStringsArray,
-        key: string,
-        total: number,
-      ) => {
-        stored.set(key, total);
-        return 1;
-      },
-    } as unknown as DatabaseService;
-    const search = jest.fn().mockResolvedValue({ meta: { total: 3 } });
-    function start(campusCount: number) {
-      const api = new InstitutionItemsService({} as ExternalHttpService, db, {
-        search,
-      } as unknown as NearbyService);
-      const methods = api as unknown as {
-        nearbyProvider: (typeof api)['nearbyProvider'];
-        checkedStations: (typeof api)['checkedStations'];
-        schoolStockInArea: (typeof api)['schoolStockInArea'];
-      };
-      let finish!: () => void;
-      const slow = new Promise<void>((resolve) => {
-        finish = resolve;
-      });
-      jest.spyOn(methods, 'nearbyProvider').mockImplementation(async () => {
-        await slow;
-        return { items: [], notices: [] };
-      });
-      jest.spyOn(methods, 'checkedStations').mockResolvedValue([]);
-      jest.spyOn(methods, 'schoolStockInArea').mockResolvedValue({
-        site: { ...query, name: '학교', address: '', source: '한성대' },
-        items: Array(campusCount),
-      });
-      return { api, finish };
-    }
-    const first = start(1015);
-    await first.api.nearbyTotal(query);
-    first.finish();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(await first.api.nearbyTotal(query)).toMatchObject({
-      status: 'complete',
-      lastAreaTotal: 1018,
+      $queryRaw: jest.fn().mockImplementation(async () => []),
+      verifiedPortalItem: { findMany: jest.fn().mockResolvedValue([]) },
+    };
+    const api = new InstitutionItemsService(
+      http as unknown as ExternalHttpService,
+      db as unknown as DatabaseService,
+    );
+    const day = new Date(Date.now()).toISOString().slice(0, 10);
+    jest.spyOn(api, 'schoolForMatching').mockResolvedValue(
+      Array.from({ length: 41 }, (_, i) => ({
+        id: 'hansung:' + i,
+        name: '지갑',
+        category: 'WALLET_BAG',
+        source: '한성대',
+        storage: '한성대학교',
+        date: day,
+        dateLabel: '습득일',
+        reference: String(i),
+        url: '',
+      })),
+    );
+    const query = Object.assign(new NearbyDto(), {
+      lat: 37.5824,
+      lng: 127.0102,
+      cursor: 'verified',
     });
-    const next = start(201);
-    expect(await next.api.nearbyTotal(query)).toMatchObject({
-      status: 'counting',
-      lastAreaTotal: 1018,
-    });
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(await next.api.nearbyTotal(query)).toMatchObject({
-      confirmedTotal: 201,
-      lastAreaTotal: 1018,
-    });
-    for (const change of [
-      { radiusM: 500 },
-      { lat: 37.6 },
-      { q: '지갑' },
-      { category: 'ELECTRONICS' as const },
-      { registeredDays: '7' },
-    ]) {
-      expect(
-        (await next.api.nearbyTotal({ ...query, ...change })).lastAreaTotal,
-      ).toBeUndefined();
-    }
-    next.finish();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(await next.api.nearbyTotal(query)).toMatchObject({
-      status: 'complete',
-      lastAreaTotal: 204,
-    });
-    search.mockResolvedValue({ meta: { total: 0 } });
-    const empty = start(0);
-    await empty.api.nearbyTotal(query);
-    empty.finish();
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    expect(await empty.api.nearbyTotal(query)).toMatchObject({
-      status: 'complete',
-      lastAreaTotal: 0,
-    });
+    const [page, total] = await Promise.all([
+      api.nearby(query),
+      api.nearbyTotal(query),
+    ]);
+    expect(page.items).toHaveLength(25);
+    expect(page.nextCursor).toBeTruthy();
+    expect(page).toMatchObject({ refreshing: false });
+    expect(total).toMatchObject({ status: 'complete', total: 41 });
+    const next = await api.nearby(
+      Object.assign(new NearbyDto(), query, { cursor: page.nextCursor! }),
+    );
+    expect(next.items).toHaveLength(16);
+    expect(next.nextCursor).toBeNull();
+    expect(new Set([...page.items, ...next.items].map((i) => i.id)).size).toBe(
+      41,
+    );
+    expect(http.request).not.toHaveBeenCalled();
   });
   it('전국 첫 집계 중에도 현재 보관 중인 지갑 전체 건수를 페이지 제한 없이 제공한다', async () => {
     const count = jest.fn().mockResolvedValue(327);

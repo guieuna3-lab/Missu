@@ -4,6 +4,8 @@ import type { ItemSearch } from './item-search';
 import { distance } from './institution-records';
 import {
   compareRank,
+  compactName,
+  normalizedSql,
   relevanceScorer,
   searchWhereSql,
   type RankedKey,
@@ -51,6 +53,12 @@ export async function portalRanked(
   after?: RankedKey,
   point?: Point,
 ): Promise<RankedKey[]> {
+  // 최고 점수(정확한 이름·동의어)의 첫 묶음은 이름 색인으로 바로 찾습니다.
+  // 충분하지 않을 때만 전체 후보를 읽으므로 검색 범위와 정렬 기준은 그대로입니다.
+  if (sort === 'relevance' && (!after || after.score >= 960)) {
+    const exact = await exactPortalPage(db, search, from, through, after);
+    if (exact.length === 26) return exact;
+  }
   const relevance = relevanceScorer(search);
   const locations =
     sort === 'distance'
@@ -58,6 +66,18 @@ export async function portalRanked(
     SELECT storage,lat,lng,located_at FROM institution_place_points
     WHERE located_at <= ${new Date(at)} AND lat IS NOT NULL AND lng IS NOT NULL`
       : [];
+  if (sort === 'distance') {
+    const nearest = await nearestPortalPage(
+      db,
+      search,
+      from,
+      through,
+      locations,
+      point!,
+      after,
+    );
+    if (nearest.length === 26) return nearest;
+  }
   const version = await revision(db, from, through);
   const geoVersion = locations.reduce(
     (latest, p) => Math.max(latest, new Date(p.located_at).getTime()),
@@ -152,4 +172,72 @@ export async function portalRanked(
     });
   }
   return result;
+}
+
+/** 가까운 보관처부터 색인으로 찾습니다. 26건이 없으면 기존 전체 정렬로 넘어갑니다. */
+export async function nearestPortalPage(
+  db: DatabaseService,
+  search: ItemSearch,
+  from: string,
+  through: string,
+  locations: (Point & { storage: string })[],
+  point: Point,
+  after?: RankedKey,
+): Promise<RankedKey[]> {
+  const candidates = locations
+    .map((p) => ({
+      storage: p.storage,
+      score: -Math.round(distance(point, p)),
+    }))
+    .filter((p) => !after || p.score <= after.score)
+    .sort((a, b) => b.score - a.score);
+  const threshold = candidates[Math.min(63, candidates.length - 1)]?.score;
+  if (threshold === undefined) return [];
+  const sites = candidates.filter((p) => p.score >= threshold);
+  const keys = await db.$queryRaw<RankedKey[]>(Prisma.sql`
+    SELECT i.id,i.day,p.score FROM jsonb_to_recordset(${JSON.stringify(sites)}::jsonb) AS p(storage text,score int)
+    CROSS JOIN LATERAL (
+      SELECT id,day FROM verified_portal_items
+      WHERE stored AND storage=p.storage AND day BETWEEN ${from} AND ${through}
+        AND ${searchWhereSql(search, true, false)}
+        AND ${after ? Prisma.sql`(p.score < ${after.score} OR day < ${after.day} OR (day=${after.day} AND id COLLATE "C">${after.id}))` : Prisma.sql`TRUE`}
+      ORDER BY day DESC,id COLLATE "C" LIMIT 26
+    ) AS i ORDER BY p.score DESC,i.day DESC,i.id COLLATE "C" LIMIT 26`);
+  return keys;
+}
+
+export async function exactPortalPage(
+  db: DatabaseService,
+  search: ItemSearch,
+  from: string,
+  through: string,
+  after?: RankedKey,
+): Promise<RankedKey[]> {
+  const whole = compactName(search.q);
+  if (!whole) return [];
+  const labels = [
+    ...new Set([
+      whole,
+      ...(search.terms.length === 1 ? search.terms[0].map(compactName) : []),
+    ]),
+  ];
+  const queries = labels.flatMap((label) => {
+    const score = label === whole ? 1000 : 960;
+    if (after && score > after.score) return [];
+    const boundary =
+      after && score === after.score
+        ? Prisma.sql`AND (day < ${after.day} OR (day = ${after.day} AND id COLLATE "C" > ${after.id}))`
+        : Prisma.sql``;
+    return [
+      Prisma.sql`(SELECT id,day,${score}::int AS score FROM verified_portal_items
+      WHERE stored AND ${normalizedSql(Prisma.sql`name`)} COLLATE "C" = ${label}
+      AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true, false)}
+      ${boundary} ORDER BY day DESC,id COLLATE "C" ASC LIMIT 26)`,
+    ];
+  });
+  if (!queries.length) return [];
+  const keys = await db.$queryRaw<RankedKey[]>(
+    Prisma.sql`${Prisma.join(queries, ' UNION ALL ')}`,
+  );
+  return keys.sort(compareRank).slice(0, 26);
 }

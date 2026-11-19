@@ -27,6 +27,7 @@ import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
 import { NearbyDto } from './nearby.dto';
+import { SavedNearby } from './nearby-saved';
 import { NearbyService } from './nearby.service';
 import {
   clean,
@@ -2175,7 +2176,19 @@ export class InstitutionItemsService
     );
     return entry;
   }
+  private savedNearby?: SavedNearby;
+  private savedNearbyReader() {
+    return (this.savedNearby ??= new SavedNearby(
+      this.db!,
+      () => this.schoolForMatching(),
+      (row) => this.savedItem(row),
+    ));
+  }
   async nearbyTotal(query: NearbyDto): Promise<NearbyCount> {
+    if (this.db) return this.savedNearbyReader().total(query);
+    return this.liveNearbyTotal(query);
+  }
+  private async liveNearbyTotal(query: NearbyDto): Promise<NearbyCount> {
     let area: ReturnType<typeof this.area>;
     try {
       area = this.area(query);
@@ -2442,6 +2455,7 @@ export class InstitutionItemsService
     );
   }
   async nearby(query: NearbyDto) {
+    if (this.db) return this.savedNearbyReader().page(query);
     if (query.cursor === 'verified') {
       const initial = Object.assign(new NearbyDto(), query, {
         cursor: undefined,
