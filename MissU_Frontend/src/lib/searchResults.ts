@@ -24,6 +24,7 @@ export async function searchResults(
       items: (ServerItem | InstitutionItem)[];
       nextCursor: string | null;
       memberTotal?: number;
+      notices?: string[];
     };
   }>('/search-items?' + query);
   return { ...data, items: data.items.map((item) => ('source' in item ? item : fromServer(item))) };
