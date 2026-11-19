@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback, useRef } from 'react';
 import { itemRepository } from '@/lib/items';
-import { recentInstitutions, previewInstitutions, openInstitution } from '@/lib/institutionItems';
+import { recentInstitutions, openInstitution } from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -39,38 +39,29 @@ export function HomeScreen() {
       setMoreStatus('idle');
       setState('loading');
       setNotice('');
-      const members = itemRepository.recentPage();
-      let complete = false;
-      const firstRows: HomeItem[] = [];
-      function showFirst(items: HomeItem[]) {
-        if (complete || current !== generation.current || !items.length) return;
-        firstRows.push(...items);
-        setRecent([...firstRows].sort(newestFirst));
-        setState('ready');
-        setNotice('다른 기관의 보관품도 확인하고 있어요.');
-      }
-      void members.then(({ items }) => showFirst(items)).catch(() => {});
-      void previewInstitutions()
-        .then(({ items }) => showFirst(items))
-        .catch(() => {});
-      void Promise.allSettled([members, recentInstitutions()]).then(([member, agency]) => {
-        if (current !== generation.current) return;
-        complete = true;
-        const rows: HomeItem[] = [
-          ...(member.status === 'fulfilled' ? member.value.items : []),
-          ...(agency.status === 'fulfilled' ? agency.value.items : []),
-        ];
-        setRecent(rows.sort(newestFirst));
-        setCursor(member.status === 'fulfilled' ? member.value.nextCursor : null);
-        setAgencyCursor(agency.status === 'fulfilled' ? agency.value.nextCursor : null);
-        const messages =
-          agency.status === 'fulfilled'
-            ? agency.value.notices.filter((n) => n.includes('조회할 수 없어요'))
-            : ['기관 자료를 불러오지 못했어요.'];
-        if (member.status === 'rejected') messages.push('회원 자료를 불러오지 못했어요.');
-        setNotice(messages.join(' '));
-        setState(member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'ready');
-      });
+      // 회원과 모든 기관의 첫 페이지를 동시에 요청하고, 모두 끝난 뒤 한 번만 표시합니다.
+      // 먼저 도착한 일부 물품 때문에 카드와 날짜 순서가 중간에 바뀌지 않게 합니다.
+      void Promise.allSettled([itemRepository.recentPage(), recentInstitutions()]).then(
+        ([member, agency]) => {
+          if (current !== generation.current) return;
+          const rows: HomeItem[] = [
+            ...(member.status === 'fulfilled' ? member.value.items : []),
+            ...(agency.status === 'fulfilled' ? agency.value.items : []),
+          ];
+          setRecent(rows.sort(newestFirst));
+          setCursor(member.status === 'fulfilled' ? member.value.nextCursor : null);
+          setAgencyCursor(agency.status === 'fulfilled' ? agency.value.nextCursor : null);
+          const messages =
+            agency.status === 'fulfilled'
+              ? agency.value.notices.filter((n) => n.includes('조회할 수 없어요'))
+              : ['기관 자료를 불러오지 못했어요.'];
+          if (member.status === 'rejected') messages.push('회원 자료를 불러오지 못했어요.');
+          setNotice(messages.join(' '));
+          setState(
+            member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'ready',
+          );
+        },
+      );
       return () => {
         generation.current++;
       };
