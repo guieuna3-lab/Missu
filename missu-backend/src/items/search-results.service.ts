@@ -188,7 +188,7 @@ export class SearchResultsService {
     );
   }
 
-  private async ranked(query: Prisma.Sql) {
+  private async ranked(query: Prisma.Sql, sample?: Prisma.Sql) {
     const started = Date.now();
     const source = query.sql.includes('verified_portal_items')
       ? 'institution'
@@ -219,34 +219,48 @@ export class SearchResultsService {
       if (source === 'institution' && !this.planReported) {
         this.planReported = true;
         void this.db
-          .$transaction(async (tx) => {
-            await tx.$executeRaw`SET LOCAL jit = off`;
-            await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
-            await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
-            await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
-            const plan = await tx.$queryRaw<unknown[]>(
-              Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
-            );
-            const nodes: object[] = [];
-            const visit = (value: unknown) => {
-              if (Array.isArray(value)) return value.forEach(visit);
-              if (!value || typeof value !== 'object') return;
-              const node = value as Record<string, unknown>;
-              if (node['Node Type'])
-                nodes.push({
-                  node: node['Node Type'],
-                  rows: node['Plan Rows'],
-                  cost: node['Total Cost'],
-                  relation: node['Relation Name'],
-                  index: node['Index Name'],
-                });
-              Object.values(node).forEach(visit);
-            };
-            visit(plan);
-            // 검색어·좌표·키 없이 실행 방식과 예상 건수만 남깁니다.
-            this.logger.warn('search-plan ' + JSON.stringify(nodes));
-          })
-          .catch(() => undefined);
+          .$transaction(
+            async (tx) => {
+              await tx.$executeRaw`SET LOCAL jit = off`;
+              await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
+              await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
+              await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
+              await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
+              const plan = await tx.$queryRaw<unknown[]>(
+                sample
+                  ? Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sample}`
+                  : Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
+              );
+              const nodes: object[] = [];
+              const visit = (value: unknown) => {
+                if (Array.isArray(value)) return value.forEach(visit);
+                if (!value || typeof value !== 'object') return;
+                const node = value as Record<string, unknown>;
+                if (node['Node Type'])
+                  nodes.push({
+                    node: node['Node Type'],
+                    rows: node['Plan Rows'],
+                    cost: node['Total Cost'],
+                    relation: node['Relation Name'],
+                    index: node['Index Name'],
+                    actualRows: node['Actual Rows'],
+                    actualMs: node['Actual Total Time'],
+                    exact: node['Exact Heap Blocks'],
+                    lossy: node['Lossy Heap Blocks'],
+                    sharedRead: node['Shared Read Blocks'],
+                    sharedHit: node['Shared Hit Blocks'],
+                    tempRead: node['Temp Read Blocks'],
+                    tempWritten: node['Temp Written Blocks'],
+                  });
+                Object.values(node).forEach(visit);
+              };
+              visit(plan);
+              // 검색어·좌표·키 없이 실행 방식과 예상 건수만 남깁니다.
+              this.logger.warn('search-plan ' + JSON.stringify(nodes));
+            },
+            { timeout: 25000 },
+          )
+          .catch(() => this.logger.warn('search-sample unavailable'));
       }
       throw error;
     } finally {
@@ -342,6 +356,8 @@ export class SearchResultsService {
         ), ranked AS MATERIALIZED (SELECT id,day,${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`,
+        Prisma.sql`SELECT id,day FROM verified_portal_items
+          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)} LIMIT 2000`,
       ),
       // 학교 원본 장애가 DB에 저장된 다른 물품의 검색까지 막지 않게 합니다.
       // 첫 페이지에서 빠진 출처는 커서에 고정하고, 새 검색에서 다시 확인합니다.
