@@ -20,6 +20,7 @@ function firstCountDatabase(
   count: (args: { where: object }) => Promise<number>,
 ) {
   const tx = {
+    $executeRaw: async () => 0,
     $queryRaw: async () => [{ revisions: {}, summary: null }],
     verifiedPortalItem: {
       groupBy: async ({ where }: { where: { day: { gte: string } } }) => [

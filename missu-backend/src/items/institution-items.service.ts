@@ -225,7 +225,7 @@ export class InstitutionItemsService
   countForMatching(q: string, place: string, from: string, through: string) {
     return countVerifiedDays(
       this.db!,
-      'range',
+      'all',
       from,
       through,
       this.portalWhere(q, place, 'all'),
@@ -354,6 +354,9 @@ export class InstitutionItemsService
           url.hostname,
         ) && {
           signal: AbortSignal.timeout(9500),
+        }),
+        ...(url.hostname === 'www.hansung.ac.kr' && {
+          signal: AbortSignal.timeout(15000),
         }),
       })
       .then((r) => r.text());
@@ -1900,6 +1903,7 @@ export class InstitutionItemsService
     checkedAt: number;
   };
   private schoolRefresh?: Promise<Map<string, InstitutionItem>>;
+  private schoolRetryAt = 0;
   private schoolRestore?: Promise<void>;
   private restoreSchool() {
     return (this.schoolRestore ??= (async () => {
@@ -1923,7 +1927,23 @@ export class InstitutionItemsService
     );
   }
   async schoolForMatching() {
-    return [...(await this.schoolInventory('', 'ALL')).values()];
+    await this.restoreSchool();
+    const snapshot = this.schoolSnapshot;
+    if (!snapshot || Date.now() - snapshot.checkedAt >= 300000)
+      void this.refreshSchool().catch(() => undefined);
+    // 공개 검색은 외부 사이트의 재시도를 기다리지 않습니다.
+    // 아직 완성된 저장 목록이 없으면 호출자가 출처 누락을 명시합니다.
+    if (!snapshot || Date.now() - snapshot.checkedAt >= 86400000)
+      return fail(
+        503,
+        'EXTERNAL_UNAVAILABLE',
+        '학교 저장 목록을 준비 중이에요.',
+      );
+    const from = since(),
+      today = koreaDay();
+    return [...snapshot.items.values()].filter(
+      (item) => item.date >= from && item.date <= today,
+    );
   }
   private async refreshSchool(): Promise<Map<string, InstitutionItem>> {
     await this.restoreSchool();
@@ -1931,6 +1951,8 @@ export class InstitutionItemsService
     if (snapshot && snapshot.checkedAt + 300000 > Date.now())
       return Promise.resolve(snapshot.items);
     if (this.schoolRefresh) return this.schoolRefresh;
+    if (this.schoolRetryAt > Date.now())
+      throw Error('School refresh cooling down');
     // 부분 수집이나 오류가 마지막으로 확인한 전체 목록을 덮어쓰지 않게 한다.
     this.schoolRefresh = (async () => {
       const items = new Map<string, InstitutionItem>();
@@ -1953,9 +1975,14 @@ export class InstitutionItemsService
         }
       }
       throw Error('School list incomplete');
-    })().finally(() => {
-      this.schoolRefresh = undefined;
-    });
+    })()
+      .catch((error: unknown) => {
+        this.schoolRetryAt = Date.now() + 60000;
+        throw error;
+      })
+      .finally(() => {
+        this.schoolRefresh = undefined;
+      });
     return this.schoolRefresh;
   }
   private async schoolInventory(q: string, days: string) {
