@@ -6,7 +6,7 @@ import { ActionBar, ActionButton } from '@/components/ActionButton';
 import { Header } from '@/components/Header';
 import { LoadingState } from '@/components/LoadingState';
 import { Chip, InfoCard, InfoRow, StepGuide } from '@/components/InfoList';
-import { PhotoPager } from '@/components/PhotoPager';
+import { ItemPhotoGallery } from '@/components/ItemPhotoGallery';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
 import { categoryLabel } from '@/lib/activity/types';
@@ -73,7 +73,6 @@ function ItemDetail({ id }: { id: string }) {
   const [item, setItem] = useState<PublicItem>();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [retry, setRetry] = useState(0);
-  const [photoFailed, setPhotoFailed] = useState(false);
   useEffect(() => {
     let active = true;
     itemRepository
@@ -96,7 +95,6 @@ function ItemDetail({ id }: { id: string }) {
     else router.replace('/search');
   }
   function reloadItem() {
-    setPhotoFailed(false);
     setStatus('loading');
     setRetry((v) => v + 1);
   }
@@ -130,19 +128,12 @@ function ItemDetail({ id }: { id: string }) {
         )}
         {status === 'success' && item && (
           <>
-            <PhotoPager
-              uris={item.photoUrls ?? []}
-              label={item.name}
-              onError={() => setPhotoFailed(true)}
+            <ItemPhotoGallery
+              id={item.id}
+              name={item.name}
+              category={item.category}
+              photoUrls={item.photoUrls}
             />
-            {photoFailed && (
-              <ActionButton
-                label="사진 다시 불러오기"
-                variant="outline"
-                style={styles.photoRetry}
-                onPress={reloadItem}
-              />
-            )}
             <View style={styles.hero}>
               <Text accessibilityRole="header" style={styles.title}>
                 {item.name}
