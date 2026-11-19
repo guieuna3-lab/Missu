@@ -25,7 +25,11 @@ export function SortSheet({
   onChange: (sort: SearchSort) => void;
 }) {
   const options: { value: SearchSort; icon: IconName; hint: string; disabled?: boolean }[] = [
-    { value: 'recent', icon: 'info-date', hint: '최근에 등록된 물품부터' },
+    {
+      value: 'recent',
+      icon: 'info-date',
+      hint: '습득일이 최근인 물품부터 · 습득일이 없으면 게시일',
+    },
     {
       value: 'distance',
       icon: 'info-place',

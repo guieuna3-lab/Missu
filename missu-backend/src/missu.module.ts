@@ -11,6 +11,8 @@ import { DatabaseService } from './database/database.service';
 import { IdempotencyService } from './common/idempotency.service';
 import { ItemsController } from './items/items.controller';
 import { ItemsService } from './items/items.service';
+import { SearchResultsController } from './items/search-results.controller';
+import { SearchResultsService } from './items/search-results.service';
 import { UploadsController } from './uploads/uploads.controller';
 import { UploadsService } from './uploads/uploads.service';
 import { LostReportsController } from './lost-reports/lost-reports.controller';
@@ -41,6 +43,7 @@ import { RoutesService } from './routes/routes.service';
   controllers: [
     AuthController,
     ItemsController,
+    SearchResultsController,
     UploadsController,
     LostReportsController,
     UsersController,
@@ -57,6 +60,7 @@ import { RoutesService } from './routes/routes.service';
     SessionService,
     IdempotencyService,
     ItemsService,
+    SearchResultsService,
     UploadsService,
     RegistrationService,
     ClaimsService,

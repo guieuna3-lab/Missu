@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { distanceOf, formatDistance, relevance, sortResults } from '../src/lib/searchRank.ts';
+import { distanceOf, formatDistance, sortResults } from '../src/lib/searchRank.ts';
 
 const near = { lat: 37.5884, lng: 127.006, label: '한성대입구역' };
 const filters = { query: '이어폰', period: 'all', place: '', near };
@@ -29,13 +29,6 @@ const agency = (id, name, distanceM, date = '2026-11-12') => ({
   ...(distanceM !== undefined && { distanceM }),
 });
 
-test('relevance ranks exact, prefix, contains, then word overlap', () => {
-  assert.equal(relevance('이어폰', '이어폰'), 100);
-  assert.ok(relevance('이어폰 케이스', '이어폰') > relevance('무선 이어폰', '이어폰'));
-  assert.ok(relevance('무선 이어폰', '이어폰') > relevance('에어팟', '이어폰'));
-  assert.equal(relevance('검정 지갑', '검정 이어폰'), 30);
-});
-
 test('distance sort puts unknown locations last and keeps newest first on ties', () => {
   const items = [
     agency('far', '버즈', 1400),
@@ -49,16 +42,13 @@ test('distance sort puts unknown locations last and keeps newest first on ties',
   assert.equal(distanceOf(items[0], undefined), undefined);
 });
 
-test('relevance sort falls back to newest for equal scores; recent leaves order', () => {
+test('recent and relevance preserve the globally ranked server pages', () => {
   const items = [
     agency('old', '이어폰', undefined, '2026-11-01'),
     agency('new', '이어폰', undefined, '2026-11-15'),
     agency('other', '에어팟', undefined, '2026-11-16'),
   ];
-  assert.deepEqual(
-    sortResults(items, 'relevance', filters).map((i) => i.id),
-    ['new', 'old', 'other'],
-  );
+  assert.equal(sortResults(items, 'relevance', filters), items);
   assert.equal(sortResults(items, 'recent', filters), items);
 });
 
