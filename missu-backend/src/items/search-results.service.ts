@@ -201,6 +201,7 @@ export class SearchResultsService {
           // 전체 후보와 이름/보관처의 동등 결합은 해시 결합을 사용합니다.
           // 작은 후보 수로 잘못 추정한 중첩 반복이 수만 건을 거듭 훑지 않게 합니다.
           await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
+          await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
           await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
           return tx.$queryRaw<RankedKey[]>(query);
         },
@@ -218,6 +219,7 @@ export class SearchResultsService {
           .$transaction(async (tx) => {
             await tx.$executeRaw`SET LOCAL jit = off`;
             await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
+            await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
             const plan = await tx.$queryRaw<unknown[]>(
               Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
             );
