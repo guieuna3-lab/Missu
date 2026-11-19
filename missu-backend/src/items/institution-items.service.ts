@@ -725,7 +725,7 @@ export class InstitutionItemsService
       ? { ...current, lastVerifiedOn: koreaDay(result.observedAt.getTime()) }
       : notStored(row.csteSteNm);
   }
-  private savedItem(r: {
+  savedItem(r: {
     id: string;
     name: string;
     storage: string;
