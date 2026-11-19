@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { View } from 'react-native';
 import { ItemThumb } from './ItemThumb';
-import { displayPhotoUrls, loadItemPhotos } from '@/lib/itemPhotos';
+import { usePhotoVisibility } from './usePhotoVisibility';
+import { displayPhotoUrls, loadItemPhotos, thumbnailPhotoUrl } from '@/lib/itemPhotos';
 
 function Thumb({
   id,
@@ -16,6 +18,7 @@ function Thumb({
   size?: number;
 }) {
   const signature = JSON.stringify(photoUrls);
+  const { ref, ready } = usePhotoVisibility();
   const [resolved, setResolved] = useState<string[]>();
   const [index, setIndex] = useState(0);
   const [attempt, setAttempt] = useState(0);
@@ -23,6 +26,7 @@ function Thumb({
   const generation = useRef(0);
   const renewed = useRef(false);
   useEffect(() => {
+    if (!ready) return;
     alive.current = true;
     const run = ++generation.current;
     renewed.current = false;
@@ -40,7 +44,7 @@ function Thumb({
       alive.current = false;
       generation.current = run + 1;
     };
-  }, [id, signature]);
+  }, [id, signature, ready]);
   const urls = resolved ?? displayPhotoUrls(id, photoUrls);
   function failed() {
     if (index + 1 < urls.length) {
@@ -61,14 +65,16 @@ function Thumb({
     );
   }
   return (
-    <ItemThumb
-      key={`${id}:${index}:${attempt}:${urls[index] ?? ''}`}
-      name={name}
-      category={category}
-      photoUrl={urls[index]}
-      size={size}
-      onPhotoError={failed}
-    />
+    <View ref={ref} style={{ width: size ?? 46, height: size ?? 46, flexShrink: 0 }}>
+      <ItemThumb
+        key={`${id}:${index}:${attempt}:${urls[index] ?? ''}`}
+        name={name}
+        category={category}
+        photoUrl={ready && urls[index] ? thumbnailPhotoUrl(urls[index]) : undefined}
+        size={size}
+        onPhotoError={failed}
+      />
+    </View>
   );
 }
 

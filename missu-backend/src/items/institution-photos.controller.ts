@@ -1,4 +1,12 @@
-import { Controller, Get, Injectable, Param, Req, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Injectable,
+  Param,
+  Query,
+  Req,
+  Res,
+} from '@nestjs/common';
 import type { Response } from 'express';
 import sharp from 'sharp';
 import { Public } from '../auth/auth.guard';
@@ -10,13 +18,16 @@ import { InstitutionItemsService } from './institution-items.service';
 import { schoolArticle } from './institution-records';
 
 const MAX_BYTES = 10 * 1024 * 1024;
+const CACHE_BYTES = 16 * 1024 * 1024;
+const CACHE_MS = 10 * 60_000;
+type PhotoSet = { full: Buffer; thumb: Buffer };
 
 /** 학교 다운로드 파일은 HTML 오류/다운로드 MIME으로 올 수 있어 실제 사진인지 검증합니다. */
 @Injectable()
 export class InstitutionPhotosService {
   private readonly cache = new Map<
     string,
-    { until: number; value: Promise<Buffer> }
+    { until: number; bytes: number; value: Promise<PhotoSet> }
   >();
   private active = 0;
   private readonly waiting: (() => void)[] = [];
@@ -25,24 +36,53 @@ export class InstitutionPhotosService {
     private readonly http: ExternalHttpService,
   ) {}
 
-  async image(id: string, index: string) {
+  async image(id: string, index: string, size?: string) {
     if (!/^hansung:\d{1,12}$/.test(id) || !/^[0-7]$/.test(index))
       return fail(404, 'RESOURCE_NOT_FOUND', '사진을 찾을 수 없어요.');
+    if (size !== undefined && size !== 'thumb')
+      return fail(400, 'VALIDATION_ERROR', '사진 크기를 확인해 주세요.');
+    const variant = size === 'thumb' ? 'thumb' : 'full';
     const key = id + ':' + index;
     const cached = this.cache.get(key);
-    if (cached && cached.until > Date.now()) return cached.value;
-    // 무료 서버 메모리와 원본 학교 서버의 동시 요청을 제한합니다.
-    if (this.cache.size >= 24)
-      this.cache.delete(this.cache.keys().next().value!);
+    if (cached && cached.until > Date.now()) {
+      // 최근 본 사진을 우선 남기고, 목록과 상세가 원본 요청을 공유합니다.
+      this.cache.delete(key);
+      this.cache.set(key, cached);
+      return (await cached.value)[variant];
+    }
     const value = this.queued(() => this.read(id, Number(index)));
-    this.cache.set(key, { until: Date.now() + 120_000, value });
+    const entry = { until: Infinity, bytes: 0, value };
+    this.cache.set(key, entry);
+    this.trim();
+    void value.then(
+      (photos) => {
+        entry.bytes = photos.full.length + photos.thumb.length;
+        entry.until = Date.now() + CACHE_MS;
+        this.trim();
+      },
+      () => {},
+    );
     void value.catch(() => {
       if (this.cache.get(key)?.value === value) this.cache.delete(key);
     });
-    return value;
+    return (await value)[variant];
   }
 
-  private async queued(work: () => Promise<Buffer>) {
+  private trim() {
+    for (const [key, entry] of this.cache)
+      if (entry.until <= Date.now()) this.cache.delete(key);
+    let bytes = [...this.cache.values()].reduce(
+      (sum, entry) => sum + entry.bytes,
+      0,
+    );
+    for (const [key, entry] of this.cache) {
+      if (this.cache.size <= 48 && bytes <= CACHE_BYTES) break;
+      this.cache.delete(key);
+      bytes -= entry.bytes;
+    }
+  }
+
+  private async queued(work: () => Promise<PhotoSet>) {
     if (this.active >= 2)
       await new Promise<void>((resolve) => this.waiting.push(resolve));
     this.active++;
@@ -105,7 +145,7 @@ export class InstitutionPhotosService {
         )
       )
         throw new Error('Not a raster photo');
-      return await sharp(input, { limitInputPixels: 24_000_000 })
+      const full = await sharp(input, { limitInputPixels: 24_000_000 })
         .rotate()
         .resize({
           width: 1600,
@@ -115,6 +155,17 @@ export class InstitutionPhotosService {
         })
         .webp({ quality: 82 })
         .toBuffer();
+      // 큰 원본을 두 번 동시에 펼치지 않고, 이미 줄인 사진에서 미리보기를 만듭니다.
+      const thumb = await sharp(full)
+        .resize({
+          width: 240,
+          height: 240,
+          fit: 'inside',
+          withoutEnlargement: true,
+        })
+        .webp({ quality: 72 })
+        .toBuffer();
+      return { full, thumb };
     } catch {
       return fail(
         503,
@@ -136,12 +187,13 @@ export class InstitutionPhotosController {
   async image(
     @Param('id') id: string,
     @Param('index') index: string,
+    @Query('size') size: string | undefined,
     @Req() req: SessionRequest,
     @Res() res: Response,
   ) {
     await this.rates.consume('institution-image:' + req.ip, 180, 60_000);
-    const bytes = await this.photos.image(id, index);
-    res.setHeader('Cache-Control', 'public, max-age=120');
+    const bytes = await this.photos.image(id, index, size);
+    res.setHeader('Cache-Control', 'public, max-age=600');
     res.type('image/webp').send(bytes);
   }
 }

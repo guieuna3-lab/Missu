@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 process.env.EXPO_PUBLIC_API_URL = 'https://missu.example/api/v1';
-const { displayPhotoUrls, loadItemPhotos } = await import('../src/lib/itemPhotos.ts');
+const { displayPhotoUrls, loadItemPhotos, thumbnailPhotoUrl } =
+  await import('../src/lib/itemPhotos.ts');
+
+test('미리보기는 학교 이미지 API에만 적용하고 상세·회원·외부 URL을 보존', () => {
+  const full = displayPhotoUrls('hansung:226144', ['https://www.hansung.ac.kr/file'])[0];
+  assert.equal(thumbnailPhotoUrl(full), full + '?size=thumb');
+  for (const uri of [
+    'https://images.example/a.jpg',
+    'https://missu.example/api/v1/photos/a?signature=keep',
+  ])
+    assert.equal(thumbnailPhotoUrl(uri), uri);
+  assert.equal(displayPhotoUrls('hansung:226144', ['https://www.hansung.ac.kr/file'])[0], full);
+});
 test('학교 다운로드는 이미지 API, 회원 상대 사진은 같은 서버로 연결', () => {
   assert.deepEqual(displayPhotoUrls('hansung:226144', ['https://www.hansung.ac.kr/file']), [
     'https://missu.example/api/v1/institution-items/image/hansung%3A226144/0',

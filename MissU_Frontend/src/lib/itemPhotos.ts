@@ -1,5 +1,21 @@
 import { apiBase } from './backend.ts';
 
+/** 목록 전용 학교 미리보기. 회원 사진·외부 기관의 원본 주소는 변형하지 않습니다. */
+export function thumbnailPhotoUrl(uri: string) {
+  try {
+    const url = new URL(uri);
+    const base = new URL(apiBase);
+    if (
+      url.origin === base.origin &&
+      /^\/api\/v1\/institution-items\/image\/hansung(?:%3A|:)\d+\/[0-7]$/i.test(url.pathname)
+    )
+      url.searchParams.set('size', 'thumb');
+    return url.href;
+  } catch {
+    return uri;
+  }
+}
+
 /** 서버가 발급한 상대 주소를 절대 주소로 바꾸고 학교 다운로드는 이미지 API로 엽니다. */
 export function displayPhotoUrls(id: string, urls: readonly string[] = []) {
   return [...new Set(urls.filter(Boolean))]
