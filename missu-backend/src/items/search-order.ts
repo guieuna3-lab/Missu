@@ -15,27 +15,29 @@ export function relevanceScore(
   features: string,
   search: ItemSearch,
 ) {
-  const title = compactName(name),
-    extra = compactName(features);
+  return relevanceScorer(search)(name, features);
+}
+
+// 한 검색의 동의어를 한 번 정규화해 모든 후보가 공유합니다.
+export function relevanceScorer(search: ItemSearch) {
   const whole = compactName(search.q);
-  if (!whole) return 0;
-  if (title === whole) return 1000;
-  if (
-    search.terms.length === 1 &&
-    search.terms[0].some((v) => title === compactName(v))
-  )
-    return 960;
-  if (title.startsWith(whole)) return 920;
-  if (title.includes(whole)) return 900;
-  const hits = search.terms.filter((g) =>
-    g.some((v) => title.includes(compactName(v))),
-  ).length;
-  const extraHits = search.terms.filter((g) =>
-    g.some((v) => extra.includes(compactName(v))),
-  ).length;
-  return Math.floor(
-    (800 * hits + 100 * extraHits) / Math.max(1, search.terms.length),
-  );
+  const terms = search.terms.map((group) => group.map(compactName));
+  return (name: string, features: string) => {
+    const title = compactName(name),
+      extra = compactName(features);
+    if (!whole) return 0;
+    if (title === whole) return 1000;
+    if (terms.length === 1 && terms[0].some((v) => title === v)) return 960;
+    if (title.startsWith(whole)) return 920;
+    if (title.includes(whole)) return 900;
+    const hits = terms.filter((g) => g.some((v) => title.includes(v))).length;
+    const extraHits = terms.filter((g) =>
+      g.some((v) => extra.includes(v)),
+    ).length;
+    return Math.floor(
+      (800 * hits + 100 * extraHits) / Math.max(1, terms.length),
+    );
+  };
 }
 export function compareRank(a: RankedKey, b: RankedKey) {
   return (

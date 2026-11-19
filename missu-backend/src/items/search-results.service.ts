@@ -13,6 +13,7 @@ import {
 } from './item-search';
 import { distance } from './institution-records';
 import { searchPoint, searchRange } from './search-range';
+import { portalRanked } from './search-portal-rank';
 import {
   afterSql,
   compareRank,
@@ -83,7 +84,6 @@ export function searchCursor(p: Position) {
 @Injectable()
 export class SearchResultsService {
   private readonly logger = new Logger(SearchResultsService.name);
-  private planReported = false;
   constructor(
     private readonly db: DatabaseService,
     private readonly members: ItemsService,
@@ -188,7 +188,7 @@ export class SearchResultsService {
     );
   }
 
-  private async ranked(query: Prisma.Sql, sample?: Prisma.Sql) {
+  private async ranked(query: Prisma.Sql) {
     const started = Date.now();
     const source = query.sql.includes('verified_portal_items')
       ? 'institution'
@@ -201,10 +201,6 @@ export class SearchResultsService {
           // 검색 중간 자료가 작은 기본 작업 메모리를 넘어 임시 파일로 반복
           // 기록되지 않게 합니다. 서버 전역 설정이 아닌 이 읽기에만 적용합니다.
           await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
-          // 전체 후보와 이름/보관처의 동등 결합은 해시 결합을 사용합니다.
-          // 작은 후보 수로 잘못 추정한 중첩 반복이 수만 건을 거듭 훑지 않게 합니다.
-          await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
-          await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
           await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
           return tx.$queryRaw<RankedKey[]>(query);
         },
@@ -216,52 +212,6 @@ export class SearchResultsService {
           ? error.code
           : 'unknown';
       this.logger.warn(`search-order ${source} failed code=${code}`);
-      if (source === 'institution' && !this.planReported) {
-        this.planReported = true;
-        void this.db
-          .$transaction(
-            async (tx) => {
-              await tx.$executeRaw`SET LOCAL jit = off`;
-              await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
-              await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
-              await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
-              await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
-              const plan = await tx.$queryRaw<unknown[]>(
-                sample
-                  ? Prisma.sql`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${sample}`
-                  : Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
-              );
-              const nodes: object[] = [];
-              const visit = (value: unknown) => {
-                if (Array.isArray(value)) return value.forEach(visit);
-                if (!value || typeof value !== 'object') return;
-                const node = value as Record<string, unknown>;
-                if (node['Node Type'])
-                  nodes.push({
-                    node: node['Node Type'],
-                    rows: node['Plan Rows'],
-                    cost: node['Total Cost'],
-                    relation: node['Relation Name'],
-                    index: node['Index Name'],
-                    actualRows: node['Actual Rows'],
-                    actualMs: node['Actual Total Time'],
-                    exact: node['Exact Heap Blocks'],
-                    lossy: node['Lossy Heap Blocks'],
-                    sharedRead: node['Shared Read Blocks'],
-                    sharedHit: node['Shared Hit Blocks'],
-                    tempRead: node['Temp Read Blocks'],
-                    tempWritten: node['Temp Written Blocks'],
-                  });
-                Object.values(node).forEach(visit);
-              };
-              visit(plan);
-              // 검색어·좌표·키 없이 실행 방식과 예상 건수만 남깁니다.
-              this.logger.warn('search-plan ' + JSON.stringify(nodes));
-            },
-            { timeout: 25000 },
-          )
-          .catch(() => this.logger.warn('search-sample unavailable'));
-      }
       throw error;
     } finally {
       const elapsed = Date.now() - started;
@@ -328,37 +278,23 @@ export class SearchResultsService {
         ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
-      this.ranked(
-        query.sort === 'recent'
-          ? Prisma.sql`
+      query.sort === 'recent'
+        ? this.ranked(Prisma.sql`
         SELECT * FROM (
           SELECT id, day, 0 AS score FROM verified_portal_items
           WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
         ) AS ranked WHERE ${afterSql(after)}
-        ORDER BY day DESC, id COLLATE "C" ASC LIMIT 26`
-          : query.sort === 'distance'
-            ? Prisma.sql`
-        WITH places AS MATERIALIZED (
-          SELECT storage, ${rank} AS score FROM institution_place_points
-          WHERE located_at <= ${new Date(at)}
-        ), ranked AS (
-          SELECT v.id,v.day,coalesce(p.score,-2147483647) AS score FROM verified_portal_items v
-          LEFT JOIN places p ON p.storage=v.storage
-          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
-        )
-        SELECT * FROM ranked WHERE ${afterSql(after)}
-        ORDER BY score DESC,day DESC,id COLLATE "C" ASC LIMIT 26`
-            : Prisma.sql`
-        WITH candidates AS MATERIALIZED (
-          SELECT id, day, ${normalize(Prisma.sql`name`)} AS normalized_name,
-            ${normalize(Prisma.sql`kind_name`)} AS normalized_features FROM verified_portal_items
-          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
-        ), ranked AS MATERIALIZED (SELECT id,day,${rank} AS score FROM candidates)
-        SELECT * FROM ranked WHERE ${afterSql(after)}
-        ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`,
-        Prisma.sql`SELECT id,day FROM verified_portal_items
-          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)} LIMIT 2000`,
-      ),
+        ORDER BY day DESC, id COLLATE "C" ASC LIMIT 26`)
+        : portalRanked(
+            this.db,
+            search,
+            from,
+            through,
+            query.sort,
+            at,
+            after,
+            point,
+          ),
       // 학교 원본 장애가 DB에 저장된 다른 물품의 검색까지 막지 않게 합니다.
       // 첫 페이지에서 빠진 출처는 커서에 고정하고, 새 검색에서 다시 확인합니다.
       after?.withoutSchool
