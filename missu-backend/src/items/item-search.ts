@@ -171,6 +171,31 @@ export function itemSearch(query = '', place = '') {
   return { q, place: place.trim(), terms, excludedEndings, brand, otherBrand };
 }
 export type ItemSearch = ReturnType<typeof itemSearch>;
+// 알림에서는 색상·형용사보다 물품 종류를 우선하고, 기종과 액세서리 구분은 유지합니다.
+export function alertItemSearch(name: string) {
+  const value = compact(name);
+  const keyword = [...aliases.keys()]
+    .filter((word) => word.length >= 2 && value.includes(word))
+    .sort((a, b) => b.length - a.length)[0];
+  const accessory = [
+    '충전케이블',
+    '보호필름',
+    '충전기',
+    '충전선',
+    '케이스',
+    '케이블',
+    '거치대',
+    '스트랩',
+    '커버',
+  ].find((word) => value.includes(word));
+  // 본체를 잃어버린 신고와 본체용 케이스를 잃어버린 신고를 구분합니다.
+  return itemSearch(
+    keyword
+      ? keyword +
+          (accessory && !keyword.includes(accessory) ? ' ' + accessory : '')
+      : name,
+  );
+}
 export function matchesName(search: ItemSearch, ...fields: string[]) {
   const values = fields.map(compact);
   const title = values[0] ?? '';

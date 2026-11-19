@@ -1,5 +1,6 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { ReportMatches } from './ReportMatches';
+import { MatchAlertSettings } from '@/features/notifications/MatchAlertSettings';
 import { ActionButton } from '@/components/ActionButton';
 import { Card } from '@/components/Card';
 import { FlowScreen } from '@/components/FlowScreen';
@@ -33,6 +34,7 @@ export function LostDoneScreen() {
         </Card>
       )}
       <ReportMatches key={id} id={id} />
+      <MatchAlertSettings id={id} />
       <ActionButton
         label="습득물 검색하기"
         variant="outline"

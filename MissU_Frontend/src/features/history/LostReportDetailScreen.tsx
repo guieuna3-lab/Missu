@@ -13,6 +13,7 @@ import { formatDate, formatDateTimeRange, formatTime } from '@/lib/dateTime';
 import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack, leaveFlowTo } from '@/lib/navigation';
 import { ReportMatches } from '@/features/report/ReportMatches';
+import { MatchAlertSettings } from '@/features/notifications/MatchAlertSettings';
 import { useReportDraft } from '@/features/report/ReportDraft';
 
 // Figma 01.08 and the 01.08-C delete confirmation.
@@ -97,6 +98,7 @@ export function LostReportDetailScreen() {
       <Card title="분실 시점">{formatDateTimeRange(report.lostFrom, report.lostTo)}</Card>
       <Card title="분실 장소">{report.place.detail}</Card>
       <ReportMatches key={report.id} id={report.id} />
+      <MatchAlertSettings id={report.id} />
       {error && <FormMessage>{error}</FormMessage>}
       <View style={styles.deleteRow}>
         <TextLink label="신고 삭제" onPress={() => setConfirming(true)} />

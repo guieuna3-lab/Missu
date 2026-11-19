@@ -46,29 +46,31 @@ enum ChallengePurpose {
 
 // 계정 정보입니다. 비밀번호 원문을 저장하지 않고 해시만 보관합니다.
 model User {
-  withdrawnAt DateTime? @map("withdrawn_at") @db.Timestamptz
-  id                 String              @id @default(uuid()) @db.Uuid
-  email              String              @unique @db.VarChar(254)
-  nickname           String              @db.VarChar(20)
-  passwordHash       String              @map("password_hash")
-  emailVerifiedAt    DateTime            @map("email_verified_at") @db.Timestamptz
-  phoneCiphertext    String?             @map("phone_ciphertext")
-  phoneVerifiedAt    DateTime?           @map("phone_verified_at") @db.Timestamptz
-  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt          DateTime            @updatedAt @map("updated_at") @db.Timestamptz
-  sessions           Session[]
-  items              FoundItem[]
-  photos             ItemPhoto[]
-  lostReports        LostReport[]
-  idempotencyRecords IdempotencyRecord[]
-  auditEvents        AuditEvent[]
-  challenges         AuthChallenge[]
-  consents           Consent[]
+  matchNotifications  MatchNotification[]
+  pushDevices         PushDevice[]
+  withdrawnAt         DateTime?            @map("withdrawn_at") @db.Timestamptz
+  id                  String               @id @default(uuid()) @db.Uuid
+  email               String               @unique @db.VarChar(254)
+  nickname            String               @db.VarChar(20)
+  passwordHash        String               @map("password_hash")
+  emailVerifiedAt     DateTime             @map("email_verified_at") @db.Timestamptz
+  phoneCiphertext     String?              @map("phone_ciphertext")
+  phoneVerifiedAt     DateTime?            @map("phone_verified_at") @db.Timestamptz
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz
+  sessions            Session[]
+  items               FoundItem[]
+  photos              ItemPhoto[]
+  lostReports         LostReport[]
+  idempotencyRecords  IdempotencyRecord[]
+  auditEvents         AuditEvent[]
+  challenges          AuthChallenge[]
+  consents            Consent[]
   hansungDemoRequests HansungDemoRequest[]
-  claims             Claim[]
-  messages           Message[]
-  abuseReports       AbuseReport[]
-  routeRecordings    RouteRecording[]
+  claims              Claim[]
+  messages            Message[]
+  abuseReports        AbuseReport[]
+  routeRecordings     RouteRecording[]
 
   @@map("users")
 }
@@ -91,8 +93,8 @@ model Session {
 
 // 비회원에게 공개할 수 있는 습득물 정보입니다. 비공개 특징은 아래 별도 테이블을 사용합니다.
 model FoundItem {
-  appCategory String? @map("app_category") @db.VarChar(16)
-  archived Boolean @default(false)
+  appCategory    String?          @map("app_category") @db.VarChar(16)
+  archived       Boolean          @default(false)
   id             String           @id @default(uuid()) @db.Uuid
   keeperId       String           @map("keeper_id") @db.Uuid
   keeper         User             @relation(fields: [keeperId], references: [id], onDelete: Restrict)
@@ -129,45 +131,47 @@ model FoundItemSecret {
 
 // 처음 올린 사진은 READY, 물품에 연결된 사진은 ATTACHED입니다.
 model ItemPhoto {
-  reportId String? @map("report_id") @db.Uuid
-  report AbuseReport? @relation(fields: [reportId], references: [id], onDelete: Restrict)
-  id         String     @id @default(uuid()) @db.Uuid
-  uploaderId String     @map("uploader_id") @db.Uuid
-  uploader   User       @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
-  itemId     String?    @map("item_id") @db.Uuid
-  item       FoundItem? @relation(fields: [itemId], references: [id], onDelete: Restrict)
-  objectKey  String     @unique @map("object_key")
+  reportId   String?      @map("report_id") @db.Uuid
+  report     AbuseReport? @relation(fields: [reportId], references: [id], onDelete: Restrict)
+  id         String       @id @default(uuid()) @db.Uuid
+  uploaderId String       @map("uploader_id") @db.Uuid
+  uploader   User         @relation(fields: [uploaderId], references: [id], onDelete: Restrict)
+  itemId     String?      @map("item_id") @db.Uuid
+  item       FoundItem?   @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  objectKey  String       @unique @map("object_key")
   mime       String
-  byteSize   Int        @map("byte_size")
+  byteSize   Int          @map("byte_size")
   width      Int
   height     Int
-  state      String     @default("READY")
-  sortOrder  Int?       @map("sort_order")
-  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz
+  state      String       @default("READY")
+  sortOrder  Int?         @map("sort_order")
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz
 
-  @@index([reportId], map: "item_photos_report_idx")
   @@unique([itemId, sortOrder])
+  @@index([reportId], map: "item_photos_report_idx")
   @@index([uploaderId, state, createdAt])
   @@map("item_photos")
 }
 
 // 분실 신고는 공개 목록과 분리하며, 대략적인 시간 범위를 그대로 보존합니다.
 model LostReport {
-  category      String        @default("OTHER") @db.VarChar(16)
-  placeName     String?       @map("place_name") @db.VarChar(200)
-  id            String        @id @default(uuid()) @db.Uuid
-  userId        String        @map("user_id") @db.Uuid
-  user          User          @relation(fields: [userId], references: [id], onDelete: Restrict)
-  name          String        @db.VarChar(20)
-  features      String?       @db.VarChar(100)
-  lostStart     DateTime      @map("lost_start") @db.Timestamptz
-  lostEnd       DateTime      @map("lost_end") @db.Timestamptz
-  timePrecision TimePrecision @map("time_precision")
-  lostLabel     String        @map("lost_label") @db.VarChar(200)
-  lat           Decimal       @db.Decimal(9, 6)
-  lng           Decimal       @db.Decimal(9, 6)
-  createdAt     DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt     DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  alertPreference    MatchAlertPreference?
+  matchNotifications MatchNotification[]
+  category           String                @default("OTHER") @db.VarChar(16)
+  placeName          String?               @map("place_name") @db.VarChar(200)
+  id                 String                @id @default(uuid()) @db.Uuid
+  userId             String                @map("user_id") @db.Uuid
+  user               User                  @relation(fields: [userId], references: [id], onDelete: Restrict)
+  name               String                @db.VarChar(20)
+  features           String?               @db.VarChar(100)
+  lostStart          DateTime              @map("lost_start") @db.Timestamptz
+  lostEnd            DateTime              @map("lost_end") @db.Timestamptz
+  timePrecision      TimePrecision         @map("time_precision")
+  lostLabel          String                @map("lost_label") @db.VarChar(200)
+  lat                Decimal               @db.Decimal(9, 6)
+  lng                Decimal               @db.Decimal(9, 6)
+  createdAt          DateTime              @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt          DateTime              @updatedAt @map("updated_at") @db.Timestamptz
 
   @@index([userId, createdAt, id])
   @@map("lost_reports")
@@ -246,27 +250,27 @@ model Consent {
 
 // 보관자 전달과 요청자 수령을 별도 상태로 저장합니다. DB의 부분 유일 인덱스로 단일 승인을 보장합니다.
 model Claim {
-  id             String        @id @default(uuid()) @db.Uuid
-  itemId         String        @map("item_id") @db.Uuid
-  item           FoundItem     @relation(fields: [itemId], references: [id], onDelete: Restrict)
-  requesterId    String        @map("requester_id") @db.Uuid
-  requester      User          @relation(fields: [requesterId], references: [id], onDelete: Restrict)
-  features       String        @db.VarChar(300)
+  id             String         @id @default(uuid()) @db.Uuid
+  itemId         String         @map("item_id") @db.Uuid
+  item           FoundItem      @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  requesterId    String         @map("requester_id") @db.Uuid
+  requester      User           @relation(fields: [requesterId], references: [id], onDelete: Restrict)
+  features       String         @db.VarChar(300)
   lostStart      DateTime?      @map("lost_start") @db.Timestamptz
   lostEnd        DateTime?      @map("lost_end") @db.Timestamptz
   timePrecision  TimePrecision? @map("time_precision")
   lostLabel      String?        @map("lost_label") @db.VarChar(200)
   lat            Decimal?       @db.Decimal(9, 6)
   lng            Decimal?       @db.Decimal(9, 6)
-  lostInfo       String?       @map("lost_info") @db.VarChar(500)
+  lostInfo       String?        @map("lost_info") @db.VarChar(500)
   appointment    Json?
-  status         ClaimStatus   @default(PENDING)
-  decisionReason String?       @map("decision_reason") @db.VarChar(300)
-  approvedAt     DateTime?     @map("approved_at") @db.Timestamptz
-  handedOverAt   DateTime?     @map("handed_over_at") @db.Timestamptz
-  receivedAt     DateTime?     @map("received_at") @db.Timestamptz
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz
+  status         ClaimStatus    @default(PENDING)
+  decisionReason String?        @map("decision_reason") @db.VarChar(300)
+  approvedAt     DateTime?      @map("approved_at") @db.Timestamptz
+  handedOverAt   DateTime?      @map("handed_over_at") @db.Timestamptz
+  receivedAt     DateTime?      @map("received_at") @db.Timestamptz
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt      DateTime       @updatedAt @map("updated_at") @db.Timestamptz
   messages       Message[]
   reports        AbuseReport[]
 
@@ -292,16 +296,16 @@ model Message {
 
 // 신고는 접수만 기록합니다. 자동 거절이나 계정 차단은 하지 않습니다.
 model AbuseReport {
-  photos ItemPhoto[]
-  description String? @db.VarChar(1000)
-  id         String   @id @default(uuid()) @db.Uuid
-  claimId    String   @map("claim_id") @db.Uuid
-  claim      Claim    @relation(fields: [claimId], references: [id], onDelete: Restrict)
-  reporterId String   @map("reporter_id") @db.Uuid
-  reporter   User     @relation(fields: [reporterId], references: [id], onDelete: Restrict)
-  reason     String   @db.VarChar(200)
-  status     String   @default("RECEIVED")
-  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  photos      ItemPhoto[]
+  description String?     @db.VarChar(1000)
+  id          String      @id @default(uuid()) @db.Uuid
+  claimId     String      @map("claim_id") @db.Uuid
+  claim       Claim       @relation(fields: [claimId], references: [id], onDelete: Restrict)
+  reporterId  String      @map("reporter_id") @db.Uuid
+  reporter    User        @relation(fields: [reporterId], references: [id], onDelete: Restrict)
+  reason      String      @db.VarChar(200)
+  status      String      @default("RECEIVED")
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz
 
   @@unique([claimId, reporterId])
   @@map("abuse_reports")
@@ -319,14 +323,14 @@ model RateLimitBucket {
 
 // 전국 검색은 완료된 집계를 유지하면서 다음 집계를 별도로 작성합니다.
 model AgencyCountSnapshot {
-  query       String    @id
-  generation  Int       @default(1)
-  page        Int       @default(1)
-  listTotal   Int?      @map("list_total")
-  listed      Boolean   @default(false)
+  query       String                 @id
+  generation  Int                    @default(1)
+  page        Int                    @default(1)
+  listTotal   Int?                   @map("list_total")
+  listed      Boolean                @default(false)
   total       Int?
-  completedAt DateTime? @map("completed_at") @db.Timestamptz
-  retryAt     DateTime  @default(now()) @map("retry_at") @db.Timestamptz
+  completedAt DateTime?              @map("completed_at") @db.Timestamptz
+  retryAt     DateTime               @default(now()) @map("retry_at") @db.Timestamptz
   candidates  AgencyCountCandidate[]
 
   @@map("agency_count_snapshots")
@@ -335,10 +339,10 @@ model AgencyCountSnapshot {
 model AgencyCountCandidate {
   query      String
   generation Int
-  atcId      String   @map("atc_id")
-  fdSn       String   @map("fd_sn")
+  atcId      String              @map("atc_id")
+  fdSn       String              @map("fd_sn")
   stored     Boolean?
-  retryAfter DateTime? @map("retry_after") @db.Timestamptz
+  retryAfter DateTime?           @map("retry_after") @db.Timestamptz
   snapshot   AgencyCountSnapshot @relation(fields: [query], references: [query], onDelete: Cascade)
 
   @@id([query, generation, atcId, fdSn])
@@ -349,19 +353,20 @@ model AgencyCountCandidate {
 // 포털이 실제로 응답한 공개 필드와 확인 시각만 저장합니다.
 model VerifiedPortalItem {
   searchFragments String[] @default(dbgenerated()) @map("search_fragments")
-  kindName String? @map("kind_name")
-  foundPlace String? @map("found_place")
-  photoUrl String? @map("photo_url")
-  phone String?
-  id String @id
-  name String
-  source String
-  storage String
-  placeKey String @map("place_key")
-  day String
-  category String
-  stored Boolean
-  checkedAt DateTime @map("checked_at") @db.Timestamptz
+  kindName        String?  @map("kind_name")
+  foundPlace      String?  @map("found_place")
+  photoUrl        String?  @map("photo_url")
+  phone           String?
+  id              String   @id
+  name            String
+  source          String
+  storage         String
+  placeKey        String   @map("place_key")
+  day             String
+  category        String
+  stored          Boolean
+  checkedAt       DateTime @map("checked_at") @db.Timestamptz
+
   @@index([stored, day, id])
   @@index([searchFragments], type: Gin, map: "verified_items_fragments_gin")
   @@map("verified_portal_items")
@@ -369,41 +374,46 @@ model VerifiedPortalItem {
 
 // 검색어와 장소 원문을 남기지 않고, 마지막으로 완전히 확인한 합계만 보존합니다.
 model LastSearchCount {
-  queryKey String @id @map("query_key")
-  total Int
-  policeIncluded Boolean @map("police_included")
-  checkedAt DateTime @map("checked_at") @db.Timestamptz
+  queryKey       String   @id @map("query_key")
+  total          Int
+  policeIncluded Boolean  @map("police_included")
+  checkedAt      DateTime @map("checked_at") @db.Timestamptz
+
   @@map("last_search_counts")
 }
 
 // 공개 보관처 위치만 저장합니다. 사용자의 현재 위치는 저장하지 않습니다.
 model InstitutionPlacePoint {
-  storage String @id
-  lat Float?
-  lng Float?
+  storage   String    @id
+  lat       Float?
+  lng       Float?
   locatedAt DateTime? @map("located_at") @db.Timestamptz
-  retryAt DateTime @map("retry_at") @db.Timestamptz
+  retryAt   DateTime  @map("retry_at") @db.Timestamptz
+
   @@map("institution_place_points")
 }
 
 model InstitutionSchoolSnapshot {
-  id Int @id
-  items Json
+  id        Int      @id
+  items     Json
   checkedAt DateTime @map("checked_at") @db.Timestamptz
+
   @@map("institution_school_snapshot")
 }
 
 // 날짜별 변경 번호로 보관 상태와 검색 조건이 그대로인 날짜의 건수를 재사용한다.
 model VerifiedSearchDayVersion {
-  day String @id
+  day      String @id
   revision BigInt
+
   @@map("verified_search_day_versions")
 }
 
 model VerifiedSearchCountCache {
-  slot Int @id
+  slot     Int    @id
   queryKey String @map("query_key")
-  summary Json
+  summary  Json
+
   @@map("verified_search_count_cache")
 }
 
@@ -450,12 +460,73 @@ model RoutePoint {
 }
 
 model HansungDemoRequest {
-  id String @id @db.Uuid
-  requesterId String @map("requester_id") @db.Uuid
-  requester User @relation(fields:[requesterId],references:[id],onDelete:NoAction,onUpdate:NoAction)
-  status String
-  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt DateTime @default(now()) @map("updated_at") @db.Timestamptz
-  @@index([updatedAt(sort: Desc),id],map:"hansung_demo_inbox")
+  id          String   @id @db.Uuid
+  requesterId String   @map("requester_id") @db.Uuid
+  requester   User     @relation(fields: [requesterId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  status      String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @map("updated_at") @db.Timestamptz
+
+  @@index([updatedAt(sort: Desc), id], map: "hansung_demo_inbox")
   @@map("hansung_demo_requests")
+}
+
+model MatchAlertPreference {
+  reportId  String     @id @map("report_id") @db.Uuid
+  report    LostReport @relation(fields: [reportId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  enabledAt DateTime   @default(now()) @map("enabled_at") @db.Timestamptz
+
+  @@map("match_alert_preferences")
+}
+
+model MatchItemEvent {
+  itemId    String   @id @map("item_id")
+  item      Json
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@map("match_item_events")
+}
+
+model MatchNotification {
+  id         String         @id @db.Uuid
+  userId     String         @map("user_id") @db.Uuid
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reportId   String         @map("report_id") @db.Uuid
+  report     LostReport     @relation(fields: [reportId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  itemId     String         @map("item_id")
+  itemName   String         @map("item_name")
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  readAt     DateTime?      @map("read_at") @db.Timestamptz
+  deliveries PushDelivery[]
+
+  @@unique([reportId, itemId], map: "match_notifications_report_id_item_id_key")
+  @@index([userId, createdAt(sort: Desc), id], map: "match_notifications_owner_idx")
+  @@map("match_notifications")
+}
+
+model PushDevice {
+  tokenHash       String         @id @map("token_hash")
+  userId          String         @map("user_id") @db.Uuid
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tokenCiphertext String         @map("token_ciphertext")
+  binding         String         @db.Uuid
+  updatedAt       DateTime       @default(now()) @map("updated_at") @db.Timestamptz
+  deliveries      PushDelivery[]
+
+  @@index([userId], map: "push_devices_owner_idx")
+  @@map("push_devices")
+}
+
+model PushDelivery {
+  notificationId String            @map("notification_id") @db.Uuid
+  notification   MatchNotification @relation(fields: [notificationId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  tokenHash      String            @map("token_hash")
+  device         PushDevice        @relation(fields: [tokenHash], references: [tokenHash], onDelete: Cascade, onUpdate: NoAction)
+  binding        String            @db.Uuid
+  attempts       Int               @default(0)
+  retryAt        DateTime          @default(now()) @map("retry_at") @db.Timestamptz
+
+  @@id([notificationId, tokenHash])
+  @@index([retryAt], map: "push_deliveries_retry_idx")
+  @@map("push_deliveries")
 }

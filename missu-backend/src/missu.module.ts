@@ -37,6 +37,8 @@ import { StorageService } from './integrations/storage.service';
 import { MaintenanceService } from './maintenance/maintenance.service';
 import { RoutesController } from './routes/routes.controller';
 import { RoutesService } from './routes/routes.service';
+import { NotificationsController } from './notifications/notifications.controller';
+import { NotificationsService } from './notifications/notifications.service';
 
 @Global()
 @Module({
@@ -54,6 +56,7 @@ import { RoutesService } from './routes/routes.service';
     InstitutionItemsController,
     InstitutionPhotosController,
     RoutesController,
+    NotificationsController,
   ],
   providers: [
     DatabaseService,
@@ -73,6 +76,7 @@ import { RoutesService } from './routes/routes.service';
     StorageService,
     MaintenanceService,
     RoutesService,
+    NotificationsService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
   exports: [DatabaseService],
