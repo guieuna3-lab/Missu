@@ -159,10 +159,12 @@ export function NearbyScreen() {
   const agencyTotal = areaCount?.total ?? areaCount?.confirmedTotal;
   const savedTotal = areaCount?.lastAreaTotal ?? recentAreaTotals.get(params);
   const total =
-    savedTotal ??
-    (membersReady && result.total != null && agencyTotal != null
+    areaCount?.status === 'complete' && membersReady && result.total != null && agencyTotal != null
       ? result.total + agencyTotal
-      : null);
+      : savedTotal ??
+        (membersReady && result.total != null && agencyTotal != null
+          ? result.total + agencyTotal
+          : null);
   const memberFailed = membersReady && !!result.error;
   const agencyCountFailed = count?.params === params && count.failed;
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
