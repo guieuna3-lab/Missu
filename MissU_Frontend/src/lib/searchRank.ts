@@ -18,6 +18,7 @@ export function metersBetween(a: { lat: number; lng: number }, b: { lat: number;
 /** 기준 좌표에서 물품까지 거리(m). 위치를 모르면 undefined. */
 export function distanceOf(item: Item, near: SearchFilters['near']) {
   if (!near) return undefined;
+  if (Number.isFinite(item.distanceM)) return item.distanceM;
   if ('source' in item) return item.distanceM;
   return item.point ? Math.round(metersBetween(near, item.point)) : undefined;
 }

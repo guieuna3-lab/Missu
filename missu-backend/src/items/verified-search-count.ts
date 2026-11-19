@@ -20,6 +20,7 @@ export async function countVerifiedDays(
   const slot = parseInt(key.slice(0, 4), 16) % 1024;
   const result = await db.$transaction(
     async (tx) => {
+      await tx.$executeRaw`SET LOCAL jit = off`;
       // 버전과 집계가 같은 시점의 자료를 읽어야 중간에 반환된 물품이 고정되지 않는다.
       const [state] = await tx.$queryRaw<State[]>`
       SELECT (SELECT COALESCE(jsonb_object_agg(day, revision::text), '{}'::jsonb)
@@ -52,7 +53,9 @@ export async function countVerifiedDays(
       }
       return {
         total: Object.values(days).reduce((sum, entry) => sum + entry[1], 0),
-        update: dirty.length ? JSON.stringify({ epoch, days }) : undefined,
+        update: dirty.length
+          ? JSON.stringify({ epoch, days: { ...known, ...days } })
+          : undefined,
       };
     },
     { isolationLevel: 'RepeatableRead', timeout: 90000, maxWait: 10000 },

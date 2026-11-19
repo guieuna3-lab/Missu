@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 process.env.EXPO_PUBLIC_API_URL = 'https://missu.example/api/v1';
-const { searchResults } = await import('../src/lib/searchResults.ts');
+const { searchResults, searchCount, recentResults } = await import('../src/lib/searchResults.ts');
 
 test('통합 검색은 정렬·기간·장소·커서를 보내고 서버 순서와 사진을 유지한다', async () => {
   const original = globalThis.fetch;
@@ -54,6 +54,92 @@ test('통합 검색은 정렬·기간·장소·커서를 보내고 서버 순서
     );
     assert.deepEqual(result.items[0].photoUrls, ['https://images.example/a.jpg']);
     assert.deepEqual(result.items[1].photoUrls, ['https://missu.example/api/v1/photos/p']);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('가까운순도 통합 API에 기준 좌표를 보내고 서버 거리·순서를 보존한다', async () => {
+  const original = globalThis.fetch;
+  let called;
+  globalThis.fetch = async (url) => {
+    called = new URL(url);
+    return new Response(
+      JSON.stringify({
+        data: {
+          items: [
+            { id: 'old-near', source: '포털기관', name: '지갑', date: '2026-06-01', distanceM: 5 },
+            { id: 'new-far', source: '포털기관', name: '지갑', date: '2026-11-19', distanceM: 500 },
+          ],
+          nextCursor: 'next',
+        },
+      }),
+    );
+  };
+  try {
+    const result = await searchResults(
+      {
+        query: '지갑',
+        place: '강남역',
+        period: 'all',
+        near: { lat: 37.5, lng: 127, label: '강남역' },
+      },
+      'distance',
+    );
+    assert.equal(called.searchParams.get('near'), '37.500000,127.000000');
+    assert.equal(called.searchParams.get('sort'), 'distance');
+    assert.deepEqual(
+      result.items.map((i) => i.id),
+      ['old-near', 'new-far'],
+    );
+    assert.equal(result.items[0].distanceM, 5);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('과거 직접 기간의 건수는 목록과 별도 요청이며 정렬·좌표를 보내지 않는다', async () => {
+  const original = globalThis.fetch;
+  let called;
+  globalThis.fetch = async (url) => {
+    called = new URL(url);
+    return new Response(
+      JSON.stringify({ data: { total: 37, notices: [], checkedAt: '2026-11-19' } }),
+    );
+  };
+  try {
+    const result = await searchCount(
+      {
+        query: '지갑',
+        place: '강남역',
+        period: 'custom',
+        from: '2026-10-01',
+        to: '2026-10-15',
+        near: { lat: 37.5, lng: 127, label: '강남역' },
+      },
+      new AbortController().signal,
+    );
+    assert.equal(called.pathname, '/api/v1/search-items/count');
+    assert.equal(called.searchParams.get('from'), '2026-10-01');
+    assert.equal(called.searchParams.get('to'), '2026-10-15');
+    assert.equal(called.searchParams.has('sort'), false);
+    assert.equal(called.searchParams.has('near'), false);
+    assert.equal(result.total, 37);
+  } finally {
+    globalThis.fetch = original;
+  }
+});
+
+test('홈은 합쳐진 저장 목록을 한 번만 요청한다', async () => {
+  const original = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url) => {
+    calls.push(url);
+    return new Response(JSON.stringify({ data: { items: [], nextCursor: null, notices: [] } }));
+  };
+  try {
+    await recentResults();
+    assert.deepEqual(calls, ['https://missu.example/api/v1/search-items/recent']);
   } finally {
     globalThis.fetch = original;
   }

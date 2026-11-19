@@ -12,6 +12,9 @@ export class ApiError extends Error {
 export async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!apiBase) throw new Error('미슈 서버 주소를 설정해 주세요.');
   const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener('abort', abort, { once: true });
   const timer = setTimeout(() => controller.abort(), 75000);
   try {
     const response = await fetch(apiBase + path, {
@@ -28,6 +31,7 @@ export async function api<T>(path: string, options: RequestInit = {}): Promise<T
     if (error instanceof ApiError) throw error;
     throw new Error('미슈 서버에 연결할 수 없어요. 잠시 후 다시 시도해 주세요.');
   } finally {
+    options.signal?.removeEventListener('abort', abort);
     clearTimeout(timer);
   }
 }

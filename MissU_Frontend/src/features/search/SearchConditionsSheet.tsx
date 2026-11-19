@@ -38,10 +38,16 @@ export function SearchConditionsSheet({
   const [locating, setLocating] = useState(false);
   const [locationError, setLocationError] = useState('');
   // 시트를 연 시점의 날짜 범위입니다(최대 6개월 전까지).
-  const [{ today, earliest }] = useState(() => ({
-    today: seoulDate(),
-    earliest: seoulDate(Date.now() - 182 * 86_400_000),
-  }));
+  const [{ today, earliest }] = useState(() => {
+    const today = seoulDate();
+    const date = new Date(today + 'T00:00:00Z');
+    const first = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() - 6, 1));
+    const lastDay = new Date(
+      Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+    ).getUTCDate();
+    first.setUTCDate(Math.min(date.getUTCDate(), lastDay));
+    return { today, earliest: first.toISOString().slice(0, 10) };
+  });
 
   async function pickMyLocation() {
     setLocating(true);

@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '../generated/prisma/client';
 import { DatabaseService } from '../database/database.service';
 import { digest, equal, sign } from '../common/crypto';
@@ -82,6 +82,7 @@ export function searchCursor(p: Position) {
 
 @Injectable()
 export class SearchResultsService {
+  private readonly logger = new Logger(SearchResultsService.name);
   constructor(
     private readonly db: DatabaseService,
     private readonly members: ItemsService,
@@ -186,15 +187,33 @@ export class SearchResultsService {
     );
   }
 
-  private ranked(query: Prisma.Sql) {
-    return this.db.$transaction(
-      async (tx) => {
-        // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
-        await tx.$executeRaw`SET LOCAL jit = off`;
-        return tx.$queryRaw<RankedKey[]>(query);
-      },
-      { timeout: 30000 },
-    );
+  private async ranked(query: Prisma.Sql) {
+    const started = Date.now();
+    const source = query.sql.includes('verified_portal_items')
+      ? 'institution'
+      : 'member';
+    try {
+      return await this.db.$transaction(
+        async (tx) => {
+          // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
+          await tx.$executeRaw`SET LOCAL jit = off`;
+          await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
+          return tx.$queryRaw<RankedKey[]>(query);
+        },
+        { timeout: 30000 },
+      );
+    } catch (error: unknown) {
+      const code =
+        error instanceof Prisma.PrismaClientKnownRequestError
+          ? error.code
+          : 'unknown';
+      this.logger.warn(`search-order ${source} failed code=${code}`);
+      throw error;
+    } finally {
+      const elapsed = Date.now() - started;
+      if (elapsed > 1000)
+        this.logger.warn(`search-order ${source} elapsed_ms=${elapsed}`);
+    }
   }
 
   private async read(query: SearchResultsDto, feed = false) {

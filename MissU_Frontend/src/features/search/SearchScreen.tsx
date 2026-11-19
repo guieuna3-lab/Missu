@@ -20,23 +20,15 @@ import { ItemThumb } from '@/components/ItemThumb';
 import { Icon } from '@/components/Icon';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import { itemRepository, type PublicItem, type SearchFilters } from '@/lib/items';
-import {
-  searchInstitutions,
-  openInstitution,
-  institutionTotal,
-  type InstitutionTotal,
-  type InstitutionItem,
-} from '@/lib/institutionItems';
+import { type PublicItem, type SearchFilters } from '@/lib/items';
+import { openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { distanceOf, sortResults, type SearchSort } from '@/lib/searchRank';
-import { searchResults } from '@/lib/searchResults';
-import { seoulDate } from './RangeCalendar';
+import { distanceOf, type SearchSort } from '@/lib/searchRank';
+import { searchResults, searchCount, type SearchCount } from '@/lib/searchResults';
 import { SearchConditionsSheet } from './SearchConditionsSheet';
 import { SortSheet, sortLabels } from './SortSheet';
 
 const initialFilters: SearchFilters = { query: '', period: 'all', place: '' };
-const pageSize = 25;
 const popular = ['지갑', '이어폰', '휴대폰', '카드', '키링', '가방'];
 type SearchItem = PublicItem | InstitutionItem;
 type SearchState = {
@@ -51,96 +43,23 @@ type SearchState = {
   agencyPageIssues?: string[];
 };
 const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
-const resultTime = (item: SearchItem) =>
-  Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
-
 async function loadResults(
   filters: SearchFilters,
   previous: SearchState,
-  searchTime: number,
-  onMemberTotal?: (total: number) => void,
-  sort: SearchSort = 'recent',
+  sort: SearchSort,
 ): Promise<SearchState> {
-  if (sort !== 'distance') {
-    const page = await searchResults(filters, sort, previous.memberCursor ?? undefined);
-    if (page.memberTotal !== undefined) onMemberTotal?.(page.memberTotal);
-    // 서버의 전체 순서를 그대로 유지합니다. 더보기에서 앞 페이지를 재정렬하지 않습니다.
-    const items = [...new Map([...previous.items, ...page.items].map((i) => [i.id, i])).values()];
-    return {
-      status: 'success',
-      items,
-      visible: items.length,
-      memberTotal: page.memberTotal ?? previous.memberTotal,
-      memberCursor: page.nextCursor,
-      agencyCursor: null,
-      agencyNotice: page.notices?.join(' ') || undefined,
-    };
-  }
-  const rows = new Map(previous.items.map((item) => [item.id, item]));
-  const target = previous.visible + pageSize;
-  let { memberCursor, agencyCursor, memberNotice, agencyNotice, memberTotal } = previous;
-  const agencyPageIssues = new Set(previous.agencyPageIssues);
-  let status: SearchState['status'] = 'success';
-  // 두 출처가 응답할 때까지 카드를 공개하지 않고, 넘치는 결과는 다음 더보기에 사용합니다.
-  while (rows.size < target && (memberCursor !== null || agencyCursor !== null)) {
-    const before = rows.size;
-    const [member, agency] = await Promise.allSettled([
-      memberCursor === null
-        ? undefined
-        : itemRepository.searchPage(filters, memberCursor, searchTime).then((page) => {
-            if (page.total !== undefined) onMemberTotal?.(page.total);
-            return page;
-          }),
-      agencyCursor === null ? undefined : searchInstitutions(filters, agencyCursor),
-    ]);
-    if (member.status === 'fulfilled' && member.value) {
-      for (const item of member.value.items) rows.set(item.id, item);
-      memberCursor = member.value.nextCursor;
-      memberTotal ??= member.value.total;
-      memberNotice = undefined;
-    } else if (member.status === 'rejected') {
-      memberNotice = '회원 습득물을 불러오지 못했어요.';
-    }
-    if (agency.status === 'fulfilled' && agency.value) {
-      for (const item of agency.value.items) rows.set(item.id, item);
-      // 넘어간 페이지에서 누락된 자료는 뒤 페이지가 성공해도 누락된 상태입니다.
-      if (agency.value.nextCursor && agency.value.nextCursor === agencyCursor) {
-        agencyNotice = agency.value.notices.join(' ');
-      } else {
-        for (const notice of agency.value.notices) agencyPageIssues.add(notice);
-        agencyNotice = undefined;
-      }
-      agencyCursor = agency.value.nextCursor;
-    } else if (agency.status === 'rejected') {
-      agencyNotice = '기관 자료를 불러오지 못했어요. 다시 시도해 주세요.';
-    }
-    if (member.status === 'rejected' && agency.status === 'rejected' && !rows.size)
-      status = 'error';
-    // 저장 목록의 마지막 페이지가 짧아도 첫 화면을 먼저 표시하고 원본 추가 조회는 더보기에서 진행합니다.
-    const savedPage =
-      agency.status === 'fulfilled' &&
-      (agency.value?.verifiedPage || agency.value?.items.some((item) => item.lastVerifiedOn));
-    if (
-      member.status === 'rejected' ||
-      agency.status === 'rejected' ||
-      rows.size === before ||
-      savedPage
-    )
-      break;
-  }
-  const items = [...rows.values()].sort(
-    (a, b) => resultTime(b) - resultTime(a) || a.id.localeCompare(b.id),
-  );
+  const page = await searchResults(filters, sort, previous.memberCursor ?? undefined);
+  // 모든 정렬은 서버가 전체 후보에서 결정합니다. 앞 페이지의 순서를 바꾸지 않습니다.
+  const items = [
+    ...new Map([...previous.items, ...page.items].map((item) => [item.id, item])).values(),
+  ];
   return {
-    status,
+    status: 'success',
     items,
-    visible: Math.min(target, items.length),
-    memberCursor,
-    memberTotal,
-    agencyCursor,
-    memberNotice,
-    agencyNotice,
-    agencyPageIssues: [...agencyPageIssues],
+    visible: items.length,
+    memberCursor: page.nextCursor,
+    agencyCursor: null,
+    agencyNotice: page.notices?.join(' ') || undefined,
   };
 }
 
@@ -150,44 +69,24 @@ export default function SearchScreen() {
   const [conditions, setConditions] = useState(false);
   const [sorting, setSorting] = useState(false);
   const [sort, setSort] = useState<SearchSort>('recent');
-  const [sortLoading, setSortLoading] = useState(false);
-  const [today] = useState(() => seoulDate());
   const [validation, setValidation] = useState('');
   const [state, setState] = useState(initialState);
   const [loadingMore, setLoadingMore] = useState(false);
   const [countFilters, setCountFilters] = useState<SearchFilters | null>(null);
-  const [agencyCount, setAgencyCount] = useState<InstitutionTotal | null>(null);
+  const [agencyCount, setAgencyCount] = useState<SearchCount | null>(null);
+  const [countError, setCountError] = useState(false);
   useEffect(() => {
     if (!countFilters) return;
     const controller = new AbortController();
-    let timer: ReturnType<typeof setTimeout>;
-    async function check() {
-      try {
-        const reply = await institutionTotal(countFilters!, controller.signal);
-        if (controller.signal.aborted) return;
-        setAgencyCount(reply);
-        // 검색 시점의 보관 확인 건수를 고정합니다. 새로 검색할 때 최신 수를 읽습니다.
-        if (reply.confirmedTotal !== undefined || reply.lastComplete) return;
-        if (reply.status === 'counting')
-          timer = setTimeout(
-            () => void check(),
-            reply.refreshAfterMs ?? (reply.progress ? 60000 : 3500),
-          );
-        else if (reply.status === 'unavailable') timer = setTimeout(() => void check(), 120000);
-      } catch {
-        if (!controller.signal.aborted) {
-          setAgencyCount({ status: 'unavailable', total: null });
-          timer = setTimeout(() => void check(), 120000);
-        }
-      }
-    }
-    void check();
-    return () => {
-      controller.abort();
-      clearTimeout(timer);
-    };
+    void searchCount(countFilters, controller.signal)
+      .then((reply) => {
+        if (!controller.signal.aborted) setAgencyCount(reply);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCountError(true);
+      });
+    return () => controller.abort();
   }, [countFilters]);
-  const searchTime = useRef(0);
   const pending = useRef(false);
   const requestId = useRef(0);
   useEffect(
@@ -196,37 +95,8 @@ export default function SearchScreen() {
     },
     [],
   );
-  /** 좌표가 필요한 가까운 순만 기존 위치 조회를 추가로 진행합니다. */
-  const loadForSort = useCallback(async (base: SearchState, values: SearchFilters) => {
-    if (pending.current || base.status !== 'success') return;
-    const id = ++requestId.current;
-    pending.current = true;
-    setSortLoading(true);
-    let current = base;
-    try {
-      for (
-        let round = 0;
-        round < 4 &&
-        current.items.length < 100 &&
-        (current.memberCursor !== null || current.agencyCursor !== null);
-        round++
-      ) {
-        const next = await loadResults(values, current, searchTime.current, undefined, 'distance');
-        if (next.items.length === current.items.length) break;
-        current = next;
-      }
-      if (id === requestId.current) setState(current);
-    } catch {
-      // 더 불러오지 못해도 이미 받은 결과로 정렬합니다.
-    } finally {
-      if (id === requestId.current) {
-        pending.current = false;
-        setSortLoading(false);
-      }
-    }
-  }, []);
   const search = useCallback(
-    async (values: SearchFilters, nextSort: SearchSort) => {
+    async (values: SearchFilters, nextSort: SearchSort, sortOnly = false) => {
       if (pending.current) return;
       if (!values.query.trim()) {
         setValidation('찾는 물품명이나 특징을 입력해 주세요.');
@@ -239,34 +109,22 @@ export default function SearchScreen() {
       setConditions(false);
       setValidation('');
       setState({ ...initialState, status: 'loading' });
-      setAgencyCount(null);
-      setCountFilters(
-        values.period === 'custom' && values.to && values.to < today ? null : { ...values },
-      );
-      searchTime.current = Date.now();
-      let loaded: SearchState | undefined;
+      // 정렬만 바뀌면 동일한 건수를 유지합니다. 새 조건·다시 검색에서만 갱신합니다.
+      if (!sortOnly) {
+        setAgencyCount(null);
+        setCountError(false);
+        setCountFilters({ ...values });
+      }
       try {
-        const result = await loadResults(
-          values,
-          initialState,
-          searchTime.current,
-          (memberTotal) => {
-            if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
-          },
-          nextSort,
-        );
-        if (id === requestId.current) {
-          setState(result);
-          loaded = result;
-        }
+        const result = await loadResults(values, initialState, nextSort);
+        if (id === requestId.current) setState(result);
       } catch {
         if (id === requestId.current) setState({ ...initialState, status: 'error' });
       } finally {
         if (id === requestId.current) pending.current = false;
       }
-      if (loaded && nextSort === 'distance' && values.near) void loadForSort(loaded, values);
     },
-    [today, loadForSort],
+    [],
   );
   async function showMore() {
     if (pending.current) return;
@@ -274,7 +132,7 @@ export default function SearchScreen() {
     pending.current = true;
     setLoadingMore(true);
     try {
-      const result = await loadResults(filters, state, searchTime.current, undefined, sort);
+      const result = await loadResults(filters, state, sort);
       if (id === requestId.current) setState(result);
     } catch {
       if (id === requestId.current)
@@ -307,28 +165,14 @@ export default function SearchScreen() {
   }
   const conditionCount =
     (filters.period !== 'all' ? 1 : 0) + (filters.place || filters.near ? 1 : 0);
-  const hasMore = state.memberCursor !== null || state.agencyCursor !== null;
-  const displayed = sort === 'distance' ? sortResults(state.items, sort, filters) : state.items;
-  // 직접 고른 기간이 오늘 전에 끝나면 기관 합계가 끝일을 반영하지 못해 건수를 세지 않습니다.
-  const endsBeforeToday = filters.period === 'custom' && !!filters.to && filters.to < today;
-  const snapshot =
-    agencyCount?.status === 'complete' || agencyCount?.confirmedTotal === undefined
-      ? agencyCount?.lastComplete
-      : undefined;
-  const institutions = agencyCount?.confirmedTotal ?? agencyCount?.total;
-  const confirmedCount =
-    snapshot?.total ??
-    (state.memberTotal !== undefined && institutions != null
-      ? state.memberTotal + institutions
-      : null);
-  // 목록과 건수는 따로 도착하므로 검색을 시작한 시점부터 건수 상태를 표시합니다.
-  let countLabel = '확인된 습득물 건수 조회 중';
-  if (confirmedCount !== null)
-    countLabel = '확인된 습득물 ' + confirmedCount.toLocaleString('ko-KR') + '건';
-  else if (agencyCount?.status === 'unavailable' || state.memberNotice)
-    countLabel = '습득물 건수를 불러오지 못했어요';
-  else if (agencyCount?.status === 'counting') countLabel = '확인된 습득물 집계 중';
-  if (endsBeforeToday) countLabel = '직접 고른 기간의 습득물';
+  const displayed = state.items;
+  const confirmedCount = agencyCount?.total ?? null;
+  const countLabel =
+    confirmedCount !== null
+      ? '확인된 습득물 ' + confirmedCount.toLocaleString('ko-KR') + '건'
+      : countError
+        ? '습득물 건수를 불러오지 못했어요'
+        : '확인된 습득물 건수 조회 중';
   const heading = (
     <>
       <FormField
@@ -366,7 +210,7 @@ export default function SearchScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`정렬: ${sortLabels[sort]}, 바꾸기`}
-            disabled={state.status === 'loading' || loadingMore || sortLoading}
+            disabled={state.status === 'loading' || loadingMore}
             onPress={() => setSorting(true)}
             style={styles.sortButton}
           >
@@ -441,15 +285,7 @@ export default function SearchScreen() {
         confirmedCount !== null &&
         agencyCount && (
           <Text style={typography.body}>
-            {(snapshot?.policeIncluded ?? agencyCount.policeIncluded)
-              ? '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰 합계'
-              : '미슈 · 한성대 · 포털기관(지하철·공항·상점 등) 합계'}
-            {snapshot &&
-              ' · ' +
-                new Date(snapshot.checkedAt).toLocaleDateString('ko-KR', {
-                  timeZone: 'Asia/Seoul',
-                }) +
-                ' 기준'}
+            미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰의 확인된 자료
           </Text>
         )}
       {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (
@@ -459,10 +295,11 @@ export default function SearchScreen() {
             .join(' ')}
         </Text>
       )}
-      {sort === 'distance' && state.items.length > 0 && hasMore && (
-        <Text style={[typography.body, styles.sortNote]}>
-          {`앞쪽 ${state.items.length}건 중에서 ${sortLabels[sort]}으로 정렬했어요. 더 불러오면 다시 정렬해요.`}
-        </Text>
+      {!!agencyCount?.notices.length && (
+        <Text style={typography.body}>{agencyCount.notices.join(' ')}</Text>
+      )}
+      {state.status === 'loading' && confirmedCount !== null && (
+        <Text style={typography.body}>목록을 불러오는 중…</Text>
       )}
       {state.status === 'success' && !state.items.length && (
         <>
@@ -533,7 +370,7 @@ export default function SearchScreen() {
         <ActionBar>
           <ActionButton
             label={state.status === 'idle' ? '습득물 검색' : '다시 검색하기'}
-            loading={state.status === 'loading' || sortLoading}
+            loading={state.status === 'loading'}
             onPress={() => void search(filters, sort)}
           />
         </ActionBar>
@@ -555,7 +392,7 @@ export default function SearchScreen() {
               setSorting(false);
               if (pending.current || next === sort) return;
               setSort(next);
-              void search(filters, next);
+              void search(filters, next, true);
             }}
           />
         )}
