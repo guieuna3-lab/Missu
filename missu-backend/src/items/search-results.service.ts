@@ -17,12 +17,25 @@ import {
   compareRank,
   relevanceScore,
   relevanceSql,
+  normalizedSql,
   searchWhereSql,
   type RankedKey,
 } from './search-order';
 import type { SearchResultsDto } from './search-results.controller';
 
 type Position = RankedKey & { scope: string; at: number };
+/** 재시작 직후 학교의 일시 실패는 한 번 재시도하고, 누락된 결과를 정상 결과로 내보내지 않습니다. */
+export async function completeSchool<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch {
+    try {
+      return await read();
+    } catch {
+      return fail(503, 'EXTERNAL_UNAVAILABLE', '학교 목록을 잠시 불러올 수 없어요.');
+    }
+  }
+}
 export function readSearchPosition(
   cursor: string | undefined,
   scope: string,
@@ -105,33 +118,43 @@ export class SearchResultsService {
     const toTime = new Date(
       Math.min(at, Date.parse(through + 'T23:59:59.999+09:00')),
     );
-    const rank = (portal: boolean) =>
+    const rank =
       query.sort === 'relevance'
         ? relevanceSql(
-            Prisma.sql`name`,
-            portal ? Prisma.sql`kind_name` : Prisma.sql`public_features`,
+            Prisma.sql`normalized_name`,
+            Prisma.sql`normalized_features`,
             search,
+            true,
           )
         : Prisma.sql`0`;
+    const normalize = (column: Prisma.Sql) =>
+      query.sort === 'relevance' ? normalizedSql(column) : Prisma.sql`''`;
     // 각 출처에서 전체 후보를 먼저 정렬합니다. 출처별 상위 26건이면
     // 세 출처를 합친 상위 25건과 다음 페이지 유무를 정확하게 결정할 수 있습니다.
     const [memberKeys, portalKeys, school, memberTotal] = await Promise.all([
+      // MATERIALIZED는 점수/정규화를 한 번만 계산하게 합니다. 다음 페이지 조건에서
+      // 같은 식을 반복 실행하면 대량 자료의 정확도순 조회가 크게 느려집니다.
       this.db.$queryRaw<RankedKey[]>(Prisma.sql`
-        SELECT * FROM (
-          SELECT id::text AS id, to_char(found_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day, ${rank(false)} AS score
+        WITH candidates AS MATERIALIZED (
+          SELECT id::text AS id, to_char(found_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
+            ${normalize(Prisma.sql`name`)} AS normalized_name,
+            ${normalize(Prisma.sql`public_features`)} AS normalized_features
           FROM found_items WHERE NOT archived AND status IN ('AVAILABLE', 'RESERVED')
             AND created_at <= ${new Date(at)} AND found_at BETWEEN ${fromTime} AND ${toTime}
             AND ${searchWhereSql(search, false)}
-        ) AS ranked WHERE ${afterSql(after)}
+        ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
+        SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
       this.db.$queryRaw<RankedKey[]>(Prisma.sql`
-        SELECT * FROM (
-          SELECT id, day, ${rank(true)} AS score FROM verified_portal_items
+        WITH candidates AS MATERIALIZED (
+          SELECT id, day, ${normalize(Prisma.sql`name`)} AS normalized_name,
+            ${normalize(Prisma.sql`kind_name`)} AS normalized_features FROM verified_portal_items
           WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
-        ) AS ranked WHERE ${afterSql(after)}
+        ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
+        SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
       // 전체 학교 목록이 준비되지 않았을 때 일부만 전체인 것처럼 표시하지 않습니다.
-      this.institutions.schoolForMatching(),
+      completeSchool(() => this.institutions.schoolForMatching()),
       !after
         ? this.db.foundItem.count({
             where: {

@@ -6,9 +6,18 @@ import {
   searchWhereSql,
 } from './search-order';
 import { Prisma } from '../generated/prisma/client';
-import { readSearchPosition, searchCursor } from './search-results.service';
+import { completeSchool, readSearchPosition, searchCursor } from './search-results.service';
 
 describe('전체 결과 정렬', () => {
+  it('학교 목록의 일시 실패는 재시도하고 지속 장애를 빈 목록으로 바꾸지 않는다', async () => {
+    let attempts = 0;
+    await expect(completeSchool(async () => {
+      if (++attempts === 1) throw Error('temporary');
+      return ['school item'];
+    })).resolves.toEqual(['school item']);
+    expect(attempts).toBe(2);
+    await expect(completeSchool(async () => { throw Error('unavailable'); })).rejects.toMatchObject({status: 503});
+  });
   const score = (name: string, query: string, features = '') =>
     relevanceScore(name, features, itemSearch(query));
   it('같은 물품의 다른 이름과 세부 제품명을 평가한다', () => {
