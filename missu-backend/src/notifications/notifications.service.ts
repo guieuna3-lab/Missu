@@ -78,9 +78,10 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     });
     return { registered: true };
   }
-  async unregister(userId: string, token: string) {
+  async unregister(userId: string, token: string, binding: string) {
+    // 늦게 도착한 이전 로그인 해제가 새 로그인 연결을 지우지 않게 합니다.
     await this.db
-      .$executeRaw`DELETE FROM push_devices WHERE user_id=${userId}::uuid AND token_hash=${digest(token)}`;
+      .$executeRaw`DELETE FROM push_devices WHERE user_id=${userId}::uuid AND token_hash=${digest(token)} AND binding=${binding}::uuid`;
     return { registered: false };
   }
   async list(userId: string, before?: string) {

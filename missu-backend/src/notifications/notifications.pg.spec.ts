@@ -128,17 +128,19 @@ const url = process.env.SEARCH_ORDER_TEST_DATABASE_URL;
     await service.setEnabled(user, report, true);
     await item('갤럭시폰');
     await service.collect();
-    await service.register(other, phone, randomUUID());
+    const binding = randomUUID();
+    await service.register(other, phone, binding);
     const remaining = await db.$queryRaw<
       { count: bigint }[]
     >`SELECT count(*) FROM push_deliveries WHERE token_hash=${digest(phone)}`;
     expect(Number(remaining[0].count)).toBe(0);
-    await service.unregister(user, phone);
+    await service.unregister(user, phone, binding);
+    await service.unregister(other, phone, randomUUID());
     const device = await db.$queryRaw<
       { user_id: string }[]
     >`SELECT user_id FROM push_devices WHERE token_hash=${digest(phone)}`;
     expect(device[0].user_id).toBe(other);
-    await service.unregister(other, phone);
+    await service.unregister(other, phone, binding);
   });
   it('같은 시각에 저장된 60개 알림도 다음 페이지에서 누락·중복하지 않는다', async () => {
     for (let i = 0; i < 60; i++)

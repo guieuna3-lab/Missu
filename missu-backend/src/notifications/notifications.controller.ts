@@ -88,6 +88,7 @@ export class NotificationsController {
       data: await this.notifications.unregister(
         req.authSession!.userId!,
         dto.token,
+        dto.binding,
       ),
     };
   }
