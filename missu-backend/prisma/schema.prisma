@@ -376,6 +376,23 @@ model LastSearchCount {
   @@map("last_search_counts")
 }
 
+// 공개 보관처 위치만 저장합니다. 사용자의 현재 위치는 저장하지 않습니다.
+model InstitutionPlacePoint {
+  storage String @id
+  lat Float?
+  lng Float?
+  locatedAt DateTime? @map("located_at") @db.Timestamptz
+  retryAt DateTime @map("retry_at") @db.Timestamptz
+  @@map("institution_place_points")
+}
+
+model InstitutionSchoolSnapshot {
+  id Int @id
+  items Json
+  checkedAt DateTime @map("checked_at") @db.Timestamptz
+  @@map("institution_school_snapshot")
+}
+
 // 날짜별 변경 번호로 보관 상태와 검색 조건이 그대로인 날짜의 건수를 재사용한다.
 model VerifiedSearchDayVersion {
   day String @id
