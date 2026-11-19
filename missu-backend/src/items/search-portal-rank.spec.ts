@@ -17,9 +17,10 @@ describe('작은 묶음으로 읽는 전체 정렬', () => {
     features: '',
     storage: '보관센터',
   };
-  function database(failSecond = false) {
+  function database(failSecond = false, stamp = { value: '1' }) {
     return {
-      $transaction: async (read: (tx: unknown) => Promise<unknown>) => {
+      $queryRaw: jest.fn(async () => [{ value: stamp.value }]),
+      $transaction: jest.fn(async (read: (tx: unknown) => Promise<unknown>) => {
         let n = 0;
         return read({
           $executeRaw: jest.fn().mockResolvedValue(0),
@@ -29,7 +30,7 @@ describe('작은 묶음으로 읽는 전체 정렬', () => {
             return [exact];
           },
         });
-      },
+      }),
     } as unknown as DatabaseService;
   }
   it('2,000건 뒤의 정확한 일치가 첫 페이지에 오고 다음 페이지 경계도 유지한다', async () => {
@@ -56,6 +57,26 @@ describe('작은 묶음으로 읽는 전체 정렬', () => {
     );
     expect(next[0].id).toBe(rows[24].id);
     expect(next.some((i) => i.id === exact.id)).toBe(false);
+    expect((db.$transaction as jest.Mock).mock.calls).toHaveLength(1);
+  });
+  it('보관 상태 등 검색 자료가 바뀌면 저장했던 정렬을 다시 읽는다', async () => {
+    const stamp = { value: '1' };
+    const db = database(false, stamp);
+    const read = () =>
+      portalRanked(
+        db,
+        itemSearch('이어폰'),
+        '2026-05-19',
+        '2026-11-19',
+        'relevance',
+        Date.now(),
+      );
+    await read();
+    await read();
+    expect((db.$transaction as jest.Mock).mock.calls).toHaveLength(1);
+    stamp.value = '2';
+    await read();
+    expect((db.$transaction as jest.Mock).mock.calls).toHaveLength(2);
   });
   it('뒤쪽 묶음 읽기가 실패하면 일부만 읽은 결과를 정상 목록으로 내보내지 않는다', async () => {
     await expect(
