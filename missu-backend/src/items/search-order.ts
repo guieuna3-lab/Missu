@@ -111,28 +111,20 @@ export function searchWhereSql(search: ItemSearch, portal: boolean) {
       return orSql(
         group.flatMap((word) => [contains(name, word), contains(extra, word)]),
       );
-    const short: string[] = [];
-    const options: Prisma.Sql[] = [];
-    for (const word of group) {
-      const indexed = /^[가-힣a-z0-9 ]+$/u.test(word);
-      if (indexed && word.length <= 3) short.push(word);
-      else
-        options.push(
-          andSql([
-            ...(indexed
-              ? [
-                  Prisma.sql`search_fragments @> ARRAY[${word.slice(0, 3)}]::text[]`,
-                ]
-              : []),
-            orSql([contains(name, word), contains(extra, word)]),
-          ]),
-        );
-    }
-    if (short.length)
-      options.push(
-        Prisma.sql`search_fragments && ARRAY[${Prisma.join(short)}]::text[]`,
-      );
-    return orSql(options);
+    // 같은 품목의 여러 이름마다 GIN 색인을 다시 읽지 않습니다.
+    // 한 번에 후보를 좁힌 후 원래 이름·분류의 부분 일치로 최종 확인합니다.
+    const allIndexed = group.every((word) => /^[가-힣a-z0-9 ]+$/u.test(word));
+    const prefixes = [...new Set(group.map((word) => word.slice(0, 3)))];
+    return andSql([
+      ...(allIndexed
+        ? [
+            Prisma.sql`search_fragments && ARRAY[${Prisma.join(prefixes)}]::text[]`,
+          ]
+        : []),
+      orSql(
+        group.flatMap((word) => [contains(name, word), contains(extra, word)]),
+      ),
+    ]);
   });
   if (search.brand)
     terms.push(
