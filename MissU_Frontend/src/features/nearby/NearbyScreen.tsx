@@ -161,10 +161,10 @@ export function NearbyScreen() {
   const total =
     areaCount?.status === 'complete' && membersReady && result.total != null && agencyTotal != null
       ? result.total + agencyTotal
-      : savedTotal ??
+      : (savedTotal ??
         (membersReady && result.total != null && agencyTotal != null
           ? result.total + agencyTotal
-          : null);
+          : null));
   const memberFailed = membersReady && !!result.error;
   const agencyCountFailed = count?.params === params && count.failed;
   const loadError = membersReady && !items.length && agenciesReady ? result.error : '';
