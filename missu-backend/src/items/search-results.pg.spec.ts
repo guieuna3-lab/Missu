@@ -57,7 +57,7 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
           keeperId: owner,
           name: '무선 이어폰 ' + i,
           publicFeatures: '검정',
-          foundAt: new Date(day(i % 9) + 'T10:00:00+09:00'),
+          foundAt: new Date(day(i % 9) + 'T00:00:00+09:00'),
           foundLabel: '강남역',
           storagePlace: '다른 보관센터',
           lat: 37.5,

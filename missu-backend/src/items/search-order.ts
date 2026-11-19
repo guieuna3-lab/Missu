@@ -105,7 +105,11 @@ export function relevanceSql(
 }
 
 /** 기존 공개 검색과 동일한 단어·기종·액세서리 제외 조건. */
-export function searchWhereSql(search: ItemSearch, portal: boolean) {
+export function searchWhereSql(
+  search: ItemSearch,
+  portal: boolean,
+  useFragments = true,
+) {
   const name = Prisma.sql`name`;
   const extra = portal ? Prisma.sql`kind_name` : Prisma.sql`public_features`;
   const terms = search.terms.map((group) => {
@@ -118,7 +122,7 @@ export function searchWhereSql(search: ItemSearch, portal: boolean) {
     const allIndexed = group.every((word) => /^[가-힣a-z0-9 ]+$/u.test(word));
     const prefixes = [...new Set(group.map((word) => word.slice(0, 3)))];
     return andSql([
-      ...(allIndexed
+      ...(allIndexed && useFragments
         ? [
             Prisma.sql`search_fragments && ARRAY[${Prisma.join(prefixes)}]::text[]`,
           ]
