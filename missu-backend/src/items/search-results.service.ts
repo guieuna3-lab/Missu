@@ -23,7 +23,7 @@ import {
 } from './search-order';
 import type { SearchResultsDto } from './search-results.controller';
 
-type Position = RankedKey & { scope: string; at: number };
+type Position = RankedKey & { scope: string; at: number; withoutSchool?: true };
 /** 재시작 직후 학교의 일시 실패는 한 번 재시도하고, 누락된 결과를 정상 결과로 내보내지 않습니다. */
 export async function completeSchool<T>(read: () => Promise<T>): Promise<T> {
   try {
@@ -48,6 +48,7 @@ export function readSearchPosition(
     const p = JSON.parse(Buffer.from(body, 'base64url').toString()) as Position;
     if (
       p.scope !== scope ||
+      (p.withoutSchool !== undefined && p.withoutSchool !== true) ||
       !Number.isInteger(p.score) ||
       p.score < 0 ||
       p.score > 1000 ||
@@ -153,8 +154,16 @@ export class SearchResultsService {
         ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
-      // 전체 학교 목록이 준비되지 않았을 때 일부만 전체인 것처럼 표시하지 않습니다.
-      completeSchool(() => this.institutions.schoolForMatching()),
+      // 학교 원본 장애가 DB에 저장된 다른 물품의 검색까지 막지 않게 합니다.
+      // 첫 페이지에서 빠진 출처는 커서에 고정하고, 새 검색에서 다시 확인합니다.
+      after?.withoutSchool
+        ? { items: [], unavailable: true }
+        : completeSchool(() => this.institutions.schoolForMatching())
+            .then((items) => ({ items, unavailable: false }))
+            .catch((error: unknown) => {
+              if (after) throw error;
+              return { items: [], unavailable: true };
+            }),
       !after
         ? this.db.foundItem.count({
             where: {
@@ -164,7 +173,7 @@ export class SearchResultsService {
           })
         : undefined,
     ]);
-    const schoolItems = school.filter(
+    const schoolItems = school.items.filter(
       (i) =>
         i.date >= from &&
         i.date <= through &&
@@ -200,7 +209,7 @@ export class SearchResultsService {
     ]);
     const rows = new Map<
       string,
-      ReturnType<ItemsService['publicDto']> | (typeof school)[number]
+      ReturnType<ItemsService['publicDto']> | (typeof school.items)[number]
     >([
       ...memberRows.map((i) => [i.id, this.members.publicDto(i)] as const),
       ...portalRows.map((i) => [i.id, this.institutions.savedItem(i)] as const),
@@ -212,8 +221,13 @@ export class SearchResultsService {
     return {
       items: page.map((i) => rows.get(i.id)).filter((i) => i !== undefined),
       nextCursor:
-        keys.length > 25 && last ? searchCursor({ ...last, scope, at }) : null,
+        keys.length > 25 && last
+          ? searchCursor({ ...last, scope, at, ...(school.unavailable && { withoutSchool: true as const }) })
+          : null,
       memberTotal,
+      notices: school.unavailable
+        ? ['한성대 자료를 일시적으로 불러오지 못했어요. 다른 기관과 회원 물품을 먼저 표시합니다. 다시 검색하면 한성대 자료도 재확인해요.']
+        : [],
       sort: query.sort,
     };
   }

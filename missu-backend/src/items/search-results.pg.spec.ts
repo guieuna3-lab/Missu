@@ -13,6 +13,7 @@ const url = process.env.SEARCH_ORDER_TEST_DATABASE_URL;
 const integration = url ? describe : describe.skip;
 integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
   let db: DatabaseService;
+  let institution: InstitutionItemsService;
   let service: SearchResultsService;
   const owner = '00000000-0000-4000-8000-000000000001';
   const day = (ago: number) => koreaDay(Date.now() - ago * 86400000);
@@ -107,7 +108,7 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
         kindName: i.name,
       })),
     });
-    const institution = new InstitutionItemsService(
+    institution = new InstitutionItemsService(
       new ExternalHttpService(),
       db,
     );
@@ -144,6 +145,22 @@ integration('PostgreSQL 전체 정렬과 페이지 연결', () => {
   }, 120000);
   afterAll(async () => {
     await db?.$disconnect();
+  });
+  it('학교 장애 중에도 DB 물품을 표시하고 페이지 사이 출처를 바꾸지 않는다', async () => {
+    const read = jest.mocked(institution.schoolForMatching);
+    read.mockRejectedValueOnce(Error('temporary')).mockRejectedValueOnce(Error('temporary'));
+    const first = await service.search(query('relevance'));
+    expect(first.items).toHaveLength(25);
+    expect(first.notices).toHaveLength(1);
+    expect(first.items.some((i) => i.id.startsWith('hansung:'))).toBe(false);
+    const calls = read.mock.calls.length;
+    const next = await service.search(query('relevance', first.nextCursor!));
+    expect(read.mock.calls).toHaveLength(calls);
+    expect(next.notices).toEqual(first.notices);
+    expect(new Set([...first.items, ...next.items].map((i) => i.id)).size).toBe(50);
+    const recovered = await service.search(query('relevance'));
+    expect(recovered.notices).toEqual([]);
+    expect(recovered.items.some((i) => i.id.startsWith('hansung:'))).toBe(true);
   });
   it('최근 100건 밖의 완전 일치와 동의어도 첫 페이지에 포함한다', async () => {
     const result = await service.search(query('relevance'));
