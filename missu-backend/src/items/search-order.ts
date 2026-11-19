@@ -52,8 +52,14 @@ const orSql = (parts: Prisma.Sql[]) =>
   parts.length
     ? Prisma.sql`(${Prisma.join(parts, ' OR ')})`
     : Prisma.sql`FALSE`;
+// 한글·숫자처럼 대소문자가 없는 검색어는 동일한 결과의 LIKE를 사용합니다.
+// ILIKE가 각 후보의 긴 문자열 전체를 매번 대소문자 변환하는 비용을 피합니다.
+const likeOperator = (word: string) =>
+  word.toLowerCase() === word.toUpperCase()
+    ? Prisma.sql`LIKE`
+    : Prisma.sql`ILIKE`;
 const contains = (column: Prisma.Sql, word: string) =>
-  Prisma.sql`${column} ILIKE ${'%' + likeLiteral(word) + '%'}`;
+  Prisma.sql`${column} ${likeOperator(word)} ${'%' + likeLiteral(word) + '%'}`;
 export const normalizedSql = (column: Prisma.Sql) =>
   Prisma.sql`regexp_replace(lower(normalize(coalesce(${column}, ''), NFKC)), '[[:space:]()·-]', '', 'g')`;
 
@@ -140,7 +146,9 @@ export function searchWhereSql(search: ItemSearch, portal: boolean) {
       ]),
     );
   for (const word of search.excludedEndings)
-    terms.push(Prisma.sql`name NOT ILIKE ${'%' + likeLiteral(word)}`);
+    terms.push(
+      Prisma.sql`NOT (name ${likeOperator(word)} ${'%' + likeLiteral(word)})`,
+    );
   if (search.place) {
     if (portal)
       terms.push(
