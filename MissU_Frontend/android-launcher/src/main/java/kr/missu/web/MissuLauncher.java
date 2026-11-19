@@ -231,7 +231,9 @@ public final class MissuLauncher extends Activity {
         }
         MatchPushService.channel(this);
         android.content.SharedPreferences p=MatchPushService.prefs(this);
-        p.edit().putBoolean("enabled",true).putString("binding",UUID.randomUUID().toString()).apply();
+        String binding=p.getString("binding","");
+        if(binding.isEmpty())binding=UUID.randomUUID().toString();
+        p.edit().putBoolean("enabled",true).putString("binding",binding).apply();
         com.google.firebase.messaging.FirebaseMessaging.getInstance().setAutoInitEnabled(true);
         pushState(request);
     }
