@@ -23,7 +23,7 @@ public final class MissuLauncher extends Activity {
     private int navigation, permissionRequest;
     private String preparedToken;
     private long preparedUntil;
-    private boolean foreground, localBundle;
+    private boolean foreground, networkAlert;
     private GeolocationPermissions.Callback geo;
     private String geoOrigin;
     private ValueCallback<Uri[]> fileCallback;
@@ -58,26 +58,11 @@ public final class MissuLauncher extends Activity {
         }
         try (InputStream input = getAssets().open("route-port.js")) { bootstrap = read(input); }
         catch (IOException e) { throw new IllegalStateException(e); }
-        // 배포본이 기록 연결 규약을 제공하면 최신 웹을 열고, 이전 배포라면 APK에 담은 같은 팀 화면을 사용합니다.
-        new Thread(() -> {
-            boolean compatible = false;
-            HttpURLConnection check = null;
-            try {
-                check = (HttpURLConnection) new URL(SITE + "/").openConnection();
-                check.setConnectTimeout(3500); check.setReadTimeout(3500);
-                check.setInstanceFollowRedirects(false);
-                try (InputStream input = check.getInputStream()) {
-                    compatible = read(input).contains("name=\"missu-android-route\" content=\"2\"");
-                }
-            } catch (IOException ignored) {} finally { if (check != null) check.disconnect(); }
-            final boolean useLocal = !compatible;
-            runOnUiThread(() -> {
-                if (isFinishing() || isDestroyed()) return;
-                localBundle = useLocal;
-                boolean openRoute = "kr.missu.web.OPEN_ROUTE".equals(getIntent().getAction());
-                web.loadUrl(SITE + (openRoute ? "/daily-route" : "/"));
-            });
-        }, "missu-web-version").start();
+        // 짧은 사전 확인 실패로 오래된 APK 화면에 고정되지 않도록 운영 화면을 직접 엽니다.
+        // HTML만 재검증하고, 해시가 붙은 사진/스크립트의 정상 캐시는 유지합니다.
+        boolean openRoute = "kr.missu.web.OPEN_ROUTE".equals(getIntent().getAction());
+        web.loadUrl(SITE + (openRoute ? "/daily-route" : "/"),
+                Collections.singletonMap("Cache-Control", "no-cache"));
     }
     private static String read(InputStream input) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
@@ -93,28 +78,17 @@ public final class MissuLauncher extends Activity {
             && "missu-web.onrender.com".equalsIgnoreCase(uri.getHost()) && uri.getUserInfo() == null
             && (uri.getPort() == -1 || uri.getPort() == 443);
     }
-    private static String mime(String path) {
-        if (path.endsWith(".js")) return "application/javascript";
-        if (path.endsWith(".css")) return "text/css";
-        if (path.endsWith(".html")) return "text/html";
-        if (path.endsWith(".ttf")) return "font/ttf";
-        if (path.endsWith(".woff2")) return "font/woff2";
-        String extension = MimeTypeMap.getFileExtensionFromUrl(path);
-        String type = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension);
-        return type == null ? "application/octet-stream" : type;
-    }
     private final class SiteClient extends WebViewClient {
-        @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            Uri uri = request.getUrl();
-            if (!localBundle || !trusted(uri) || !"GET".equals(request.getMethod())) return null;
-            String path = uri.getPath();
-            if (path == null || !path.startsWith("/") || path.contains("..") || path.contains("\\") || path.contains("//")) return null;
-            String asset = path.substring(1);
-            if (request.isForMainFrame() && !asset.contains(".")) asset = "index.html";
-            if (asset.isEmpty()) return null;
-            try {
-                return new WebResourceResponse(mime(asset), null, getAssets().open("app/" + asset));
-            } catch (IOException ignored) { return null; }
+        @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            if (!request.isForMainFrame() || !trusted(request.getUrl()) || networkAlert || isFinishing()) return;
+            networkAlert = true;
+            new AlertDialog.Builder(MissuLauncher.this)
+                    .setTitle("미슈 연결을 확인해 주세요")
+                    .setMessage("인터넷 연결을 확인한 뒤 다시 시도해 주세요.")
+                    .setPositiveButton("다시 시도", (dialog, which) -> web.loadUrl(SITE + "/",
+                            Collections.singletonMap("Cache-Control", "no-cache")))
+                    .setNegativeButton("닫기", null)
+                    .setOnDismissListener(dialog -> networkAlert = false).show();
         }
         @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             return request.isForMainFrame() && external(request.getUrl());
