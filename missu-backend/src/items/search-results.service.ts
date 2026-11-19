@@ -83,6 +83,7 @@ export function searchCursor(p: Position) {
 @Injectable()
 export class SearchResultsService {
   private readonly logger = new Logger(SearchResultsService.name);
+  private planReported = false;
   constructor(
     private readonly db: DatabaseService,
     private readonly members: ItemsService,
@@ -211,6 +212,36 @@ export class SearchResultsService {
           ? error.code
           : 'unknown';
       this.logger.warn(`search-order ${source} failed code=${code}`);
+      if (source === 'institution' && !this.planReported) {
+        this.planReported = true;
+        void this.db
+          .$transaction(async (tx) => {
+            await tx.$executeRaw`SET LOCAL jit = off`;
+            await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
+            const plan = await tx.$queryRaw<unknown[]>(
+              Prisma.sql`EXPLAIN (FORMAT JSON) ${query}`,
+            );
+            const nodes: object[] = [];
+            const visit = (value: unknown) => {
+              if (Array.isArray(value)) return value.forEach(visit);
+              if (!value || typeof value !== 'object') return;
+              const node = value as Record<string, unknown>;
+              if (node['Node Type'])
+                nodes.push({
+                  node: node['Node Type'],
+                  rows: node['Plan Rows'],
+                  cost: node['Total Cost'],
+                  relation: node['Relation Name'],
+                  index: node['Index Name'],
+                });
+              Object.values(node).forEach(visit);
+            };
+            visit(plan);
+            // 검색어·좌표·키 없이 실행 방식과 예상 건수만 남깁니다.
+            this.logger.warn('search-plan ' + JSON.stringify(nodes));
+          })
+          .catch(() => undefined);
+      }
       throw error;
     } finally {
       const elapsed = Date.now() - started;
