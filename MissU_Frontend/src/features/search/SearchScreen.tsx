@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { router } from 'expo-router';
 import {
   ActivityIndicator,
@@ -30,6 +30,7 @@ import {
 } from '@/lib/institutionItems';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 import { distanceOf, sortResults, type SearchSort } from '@/lib/searchRank';
+import { searchResults } from '@/lib/searchResults';
 import { seoulDate } from './RangeCalendar';
 import { SearchConditionsSheet } from './SearchConditionsSheet';
 import { SortSheet, sortLabels } from './SortSheet';
@@ -58,7 +59,22 @@ async function loadResults(
   previous: SearchState,
   searchTime: number,
   onMemberTotal?: (total: number) => void,
+  sort: SearchSort = 'recent',
 ): Promise<SearchState> {
+  if (sort !== 'distance') {
+    const page = await searchResults(filters, sort, previous.memberCursor ?? undefined);
+    if (page.memberTotal !== undefined) onMemberTotal?.(page.memberTotal);
+    // 서버의 전체 순서를 그대로 유지합니다. 더보기에서 앞 페이지를 재정렬하지 않습니다.
+    const items = [...new Map([...previous.items, ...page.items].map((i) => [i.id, i])).values()];
+    return {
+      status: 'success',
+      items,
+      visible: items.length,
+      memberTotal: page.memberTotal ?? previous.memberTotal,
+      memberCursor: page.nextCursor,
+      agencyCursor: null,
+    };
+  }
   const rows = new Map(previous.items.map((item) => [item.id, item]));
   const target = previous.visible + pageSize;
   let { memberCursor, agencyCursor, memberNotice, agencyNotice, memberTotal } = previous;
@@ -179,48 +195,85 @@ export default function SearchScreen() {
     },
     [],
   );
-  async function search(values = filters) {
-    if (pending.current) return;
-    if (!values.query.trim()) {
-      setValidation('찾는 물품명이나 특징을 입력해 주세요.');
-      return;
-    }
-    pending.current = true;
+  /** 좌표가 필요한 가까운 순만 기존 위치 조회를 추가로 진행합니다. */
+  const loadForSort = useCallback(async (base: SearchState, values: SearchFilters) => {
+    if (pending.current || base.status !== 'success') return;
     const id = ++requestId.current;
-    Keyboard.dismiss();
-    setFilters(values);
-    setConditions(false);
-    setValidation('');
-    setState({ ...initialState, status: 'loading' });
-    setAgencyCount(null);
-    setCountFilters(
-      values.period === 'custom' && values.to && values.to < today ? null : { ...values },
-    );
-    searchTime.current = Date.now();
-    let loaded: SearchState | undefined;
+    pending.current = true;
+    setSortLoading(true);
+    let current = base;
     try {
-      const result = await loadResults(values, initialState, searchTime.current, (memberTotal) => {
-        if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
-      });
-      if (id === requestId.current) {
-        setState(result);
-        loaded = result;
+      for (
+        let round = 0;
+        round < 4 &&
+        current.items.length < 100 &&
+        (current.memberCursor !== null || current.agencyCursor !== null);
+        round++
+      ) {
+        const next = await loadResults(values, current, searchTime.current, undefined, 'distance');
+        if (next.items.length === current.items.length) break;
+        current = next;
       }
+      if (id === requestId.current) setState(current);
     } catch {
-      if (id === requestId.current) setState({ ...initialState, status: 'error' });
+      // 더 불러오지 못해도 이미 받은 결과로 정렬합니다.
     } finally {
-      if (id === requestId.current) pending.current = false;
+      if (id === requestId.current) {
+        pending.current = false;
+        setSortLoading(false);
+      }
     }
-    if (loaded && sort !== 'recent' && (sort !== 'distance' || values.near))
-      void loadForSort(loaded);
-  }
+  }, []);
+  const search = useCallback(
+    async (values: SearchFilters, nextSort: SearchSort) => {
+      if (pending.current) return;
+      if (!values.query.trim()) {
+        setValidation('찾는 물품명이나 특징을 입력해 주세요.');
+        return;
+      }
+      pending.current = true;
+      const id = ++requestId.current;
+      Keyboard.dismiss();
+      setFilters(values);
+      setConditions(false);
+      setValidation('');
+      setState({ ...initialState, status: 'loading' });
+      setAgencyCount(null);
+      setCountFilters(
+        values.period === 'custom' && values.to && values.to < today ? null : { ...values },
+      );
+      searchTime.current = Date.now();
+      let loaded: SearchState | undefined;
+      try {
+        const result = await loadResults(
+          values,
+          initialState,
+          searchTime.current,
+          (memberTotal) => {
+            if (id === requestId.current) setState((s) => ({ ...s, memberTotal }));
+          },
+          nextSort,
+        );
+        if (id === requestId.current) {
+          setState(result);
+          loaded = result;
+        }
+      } catch {
+        if (id === requestId.current) setState({ ...initialState, status: 'error' });
+      } finally {
+        if (id === requestId.current) pending.current = false;
+      }
+      if (loaded && nextSort === 'distance' && values.near) void loadForSort(loaded, values);
+    },
+    [today, loadForSort],
+  );
   async function showMore() {
     if (pending.current) return;
     const id = ++requestId.current;
     pending.current = true;
     setLoadingMore(true);
     try {
-      const result = await loadResults(filters, state, searchTime.current);
+      const result = await loadResults(filters, state, searchTime.current, undefined, sort);
       if (id === requestId.current) setState(result);
     } catch {
       if (id === requestId.current)
@@ -244,37 +297,8 @@ export default function SearchScreen() {
     setConditions(false);
     // 기준 좌표가 없어지면 가까운 순을 쓸 수 없어 최신순으로 돌아갑니다.
     if (!next.near && sort === 'distance') setSort('recent');
-    if (next.query.trim()) void search(next);
+    if (next.query.trim()) void search(next, !next.near && sort === 'distance' ? 'recent' : sort);
     else setFilters(next);
-  }
-  /** 가까운 순·정확도순은 결과를 더 불러와(최대 100건) 그 안에서 정렬합니다. */
-  async function loadForSort(base: SearchState) {
-    if (pending.current || base.status !== 'success') return;
-    const id = ++requestId.current;
-    pending.current = true;
-    setSortLoading(true);
-    let current = base;
-    try {
-      for (
-        let round = 0;
-        round < 4 &&
-        current.items.length < 100 &&
-        (current.memberCursor !== null || current.agencyCursor !== null);
-        round++
-      ) {
-        const next = await loadResults(filters, current, searchTime.current);
-        if (next.items.length === current.items.length) break;
-        current = next;
-      }
-      if (id === requestId.current) setState(current);
-    } catch {
-      // 더 불러오지 못해도 이미 받은 결과로 정렬합니다.
-    } finally {
-      if (id === requestId.current) {
-        pending.current = false;
-        setSortLoading(false);
-      }
-    }
   }
   function back() {
     if (router.canGoBack()) router.back();
@@ -283,11 +307,7 @@ export default function SearchScreen() {
   const conditionCount =
     (filters.period !== 'all' ? 1 : 0) + (filters.place || filters.near ? 1 : 0);
   const hasMore = state.memberCursor !== null || state.agencyCursor !== null;
-  const displayed = sortResults(
-    sort === 'recent' ? state.items.slice(0, state.visible) : state.items,
-    sort,
-    filters,
-  );
+  const displayed = sort === 'distance' ? sortResults(state.items, sort, filters) : state.items;
   // 직접 고른 기간이 오늘 전에 끝나면 기관 합계가 끝일을 반영하지 못해 건수를 세지 않습니다.
   const endsBeforeToday = filters.period === 'custom' && !!filters.to && filters.to < today;
   const snapshot =
@@ -324,7 +344,7 @@ export default function SearchScreen() {
         }}
         editable={state.status !== 'loading'}
         returnKeyType="search"
-        onSubmitEditing={() => void search()}
+        onSubmitEditing={() => void search(filters, sort)}
         error={validation || undefined}
       />
       <View style={styles.controls}>
@@ -345,6 +365,7 @@ export default function SearchScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={`정렬: ${sortLabels[sort]}, 바꾸기`}
+            disabled={state.status === 'loading' || loadingMore || sortLoading}
             onPress={() => setSorting(true)}
             style={styles.sortButton}
           >
@@ -365,7 +386,7 @@ export default function SearchScreen() {
                 onPress={() => {
                   const next = { ...filters, query: label };
                   setFilters(next);
-                  void search(next);
+                  void search(next, sort);
                 }}
                 style={({ pressed }) => [styles.popularTile, pressed && styles.pressed]}
               >
@@ -403,7 +424,7 @@ export default function SearchScreen() {
             검색하지 못했어요
           </Text>
           <Text style={typography.body}>잠시 후 다시 시도해 주세요. 입력한 조건은 유지돼요.</Text>
-          <ActionButton label="다시 시도" onPress={() => void search()} />
+          <ActionButton label="다시 시도" onPress={() => void search(filters, sort)} />
         </View>
       )}
       {state.status !== 'idle' && (
@@ -437,7 +458,7 @@ export default function SearchScreen() {
             .join(' ')}
         </Text>
       )}
-      {sort !== 'recent' && state.items.length > 0 && hasMore && (
+      {sort === 'distance' && state.items.length > 0 && hasMore && (
         <Text style={[typography.body, styles.sortNote]}>
           {`앞쪽 ${state.items.length}건 중에서 ${sortLabels[sort]}으로 정렬했어요. 더 불러오면 다시 정렬해요.`}
         </Text>
@@ -512,7 +533,7 @@ export default function SearchScreen() {
           <ActionButton
             label={state.status === 'idle' ? '습득물 검색' : '다시 검색하기'}
             loading={state.status === 'loading' || sortLoading}
-            onPress={() => void search(filters)}
+            onPress={() => void search(filters, sort)}
           />
         </ActionBar>
         <BottomNavigation selected="home" />
@@ -531,8 +552,9 @@ export default function SearchScreen() {
             onClose={() => setSorting(false)}
             onChange={(next) => {
               setSorting(false);
+              if (pending.current || next === sort) return;
               setSort(next);
-              if (next !== 'recent') void loadForSort(state);
+              void search(filters, next);
             }}
           />
         )}
