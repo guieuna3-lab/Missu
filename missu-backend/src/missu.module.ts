@@ -24,6 +24,10 @@ import { NearbyService } from './items/nearby.service';
 import { PlacesController } from './items/places.controller';
 import { InstitutionItemsController } from './items/institution-items.controller';
 import { InstitutionItemsService } from './items/institution-items.service';
+import {
+  InstitutionPhotosController,
+  InstitutionPhotosService,
+} from './items/institution-photos.controller';
 import { RateLimitService } from './common/rate-limit.service';
 import { ExternalHttpService } from './integrations/external-http.service';
 import { DeliveryService } from './integrations/delivery.service';
@@ -45,6 +49,7 @@ import { RoutesService } from './routes/routes.service';
     ClaimsController,
     PlacesController,
     InstitutionItemsController,
+    InstitutionPhotosController,
     RoutesController,
   ],
   providers: [
@@ -57,6 +62,7 @@ import { RoutesService } from './routes/routes.service';
     ClaimsService,
     NearbyService,
     InstitutionItemsService,
+    InstitutionPhotosService,
     RateLimitService,
     ExternalHttpService,
     DeliveryService,

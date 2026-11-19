@@ -37,6 +37,7 @@ export function routeSegments(points: RoutePoint[]) {
 }
 
 export type MapItem = {
+  photos?: { id: string; url: string }[];
   id: string;
   name: string;
   foundAt: string;

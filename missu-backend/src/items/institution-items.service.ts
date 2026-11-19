@@ -421,6 +421,8 @@ export class InstitutionItemsService
     }
   }
   async publicPhotos(id: string) {
+    if (/^hansung:\d{1,12}$/.test(id))
+      return (await this.detail(id)).photoUrls ?? [];
     const match = /^lost112:([A-Z0-9]{2,32}):(\d{1,6})$/.exec(id);
     if (!match)
       return fail(404, 'RESOURCE_NOT_FOUND', '기관 물품을 찾을 수 없어요.');

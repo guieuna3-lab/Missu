@@ -20,7 +20,7 @@ import { formatFoundAt } from '@/lib/items';
 import { nearbyInstitutions, openInstitution, type InstitutionItem } from '@/lib/institutionItems';
 import { readDeviceLocation } from './deviceLocation';
 import { StreetMap } from './StreetMap';
-import { ItemThumb } from '@/components/ItemThumb';
+import { ItemPhotoThumb } from '@/components/ItemPhotoThumb';
 import { MapLoadingOverlay, MapStatusPill } from './MapLoading';
 import { campus, mapApi, nearbyMembers, type MapItem, type Coordinates } from './mapData';
 import { MapIcon, mapArt } from './mapArt';
@@ -43,10 +43,11 @@ function ItemRow({ item }: { item: NearbyRow }) {
       onPress={() => openDetail(item)}
       style={styles.item}
     >
-      <ItemThumb
+      <ItemPhotoThumb
+        id={item.id}
         name={item.name}
         category={item.category}
-        photoUrl={item.institution?.photoUrls?.[0]}
+        photoUrls={item.institution?.photoUrls ?? item.photos?.map((p) => p.url)}
         size={40}
       />
       <View style={styles.itemText}>

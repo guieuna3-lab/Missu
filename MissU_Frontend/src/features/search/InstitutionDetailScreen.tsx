@@ -4,17 +4,13 @@ import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { Header } from '@/components/Header';
 import { InfoCard, InfoRow, StepGuide } from '@/components/InfoList';
-import { ItemThumb } from '@/components/ItemThumb';
-import { PhotoPager } from '@/components/PhotoPager';
+import { ItemPhotoThumb } from '@/components/ItemPhotoThumb';
+import { ItemPhotoGallery } from '@/components/ItemPhotoGallery';
 import { LineBadge, subwayStop } from '@/components/LineBadge';
 import { LoadingState } from '@/components/LoadingState';
 import { Screen } from '@/components/Screen';
 import { colors, typography } from '@/constants/theme';
-import {
-  institutionDetail,
-  publicInstitutionPhotos,
-  type InstitutionItem,
-} from '@/lib/institutionItems';
+import { institutionDetail, type InstitutionItem } from '@/lib/institutionItems';
 
 function back() {
   if (router.canGoBack()) router.back();
@@ -29,51 +25,6 @@ function longDate(date: string) {
 const shortDate = (date: string) => longDate(date).replace(/^\d{4}년 /, '');
 const seoulToday = () => new Date(Date.now() + 9 * 3_600_000).toISOString().slice(0, 10);
 
-function InstitutionPhotos({ item }: { item: InstitutionItem }) {
-  const supplied = item.photoUrls;
-  const police = item.id.startsWith('lost112:');
-  const [lookup, setLookup] = useState(police && !supplied?.length);
-  const [publicUrls, setPublicUrls] = useState<string[]>();
-  const [failed, setFailed] = useState(false);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    if (!lookup) return;
-    const controller = new AbortController();
-    void publicInstitutionPhotos(item.id, controller.signal).then(
-      (urls) => {
-        if (!controller.signal.aborted) setPublicUrls(urls);
-      },
-      () => {
-        if (!controller.signal.aborted) setFailed(true);
-      },
-    );
-    return () => controller.abort();
-  }, [lookup, item.id, attempt]);
-
-  const urls = lookup ? publicUrls : supplied;
-  if (!urls?.length && !failed) return null;
-  function onError() {
-    // 예전 공공데이터 사진 주소가 만료됐으면 같은 물품의 경찰민원24 첨부를 다시 확인합니다.
-    if (police && !lookup) setLookup(true);
-    else setFailed(true);
-  }
-  return (
-    <View>
-      <PhotoPager uris={urls ?? []} label={item.name} onError={onError} />
-      {failed && (
-        <ActionButton
-          label="기관 사진 다시 불러오기"
-          variant="outline"
-          style={styles.photoRetry}
-          onPress={() => {
-            setFailed(false);
-            setAttempt((n) => n + 1);
-          }}
-        />
-      )}
-    </View>
-  );
-}
 export function InstitutionDetailScreen({ id }: { id: string }) {
   const [item, setItem] = useState<InstitutionItem>();
   const [error, setError] = useState('');
@@ -130,10 +81,11 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
           <>
             <View style={styles.hero}>
               {/* 기관이 공개한 사진이 있으면 첫 장을, 없으면 종류 아이콘을 보여줍니다. */}
-              <ItemThumb
+              <ItemPhotoThumb
+                id={item.id}
                 name={item.name}
                 category={item.category}
-                photoUrl={item.photoUrls?.[0]}
+                photoUrls={item.photoUrls}
                 size={56}
               />
               <View style={styles.heroText}>
@@ -155,7 +107,12 @@ export function InstitutionDetailScreen({ id }: { id: string }) {
                 </View>
               </View>
             </View>
-            <InstitutionPhotos key={item.id} item={item} />
+            <ItemPhotoGallery
+              id={item.id}
+              name={item.name}
+              category={item.category}
+              photoUrls={item.photoUrls}
+            />
             <View style={styles.body}>
               <InfoCard>
                 <InfoRow
