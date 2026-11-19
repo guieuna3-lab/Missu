@@ -198,6 +198,9 @@ export class SearchResultsService {
         async (tx) => {
           // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
           await tx.$executeRaw`SET LOCAL jit = off`;
+          // 검색 중간 자료가 작은 기본 작업 메모리를 넘어 임시 파일로 반복
+          // 기록되지 않게 합니다. 서버 전역 설정이 아닌 이 읽기에만 적용합니다.
+          await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
           // 전체 후보와 이름/보관처의 동등 결합은 해시 결합을 사용합니다.
           // 작은 후보 수로 잘못 추정한 중첩 반복이 수만 건을 거듭 훑지 않게 합니다.
           await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
@@ -218,6 +221,7 @@ export class SearchResultsService {
         void this.db
           .$transaction(async (tx) => {
             await tx.$executeRaw`SET LOCAL jit = off`;
+            await tx.$executeRaw`SET LOCAL work_mem = '16MB'`;
             await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
             await tx.$executeRaw`SET LOCAL enable_mergejoin = off`;
             const plan = await tx.$queryRaw<unknown[]>(
@@ -332,16 +336,10 @@ export class SearchResultsService {
         ORDER BY score DESC,day DESC,id COLLATE "C" ASC LIMIT 26`
             : Prisma.sql`
         WITH candidates AS MATERIALIZED (
-          SELECT id, day, name, coalesce(kind_name, '') AS features FROM verified_portal_items
+          SELECT id, day, ${normalize(Prisma.sql`name`)} AS normalized_name,
+            ${normalize(Prisma.sql`kind_name`)} AS normalized_features FROM verified_portal_items
           WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
-        ), names AS MATERIALIZED (
-          SELECT name,features,${normalize(Prisma.sql`name`)} AS normalized_name,
-            ${normalize(Prisma.sql`features`)} AS normalized_features
-          FROM (SELECT DISTINCT name,features FROM candidates) unique_names
-        ), scores AS MATERIALIZED (SELECT name,features,${rank} AS score FROM names),
-        ranked AS (
-          SELECT c.id,c.day,s.score FROM candidates c JOIN scores s USING(name,features)
-        )
+        ), ranked AS MATERIALIZED (SELECT id,day,${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`,
       ),
