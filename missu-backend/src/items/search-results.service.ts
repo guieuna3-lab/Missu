@@ -241,10 +241,6 @@ export class SearchResultsService {
     const after = readSearchPosition(query.cursor, scope, now);
     const at = after?.at ?? now;
     const { from, through, fromTime, toTime } = searchRange(query, at);
-    if (query.sort === 'distance' && !after)
-      void this.institutions
-        .queueSearchLocations(search.q, search.place, from, through)
-        .catch(() => undefined);
     const rank =
       query.sort === 'relevance'
         ? relevanceSql(
