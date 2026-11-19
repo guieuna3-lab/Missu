@@ -1,7 +1,7 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback, useRef } from 'react';
-import { itemRepository } from '@/lib/items';
-import { recentInstitutions, openInstitution } from '@/lib/institutionItems';
+import { recentResults } from '@/lib/searchResults';
+import { openInstitution } from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
 import { BottomNavigation } from '@/components/BottomNavigation';
@@ -17,13 +17,10 @@ const pageSize = 10;
 // 기관 날짜의 정밀도는 일 단위입니다. 서울 날짜의 시작을 기준으로 회원 등록 시각과 비교합니다.
 const recentTime = (item: HomeItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : (item.createdAt ?? item.foundAt));
-const newestFirst = (a: HomeItem, b: HomeItem) =>
-  recentTime(b) - recentTime(a) || b.id.localeCompare(a.id);
 export function HomeScreen() {
   const [recent, setRecent] = useState<HomeItem[]>([]);
   const [visibleCount, setVisibleCount] = useState(pageSize);
   const [cursor, setCursor] = useState<string | null>();
-  const [agencyCursor, setAgencyCursor] = useState<string | null>(null);
   const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const generation = useRef(0);
   const fetchingMore = useRef(false);
@@ -35,33 +32,22 @@ export function HomeScreen() {
       fetchingMore.current = false;
       setVisibleCount(pageSize);
       setCursor(undefined);
-      setAgencyCursor(null);
       setMoreStatus('idle');
       setState('loading');
       setNotice('');
-      // 회원과 모든 기관의 첫 페이지를 동시에 요청하고, 모두 끝난 뒤 한 번만 표시합니다.
-      // 먼저 도착한 일부 물품 때문에 카드와 날짜 순서가 중간에 바뀌지 않게 합니다.
-      void Promise.allSettled([itemRepository.recentPage(), recentInstitutions()]).then(
-        ([member, agency]) => {
+      // 저장된 세 출처를 서버에서 함께 정렬한 결과만 한 번에 표시합니다.
+      // 학교·공공포털의 새 자료 수집은 서버 뒤에서 이어집니다.
+      void recentResults()
+        .then((page) => {
           if (current !== generation.current) return;
-          const rows: HomeItem[] = [
-            ...(member.status === 'fulfilled' ? member.value.items : []),
-            ...(agency.status === 'fulfilled' ? agency.value.items : []),
-          ];
-          setRecent(rows.sort(newestFirst));
-          setCursor(member.status === 'fulfilled' ? member.value.nextCursor : null);
-          setAgencyCursor(agency.status === 'fulfilled' ? agency.value.nextCursor : null);
-          const messages =
-            agency.status === 'fulfilled'
-              ? agency.value.notices.filter((n) => n.includes('조회할 수 없어요'))
-              : ['기관 자료를 불러오지 못했어요.'];
-          if (member.status === 'rejected') messages.push('회원 자료를 불러오지 못했어요.');
-          setNotice(messages.join(' '));
-          setState(
-            member.status === 'rejected' && agency.status === 'rejected' ? 'error' : 'ready',
-          );
-        },
-      );
+          setRecent(page.items);
+          setCursor(page.nextCursor);
+          setNotice(page.notices?.join(' ') ?? '');
+          setState('ready');
+        })
+        .catch(() => {
+          if (current === generation.current) setState('error');
+        });
       return () => {
         generation.current++;
       };
@@ -70,41 +56,28 @@ export function HomeScreen() {
 
   async function showMore() {
     if (fetchingMore.current || cursor === undefined) return;
-    const nextCount = visibleCount + pageSize;
-    const memberCount = recent.filter((item) => !('source' in item)).length;
-    // 마지막 회원 페이지보다 오래된 기관 카드가 먼저 펼쳐지지 않게 합니다.
-    const loadMembers = !!cursor && nextCount > memberCount;
-    const loadAgencies = !!agencyCursor && nextCount > recent.length - memberCount;
-    if (loadMembers || loadAgencies) {
-      const current = generation.current;
-      fetchingMore.current = true;
-      setMoreStatus('loading');
-      try {
-        const [members, agencies] = await Promise.all([
-          loadMembers ? itemRepository.recentPage(cursor!) : undefined,
-          loadAgencies ? recentInstitutions(agencyCursor!) : undefined,
-        ]);
-        if (current !== generation.current) return;
-        const rows = new Map(recent.map((item) => [item.id, item]));
-        for (const item of [...(members?.items ?? []), ...(agencies?.items ?? [])])
-          rows.set(item.id, item);
-        // 다음 기관 페이지에도 더 최근 물품이 있어, 표시 중인 카드까지 함께 정렬합니다.
-        setRecent([...rows.values()].sort(newestFirst));
-        if (members) setCursor(members.nextCursor);
-        if (agencies) {
-          setAgencyCursor(agencies.nextCursor);
-          const issues = agencies.notices.filter((s) => s.includes('현재 조회'));
-          if (issues.length) setNotice(issues.join(' '));
-        }
-        setMoreStatus('idle');
-      } catch {
-        if (current === generation.current) setMoreStatus('error');
-        return;
-      } finally {
-        if (current === generation.current) fetchingMore.current = false;
-      }
+    if (visibleCount + pageSize <= recent.length || !cursor) {
+      setVisibleCount((count) => Math.min(count + pageSize, recent.length));
+      return;
     }
-    setVisibleCount(Math.min(visibleCount, recent.length) + pageSize);
+    const current = generation.current;
+    fetchingMore.current = true;
+    setMoreStatus('loading');
+    try {
+      const page = await recentResults(cursor);
+      if (current !== generation.current) return;
+      setRecent((rows) => [
+        ...new Map([...rows, ...page.items].map((item) => [item.id, item])).values(),
+      ]);
+      setCursor(page.nextCursor);
+      setVisibleCount((count) => count + pageSize);
+      setNotice(page.notices?.join(' ') ?? '');
+      setMoreStatus('idle');
+    } catch {
+      if (current === generation.current) setMoreStatus('error');
+    } finally {
+      if (current === generation.current) fetchingMore.current = false;
+    }
   }
 
   return (
@@ -167,7 +140,7 @@ export function HomeScreen() {
             })}
           {state === 'ready' &&
             cursor !== undefined &&
-            (recent.length > visibleCount || !!cursor || !!agencyCursor) && (
+            (recent.length > visibleCount || !!cursor) && (
               <ActionButton
                 label={
                   moreStatus === 'loading'
