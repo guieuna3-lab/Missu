@@ -17,7 +17,8 @@ import java.util.*;
 
 public final class MissuLauncher extends Activity {
     private static final String SITE = "https://missu-web.onrender.com";
-    private static final int PREPARE = 16, GEO = 17, FILE = 18;
+    private static final int PREPARE = 16, GEO = 17, FILE = 18, PUSH = 19;
+    private int pushRequest;
     private WebView web;
     private WebMessagePort port;
     private int navigation, permissionRequest;
@@ -48,7 +49,7 @@ public final class MissuLauncher extends Activity {
         settings.setGeolocationEnabled(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MissUAndroidRoute/2");
+        settings.setUserAgentString(settings.getUserAgentString() + " MissUAndroidRoute/2 MissUPush/1");
         web.setWebViewClient(new SiteClient());
         web.setWebChromeClient(new ChromeClient());
         if (Build.VERSION.SDK_INT >= 33) {
@@ -61,7 +62,8 @@ public final class MissuLauncher extends Activity {
         // 짧은 사전 확인 실패로 오래된 APK 화면에 고정되지 않도록 운영 화면을 직접 엽니다.
         // HTML만 재검증하고, 해시가 붙은 사진/스크립트의 정상 캐시는 유지합니다.
         boolean openRoute = "kr.missu.web.OPEN_ROUTE".equals(getIntent().getAction());
-        web.loadUrl(SITE + (openRoute ? "/daily-route" : "/"),
+        boolean openNotifications = "kr.missu.web.OPEN_NOTIFICATIONS".equals(getIntent().getAction());
+        web.loadUrl(SITE + (openNotifications ? "/notifications" : openRoute ? "/daily-route" : "/"),
                 Collections.singletonMap("Cache-Control", "no-cache"));
     }
     private static String read(InputStream input) throws IOException {
@@ -106,7 +108,7 @@ public final class MissuLauncher extends Activity {
         }
         @Override public void onPageStarted(WebView view, String url, android.graphics.Bitmap icon) {
             navigation++;
-            preparedToken = null; permissionRequest = 0;
+            preparedToken = null; permissionRequest = 0; pushRequest = 0;
             if (port != null) { port.close(); port = null; }
         }
         @Override public void onPageFinished(WebView view, String url) {
@@ -132,7 +134,7 @@ public final class MissuLauncher extends Activity {
                     || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
                 callback.invoke(origin, true, false); return;
             }
-            if (geo != null || permissionRequest != 0) { callback.invoke(origin, false, false); return; }
+            if (geo != null || permissionRequest != 0 || pushRequest != 0) { callback.invoke(origin, false, false); return; }
             geo = callback; geoOrigin = origin;
             requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION}, GEO);
         }
@@ -158,11 +160,12 @@ public final class MissuLauncher extends Activity {
         try {
             JSONObject args = new JSONObject(raw);
             request = args.getInt("request");
+            if (args.getString("command").startsWith("push")) { handlePush(request,args); return; }
             String token = args.getString("token");
             if (token.isEmpty() || token.length() > 4096) throw new IllegalStateException("다시 로그인해 주세요.");
             switch (args.getString("command")) {
                 case "prepare":
-                    if (!foreground || geo != null || permissionRequest != 0)
+                    if (!foreground || geo != null || permissionRequest != 0 || pushRequest != 0)
                         throw new IllegalStateException("위치 권한 창을 닫은 뒤 이 화면에서 다시 시작해 주세요.");
                     if (RouteService.isRecording()) throw new IllegalStateException("먼저 알림에서 이전 기록을 중지해 주세요.");
                     if (!locationEnabled()) throw new IllegalStateException("휴대폰 설정에서 위치를 켜 주세요.");
@@ -195,6 +198,56 @@ public final class MissuLauncher extends Activity {
         if (Build.VERSION.SDK_INT >= 28) return manager.isLocationEnabled();
         return manager.isProviderEnabled(LocationManager.GPS_PROVIDER) || manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER);
     }
+    private void handlePush(int request, JSONObject args) throws Exception {
+        String command=args.getString("command");
+        android.content.SharedPreferences p=MatchPushService.prefs(this);
+        if("pushClear".equals(command)) {
+            String oldToken=p.getString("token",""),oldBinding=p.getString("binding","");
+            MatchPushService.clear(this);
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().setAutoInitEnabled(false);
+            reply(request,new JSONObject().put("token",oldToken).put("binding",oldBinding),null);return;
+        }
+        String account=args.optString("account","");
+        if(account.isEmpty()||account.length()>256)throw new IllegalStateException("다시 로그인해 주세요.");
+        String accountHash=android.util.Base64.encodeToString(java.security.MessageDigest.getInstance("SHA-256").digest(account.getBytes("UTF-8")),android.util.Base64.NO_WRAP);
+        if(!accountHash.equals(p.getString("account",""))) {
+            MatchPushService.clear(this);
+            com.google.firebase.messaging.FirebaseMessaging.getInstance().setAutoInitEnabled(false);
+            p.edit().putString("account",accountHash).apply();
+        }
+        if("pushStatus".equals(command)) { pushState(request);return; }
+        if(!"pushEnable".equals(command)||!foreground||geo!=null||permissionRequest!=0||pushRequest!=0)
+            throw new IllegalStateException("권한 창을 닫은 뒤 다시 시도해 주세요.");
+        pushRequest=request;
+        if(Build.VERSION.SDK_INT>=33&&checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS},PUSH);
+        else finishPushPermission();
+    }
+    private void finishPushPermission() {
+        final int request=pushRequest;pushRequest=0;
+        if(request==0)return;
+        if(Build.VERSION.SDK_INT>=24&&!getSystemService(NotificationManager.class).areNotificationsEnabled()) {
+            reply(request,null,"휴대폰 설정에서 미슈 알림을 허용해 주세요.");return;
+        }
+        MatchPushService.channel(this);
+        android.content.SharedPreferences p=MatchPushService.prefs(this);
+        p.edit().putBoolean("enabled",true).putString("binding",UUID.randomUUID().toString()).apply();
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().setAutoInitEnabled(true);
+        pushState(request);
+    }
+    private void pushState(int request) {
+        android.content.SharedPreferences p=MatchPushService.prefs(this);
+        if(!p.getBoolean("enabled",false)) { reply(request,new JSONObject(),null);return; }
+        final String binding=p.getString("binding","");
+        final int pageVersion=navigation;
+        com.google.firebase.messaging.FirebaseMessaging.getInstance().getToken().addOnCompleteListener(task->{
+            if(pageVersion!=navigation||!binding.equals(p.getString("binding","")))return;
+            if(!task.isSuccessful()) {reply(request,null,"알림 연결을 다시 시도해 주세요.");return;}
+            p.edit().putString("token",task.getResult()).apply();
+            try {reply(request,new JSONObject().put("enabled",true).put("token",task.getResult()).put("binding",binding),null);}
+            catch(JSONException ignored) {}
+        });
+    }
     private void reply(int request, JSONObject state, String error) {
         if (port == null || request == 0) return;
         try { port.postMessage(new WebMessage(new JSONObject().put("request", request).put("state", state).put("error", error).toString())); }
@@ -213,6 +266,7 @@ public final class MissuLauncher extends Activity {
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code == PREPARE) finishPermission();
+        if (code == PUSH) finishPushPermission();
         if (code == GEO && geo != null) {
             boolean ok = checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
                         || checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED;
@@ -223,6 +277,8 @@ public final class MissuLauncher extends Activity {
         super.onNewIntent(intent);
         // SPA 문서를 다시 불러오면 메모리 로그인 세션이 사라지므로 기존 화면을 유지합니다.
         setIntent(intent);
+        if("kr.missu.web.OPEN_NOTIFICATIONS".equals(intent.getAction()) && trusted(Uri.parse(web.getUrl())))
+            web.evaluateJavascript("window.dispatchEvent(new Event('missu-open-notifications'))",null);
     }
     @Override protected void onResume() { super.onResume(); foreground = true; }
     @Override protected void onPause() { foreground = false; super.onPause(); }
