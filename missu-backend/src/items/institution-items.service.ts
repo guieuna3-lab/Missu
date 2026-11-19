@@ -6,6 +6,7 @@ import {
 } from './catalog-sync';
 import { createHash } from 'node:crypto';
 import { countVerifiedDays } from './verified-search-count';
+import { searchWhereSql } from './search-order';
 import {
   itemSearch,
   publicFoundWhere,
@@ -22,7 +23,7 @@ import {
   OnApplicationBootstrap,
   OnModuleDestroy,
 } from '@nestjs/common';
-import type { Prisma } from '../generated/prisma/client';
+import { Prisma } from '../generated/prisma/client';
 import { DatabaseService } from '../database/database.service';
 import { fail } from '../common/http';
 import { ExternalHttpService } from '../integrations/external-http.service';
@@ -166,6 +167,7 @@ export class InstitutionItemsService
     const warmSchool = process.env.NODE_ENV !== 'test';
     if (!this.catalog && !warmSchool) return;
     const wake = () => {
+      void this.warmStoragePoints();
       if (warmSchool)
         void this.refreshSchool().catch(() =>
           this.logger.warn('한성대 보관 목록을 다음 주기에 다시 확인합니다.'),
@@ -215,7 +217,86 @@ export class InstitutionItemsService
   }
   onModuleDestroy() {
     clearInterval(this.timer);
+    this.stoppedPoints = true;
     this.catalog?.stop();
+  }
+
+  /** 직접 지정한 끝일까지 같은 검색 색인을 사용해 기관 건수를 따로 읽습니다. */
+  countForMatching(q: string, place: string, from: string, through: string) {
+    return countVerifiedDays(
+      this.db!,
+      'range',
+      from,
+      through,
+      this.portalWhere(q, place, 'all'),
+    );
+  }
+
+  private warmingPoints = false;
+  private stoppedPoints = false;
+  private readonly priorityPlaces = new Set<string>();
+  /** 위치가 없는 보관처는 뒤에서 준비합니다. 검색 응답은 카카오 호출을 기다리지 않습니다. */
+  async queueSearchLocations(
+    q: string,
+    place: string,
+    from: string,
+    through: string,
+  ) {
+    if (!this.db || !process.env.KAKAO_REST_API_KEY) return;
+    const rows = await this.db.$queryRaw<{ storage: string }[]>(Prisma.sql`
+      SELECT DISTINCT storage FROM verified_portal_items
+      WHERE stored AND day BETWEEN ${from} AND ${through}
+        AND ${searchWhereSql(itemSearch(q, place), true)} LIMIT 2000`);
+    for (const row of rows) {
+      if (this.priorityPlaces.size >= 2000) break;
+      this.priorityPlaces.add(row.storage);
+    }
+    void this.warmStoragePoints();
+  }
+  private async warmStoragePoints() {
+    if (
+      !this.db ||
+      this.warmingPoints ||
+      !process.env.KAKAO_REST_API_KEY ||
+      this.stoppedPoints
+    )
+      return;
+    this.warmingPoints = true;
+    try {
+      const priority = [...this.priorityPlaces];
+      this.priorityPlaces.clear();
+      const names = await this.db.$queryRaw<{ storage: string }[]>(Prisma.sql`
+        SELECT v.storage FROM (
+          SELECT storage, count(*) AS frequency FROM verified_portal_items
+          WHERE stored AND day >= ${since()} GROUP BY storage
+          UNION ALL SELECT '한성대학교 상상관 글로벌원스톱센터', 2147483647
+        ) v LEFT JOIN institution_place_points p ON p.storage = v.storage
+        WHERE v.storage <> '' AND (p.storage IS NULL OR (p.lat IS NULL AND p.retry_at <= now()))
+        ORDER BY (v.storage = ANY(ARRAY[${priority.length ? Prisma.join(priority) : Prisma.sql`''`}]::text[])) DESC,
+          v.frequency DESC LIMIT 120`);
+      await readBatches(
+        names.map(({ storage }) => async () => {
+          if (this.stoppedPoints) return;
+          const query = /한성대학교.*(상상관|원스톱)/u.test(storage)
+            ? '한성대학교 상상관'
+            : storage;
+          const point = await this.storagePoint(query).catch(() => undefined);
+          // 실패는 1시간 뒤에 재시도하고, 이미 확인한 좌표는 실패 응답으로 지우지 않습니다.
+          await this.db!.$executeRaw`
+          INSERT INTO institution_place_points(storage,lat,lng,located_at,retry_at)
+          VALUES (${storage},${point?.lat ?? null},${point?.lng ?? null},
+            ${point ? new Date() : null},now() + interval '1 hour')
+          ON CONFLICT(storage) DO UPDATE SET lat=EXCLUDED.lat,lng=EXCLUDED.lng,
+            located_at=EXCLUDED.located_at,retry_at=EXCLUDED.retry_at
+          WHERE institution_place_points.lat IS NULL`;
+        }),
+        4,
+      );
+    } catch {
+      this.logger.warn('보관처 위치는 다음 주기에 다시 준비합니다.');
+    } finally {
+      this.warmingPoints = false;
+    }
   }
   async inventoryTotal() {
     if (!this.db)
@@ -1819,10 +1900,33 @@ export class InstitutionItemsService
     checkedAt: number;
   };
   private schoolRefresh?: Promise<Map<string, InstitutionItem>>;
+  private schoolRestore?: Promise<void>;
+  private restoreSchool() {
+    return (this.schoolRestore ??= (async () => {
+      if (!this.db) return;
+      const [saved] = await this.db.$queryRaw<
+        { items: InstitutionItem[]; checkedAt: Date }[]
+      >`
+        SELECT items, checked_at AS "checkedAt" FROM institution_school_snapshot WHERE id = 1`;
+      if (saved && Array.isArray(saved.items) && !this.schoolSnapshot) {
+        this.schoolSnapshot = {
+          items: new Map(saved.items.map((item) => [item.id, item])),
+          checkedAt: saved.checkedAt.getTime(),
+        };
+      }
+    })().catch(() => undefined));
+  }
+  schoolSnapshotStale() {
+    return (
+      !!this.schoolSnapshot &&
+      Date.now() - this.schoolSnapshot.checkedAt > 600000
+    );
+  }
   async schoolForMatching() {
     return [...(await this.schoolInventory('', 'ALL')).values()];
   }
-  private refreshSchool(): Promise<Map<string, InstitutionItem>> {
+  private async refreshSchool(): Promise<Map<string, InstitutionItem>> {
+    await this.restoreSchool();
     const snapshot = this.schoolSnapshot;
     if (snapshot && snapshot.checkedAt + 300000 > Date.now())
       return Promise.resolve(snapshot.items);
@@ -1836,6 +1940,15 @@ export class InstitutionItemsService
         for (const item of result.items) items.set(item.id, item);
         if (!result.limited) {
           this.schoolSnapshot = { items, checkedAt: Date.now() };
+          if (this.db) {
+            const json = JSON.stringify([...items.values()]);
+            await this.db.$executeRaw`
+              INSERT INTO institution_school_snapshot(id,items,checked_at)
+              VALUES (1,${json}::jsonb,now())
+              ON CONFLICT(id) DO UPDATE SET items=EXCLUDED.items,checked_at=EXCLUDED.checked_at`.catch(
+              () => undefined,
+            );
+          }
           return items;
         }
       }
@@ -1846,12 +1959,16 @@ export class InstitutionItemsService
     return this.schoolRefresh;
   }
   private async schoolInventory(q: string, days: string) {
-    // 서버가 준비한 목록을 모든 검색어·기간이 공유한다. 장시간 갱신 실패는 호출자에게 알린다.
+    await this.restoreSchool();
+    // 이미 확인한 전체 목록을 먼저 읽고 갱신은 뒤에서 진행합니다.
+    // 재배포 뒤에도 DB의 마지막 목록을 쓰며, 하루 넘게 오래된 자료는 성공으로 내보내지 않습니다.
     const snapshot = this.schoolSnapshot;
     const items =
-      snapshot && Date.now() - snapshot.checkedAt < 600000
+      snapshot && Date.now() - snapshot.checkedAt < 86400000
         ? snapshot.items
         : await this.refreshSchool();
+    if (snapshot && Date.now() - snapshot.checkedAt >= 300000)
+      void this.refreshSchool().catch(() => undefined);
     const search = itemSearch(q),
       from = since(days),
       today = koreaDay();

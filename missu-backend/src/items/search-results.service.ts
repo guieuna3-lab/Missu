@@ -11,7 +11,8 @@ import {
   matchesPlace,
   publicFoundWhere,
 } from './item-search';
-import { koreaDay, sinceFound } from './institution-records';
+import { distance } from './institution-records';
+import { searchPoint, searchRange } from './search-range';
 import {
   afterSql,
   compareRank,
@@ -32,7 +33,11 @@ export async function completeSchool<T>(read: () => Promise<T>): Promise<T> {
     try {
       return await read();
     } catch {
-      return fail(503, 'EXTERNAL_UNAVAILABLE', '학교 목록을 잠시 불러올 수 없어요.');
+      return fail(
+        503,
+        'EXTERNAL_UNAVAILABLE',
+        '학교 목록을 잠시 불러올 수 없어요.',
+      );
     }
   }
 }
@@ -50,7 +55,7 @@ export function readSearchPosition(
       p.scope !== scope ||
       (p.withoutSchool !== undefined && p.withoutSchool !== true) ||
       !Number.isInteger(p.score) ||
-      p.score < 0 ||
+      p.score < -2147483647 ||
       p.score > 1000 ||
       !/^(?:[0-9a-f-]{36}|lost112:[a-zA-Z0-9]{1,32}:\d{1,6}|hansung:\d{1,12})$/.test(
         p.id,
@@ -83,50 +88,140 @@ export class SearchResultsService {
     private readonly institutions: InstitutionItemsService,
   ) {}
 
-  private ranked(query: Prisma.Sql) {
-    return this.db.$transaction(async (tx) => {
-      // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
-      await tx.$executeRaw`SET LOCAL jit = off`;
-      return tx.$queryRaw<RankedKey[]>(query);
-    }, { timeout: 30000 });
+  private readonly replies = new Map<
+    string,
+    { until: number; value: Promise<unknown> }
+  >();
+  private memo<T>(key: string, read: () => Promise<T>): Promise<T> {
+    const saved = this.replies.get(key);
+    if (saved && saved.until > Date.now()) return saved.value as Promise<T>;
+    if (this.replies.size >= 32)
+      this.replies.delete(this.replies.keys().next().value!);
+    const value = read();
+    this.replies.set(key, { until: Date.now() + 20000, value });
+    void value.then(
+      (reply) => {
+        const entry = this.replies.get(key);
+        if (entry?.value !== value) return;
+        if (
+          reply &&
+          typeof reply === 'object' &&
+          'notices' in reply &&
+          Array.isArray(reply.notices) &&
+          reply.notices.some(
+            (notice: unknown) =>
+              typeof notice === 'string' && notice.includes('불러오지 못'),
+          )
+        )
+          this.replies.delete(key);
+        else entry.until = Date.now() + 20000;
+      },
+      () => undefined,
+    );
+    void value.catch(() => {
+      if (this.replies.get(key)?.value === value) this.replies.delete(key);
+    });
+    return value;
+  }
+  invalidCursor() {
+    return fail(400, 'VALIDATION_ERROR', '다시 검색해 주세요.');
+  }
+  search(query: SearchResultsDto) {
+    return query.cursor
+      ? this.read(query)
+      : this.memo('list:' + JSON.stringify(query), () => this.read(query));
+  }
+  recent(cursor?: string) {
+    const query = {
+      q: '',
+      place: '',
+      period: 'all',
+      sort: 'recent',
+      cursor,
+    } as SearchResultsDto;
+    return cursor
+      ? this.read(query, true)
+      : this.memo('home', () => this.read(query, true));
+  }
+  count(query: SearchResultsDto) {
+    const now = Date.now();
+    const range = searchRange(query, now);
+    const search = itemSearch(query.q, query.place);
+    // 정렬과 기준 좌표는 합계에 영향을 주지 않습니다. 기간·장소가 같은 합계를 공유합니다.
+    return this.memo(
+      'count:' + JSON.stringify([search, range.from, range.through]),
+      async () => {
+        const [members, portal, school] = await Promise.all([
+          this.db.foundItem.count({
+            where: publicFoundWhere(search, range.fromTime, range.toTime, now),
+          }),
+          range.from > range.through
+            ? 0
+            : this.institutions.countForMatching(
+                search.q,
+                search.place,
+                range.from,
+                range.through,
+              ),
+          this.institutions.schoolForMatching().catch(() => null),
+        ]);
+        const schoolTotal =
+          school?.filter(
+            (item) =>
+              item.date >= range.from &&
+              item.date <= range.through &&
+              matchesName(search, item.name) &&
+              matchesPlace(search.place, item.storage, item.foundPlace),
+          ).length ?? 0;
+        return {
+          total: members + portal + schoolTotal,
+          checkedAt: new Date(now).toISOString(),
+          notices: !school
+            ? ['한성대 자료를 불러오지 못해 확인 가능한 자료만 집계했어요.']
+            : this.institutions.schoolSnapshotStale()
+              ? ['학교 목록을 갱신 중이에요. 마지막 확인 자료를 표시해요.']
+              : [],
+        };
+      },
+    );
   }
 
-  async search(query: SearchResultsDto) {
+  private ranked(query: Prisma.Sql) {
+    return this.db.$transaction(
+      async (tx) => {
+        // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
+        await tx.$executeRaw`SET LOCAL jit = off`;
+        return tx.$queryRaw<RankedKey[]>(query);
+      },
+      { timeout: 30000 },
+    );
+  }
+
+  private async read(query: SearchResultsDto, feed = false) {
     const now = Date.now();
     const search = itemSearch(query.q, query.place);
+    const point = searchPoint(query.near);
+    if (query.sort === 'distance' && !point)
+      fail(400, 'VALIDATION_ERROR', '가까운순의 기준 장소를 선택해 주세요.');
     const scope = digest(
       JSON.stringify([
-        1,
+        2,
         search,
         query.period,
         query.from,
         query.to,
         query.sort,
+        point,
+        feed,
       ]),
     );
     const after = readSearchPosition(query.cursor, scope, now);
     const at = after?.at ?? now;
-    for (const day of [query.from, query.to]) {
-      if (
-        day &&
-        (!Number.isFinite(Date.parse(day)) ||
-          new Date(day).toISOString().slice(0, 10) !== day)
-      )
-        fail(400, 'VALIDATION_ERROR', '날짜를 확인해 주세요.');
-    }
-    if (query.from && query.to && query.from > query.to)
-      fail(400, 'VALIDATION_ERROR', '시작일은 끝일보다 늦을 수 없어요.');
-    const from = [
-      sinceFound('all', at),
-      query.from ?? sinceFound(query.period, at),
-    ]
-      .sort()
-      .at(-1)!;
-    const through = [koreaDay(at), query.to ?? koreaDay(at)].sort()[0];
-    const fromTime = new Date(from + 'T00:00:00+09:00');
-    const toTime = new Date(
-      Math.min(at, Date.parse(through + 'T23:59:59.999+09:00')),
-    );
+    const { from, through, fromTime, toTime } = searchRange(query, at);
+    if (query.sort === 'distance' && !after)
+      void this.institutions
+        .queueSearchLocations(search.q, search.place, from, through)
+        .catch(() => undefined);
     const rank =
       query.sort === 'relevance'
         ? relevanceSql(
@@ -135,7 +230,13 @@ export class SearchResultsService {
             search,
             true,
           )
-        : Prisma.sql`0`;
+        : query.sort === 'distance' && point
+          ? Prisma.sql`CASE WHEN lat IS NULL OR lng IS NULL THEN -2147483647 ELSE
+            -round(6371000 * acos(least(1.0, greatest(-1.0,
+              sin(radians(lat::float8)) * sin(radians(${point.lat}::float8)) +
+              cos(radians(lat::float8)) * cos(radians(${point.lat}::float8)) *
+              cos(radians(lng::float8 - ${point.lng}::float8))))))::int END`
+          : Prisma.sql`0`;
     const normalize = (column: Prisma.Sql) =>
       query.sort === 'relevance' ? normalizedSql(column) : Prisma.sql`''`;
     // 각 출처에서 전체 후보를 먼저 정렬합니다. 출처별 상위 26건이면
@@ -145,7 +246,7 @@ export class SearchResultsService {
       // 같은 식을 반복 실행하면 대량 자료의 정확도순 조회가 크게 느려집니다.
       this.ranked(Prisma.sql`
         WITH candidates AS MATERIALIZED (
-          SELECT id::text AS id, to_char(found_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
+          SELECT id::text AS id, to_char(${feed ? Prisma.sql`created_at` : Prisma.sql`found_at`} AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day, lat, lng,
             ${normalize(Prisma.sql`name`)} AS normalized_name,
             ${normalize(Prisma.sql`public_features`)} AS normalized_features
           FROM found_items WHERE NOT archived AND status IN ('AVAILABLE', 'RESERVED')
@@ -154,20 +255,41 @@ export class SearchResultsService {
         ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
-      this.ranked(query.sort === 'recent' ? Prisma.sql`
+      this.ranked(
+        query.sort === 'recent'
+          ? Prisma.sql`
         SELECT * FROM (
           SELECT id, day, 0 AS score FROM verified_portal_items
           WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
         ) AS ranked WHERE ${afterSql(after)}
         ORDER BY day DESC, id COLLATE "C" ASC LIMIT 26`
-        : Prisma.sql`
-        WITH candidates AS MATERIALIZED (
-          SELECT id, day, ${normalize(Prisma.sql`name`)} AS normalized_name,
-            ${normalize(Prisma.sql`kind_name`)} AS normalized_features FROM verified_portal_items
+          : query.sort === 'distance'
+            ? Prisma.sql`
+        WITH places AS MATERIALIZED (
+          SELECT storage, ${rank} AS score FROM institution_place_points
+          WHERE located_at <= ${new Date(at)}
+        ), ranked AS (
+          SELECT v.id,v.day,coalesce(p.score,-2147483647) AS score FROM verified_portal_items v
+          LEFT JOIN places p ON p.storage=v.storage
           WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
-        ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
+        )
         SELECT * FROM ranked WHERE ${afterSql(after)}
-        ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
+        ORDER BY score DESC,day DESC,id COLLATE "C" ASC LIMIT 26`
+            : Prisma.sql`
+        WITH candidates AS MATERIALIZED (
+          SELECT id, day, name, coalesce(kind_name, '') AS features FROM verified_portal_items
+          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
+        ), names AS MATERIALIZED (
+          SELECT name,features,${normalize(Prisma.sql`name`)} AS normalized_name,
+            ${normalize(Prisma.sql`features`)} AS normalized_features
+          FROM (SELECT DISTINCT name,features FROM candidates) unique_names
+        ), scores AS MATERIALIZED (SELECT name,features,${rank} AS score FROM names),
+        ranked AS (
+          SELECT c.id,c.day,s.score FROM candidates c JOIN scores s USING(name,features)
+        )
+        SELECT * FROM ranked WHERE ${afterSql(after)}
+        ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`,
+      ),
       // 학교 원본 장애가 DB에 저장된 다른 물품의 검색까지 막지 않게 합니다.
       // 첫 페이지에서 빠진 출처는 커서에 고정하고, 새 검색에서 다시 확인합니다.
       after?.withoutSchool
@@ -194,12 +316,26 @@ export class SearchResultsService {
         matchesName(search, i.name) &&
         matchesPlace(search.place, i.storage, i.foundPlace),
     );
+    const schoolPoint =
+      query.sort === 'distance'
+        ? (
+            await this.db.$queryRaw<{ lat: number; lng: number }[]>`
+          SELECT lat,lng FROM institution_place_points WHERE storage='한성대학교 상상관 글로벌원스톱센터'
+            AND lat IS NOT NULL AND located_at <= ${new Date(at)}`
+          )[0]
+        : undefined;
     const schoolKeys = schoolItems
       .map((i) => ({
         id: i.id,
         day: i.date,
         score:
-          query.sort === 'relevance' ? relevanceScore(i.name, '', search) : 0,
+          query.sort === 'relevance'
+            ? relevanceScore(i.name, '', search)
+            : query.sort === 'distance'
+              ? schoolPoint && point
+                ? -Math.round(distance(point, schoolPoint))
+                : -2147483647
+              : 0,
       }))
       .filter((i) => !after || compareRank(i, after) > 0);
     const keys = [...memberKeys, ...portalKeys, ...schoolKeys].sort(
@@ -233,15 +369,39 @@ export class SearchResultsService {
     ]);
     const last = page.at(-1);
     return {
-      items: page.map((i) => rows.get(i.id)).filter((i) => i !== undefined),
+      items: page
+        .map((i) => {
+          const item = rows.get(i.id);
+          if (!item) return;
+          return query.sort === 'distance' && i.score !== -2147483647
+            ? { ...item, distanceM: -i.score }
+            : item;
+        })
+        .filter((i) => i !== undefined),
       nextCursor:
         keys.length > 25 && last
-          ? searchCursor({ ...last, scope, at, ...(school.unavailable && { withoutSchool: true as const }) })
+          ? searchCursor({
+              ...last,
+              scope,
+              at,
+              ...(school.unavailable && { withoutSchool: true as const }),
+            })
           : null,
       memberTotal,
-      notices: school.unavailable
-        ? ['한성대 자료를 일시적으로 불러오지 못했어요. 다른 기관과 회원 물품을 먼저 표시합니다. 다시 검색하면 한성대 자료도 재확인해요.']
-        : [],
+      notices: [
+        ...(school.unavailable
+          ? [
+              '한성대 자료를 일시적으로 불러오지 못했어요. 다른 기관과 회원 물품을 먼저 표시합니다. 다시 검색하면 한성대 자료도 재확인해요.',
+            ]
+          : this.institutions.schoolSnapshotStale()
+            ? ['학교 목록을 갱신 중이에요. 마지막 확인 자료를 표시해요.']
+            : []),
+        ...(query.sort === 'distance'
+          ? [
+              '회원 물품은 습득 위치, 기관 물품은 보관처 기준이에요. 위치를 확인하지 못한 물품은 뒤에 표시해요.',
+            ]
+          : []),
+      ],
       sort: query.sort,
     };
   }

@@ -55,7 +55,7 @@ const orSql = (parts: Prisma.Sql[]) =>
 const contains = (column: Prisma.Sql, word: string) =>
   Prisma.sql`${column} ILIKE ${'%' + likeLiteral(word) + '%'}`;
 export const normalizedSql = (column: Prisma.Sql) =>
-  Prisma.sql`regexp_replace(lower(coalesce(${column}, '')), '[[:space:]()·-]', '', 'g')`;
+  Prisma.sql`regexp_replace(lower(normalize(coalesce(${column}, ''), NFKC)), '[[:space:]()·-]', '', 'g')`;
 
 /** DB 전체 검색 후보를 제한 전에 정렬합니다. 사용자 입력은 모두 매개변수로 전달합니다. */
 export function relevanceSql(
@@ -68,13 +68,17 @@ export function relevanceSql(
     extra = alreadyNormalized ? features : normalizedSql(features),
     whole = compactName(search.q);
   if (!whole) return Prisma.sql`0`;
+  // 이미 소문자로 정규화한 문자열입니다. 수만 건에서 ILIKE의 대소문자
+  // 변환을 단어마다 반복하지 않고, JS includes와 같은 부분 문자열 비교를 합니다.
+  const includes = (column: Prisma.Sql, word: string) =>
+    Prisma.sql`strpos(${column}, ${compactName(word)}) > 0`;
   const nameHits = search.terms.map(
     (g) =>
-      Prisma.sql`CASE WHEN ${orSql(g.map((v) => contains(title, compactName(v))))} THEN 1 ELSE 0 END`,
+      Prisma.sql`CASE WHEN ${orSql(g.map((v) => includes(title, v)))} THEN 1 ELSE 0 END`,
   );
   const extraHits = search.terms.map(
     (g) =>
-      Prisma.sql`CASE WHEN ${orSql(g.map((v) => contains(extra, compactName(v))))} THEN 1 ELSE 0 END`,
+      Prisma.sql`CASE WHEN ${orSql(g.map((v) => includes(extra, v)))} THEN 1 ELSE 0 END`,
   );
   const alias =
     search.terms.length === 1
@@ -86,7 +90,7 @@ export function relevanceSql(
     WHEN ${title} = ${whole} THEN 1000
     WHEN ${alias} THEN 960
     WHEN ${title} LIKE ${likeLiteral(whole) + '%'} THEN 920
-    WHEN ${contains(title, whole)} THEN 900
+    WHEN ${includes(title, whole)} THEN 900
     ELSE (800 * (${Prisma.join(nameHits.length ? nameHits : [Prisma.sql`0`], ' + ')})
       + 100 * (${Prisma.join(extraHits.length ? extraHits : [Prisma.sql`0`], ' + ')})) / ${Math.max(1, search.terms.length)}
     END`;
