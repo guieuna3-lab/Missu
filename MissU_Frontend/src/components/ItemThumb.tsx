@@ -53,11 +53,13 @@ export function ItemThumb({
   category,
   photoUrl,
   size = 46,
+  onPhotoError,
 }: {
   name: string;
   category?: string;
   photoUrl?: string;
   size?: number;
+  onPhotoError?: () => void;
 }) {
   const [failedUrl, setFailedUrl] = useState<string>();
   const kind = kinds[kindOf(name, category)];
@@ -69,7 +71,10 @@ export function ItemThumb({
         width={size}
         height={size}
         radius={box.borderRadius}
-        onError={() => setFailedUrl(photoUrl)}
+        onError={() => {
+          setFailedUrl(photoUrl);
+          onPhotoError?.();
+        }}
       />
     );
   return (

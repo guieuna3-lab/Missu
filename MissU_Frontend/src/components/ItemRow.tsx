@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ItemThumb } from '@/components/ItemThumb';
+import { ItemPhotoThumb } from '@/components/ItemPhotoThumb';
 import { LineBadge, subwayStop } from '@/components/LineBadge';
 import { formatDistance } from '@/lib/searchRank';
 import { colors, typography } from '@/constants/theme';
@@ -103,10 +103,11 @@ export function RecentItemRow({
       onPress={onPress}
       style={({ pressed }) => [styles.card, pressed && styles.pressed]}
     >
-      <ItemThumb
+      <ItemPhotoThumb
+        id={item.id}
         name={item.name}
         category={item.category}
-        photoUrl={'source' in item ? item.photoUrls?.[0] : item.photoUrl}
+        photoUrls={item.photoUrls ?? (!('source' in item) && item.photoUrl ? [item.photoUrl] : [])}
       />
       <View style={styles.body}>
         <View style={styles.titleRow}>
