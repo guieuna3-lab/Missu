@@ -197,6 +197,9 @@ export class SearchResultsService {
         async (tx) => {
           // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
           await tx.$executeRaw`SET LOCAL jit = off`;
+          // 전체 후보와 이름/보관처의 동등 결합은 해시 결합을 사용합니다.
+          // 작은 후보 수로 잘못 추정한 중첩 반복이 수만 건을 거듭 훑지 않게 합니다.
+          await tx.$executeRaw`SET LOCAL enable_nestloop = off`;
           await tx.$executeRaw`SET LOCAL statement_timeout = '20s'`;
           return tx.$queryRaw<RankedKey[]>(query);
         },
