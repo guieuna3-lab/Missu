@@ -334,6 +334,7 @@ export class InstitutionItemsService
     string,
     { until: number; observedAt: Date; value: Promise<string> }
   >();
+  private schoolReads = Promise.resolve('');
   private async text(
     key: string,
     url: URL,
@@ -346,20 +347,32 @@ export class InstitutionItemsService
     if (this.cache.size >= 400)
       this.cache.delete(this.cache.keys().next().value!);
     const observedAt = new Date();
-    const value = this.http
-      .request(url.toString(), {
-        headers,
-        ...(body && { method: 'POST', body }),
-        ...(['apis.data.go.kr', 'minwon24.police.go.kr'].includes(
-          url.hostname,
-        ) && {
-          signal: AbortSignal.timeout(9500),
-        }),
-        ...(url.hostname === 'www.hansung.ac.kr' && {
-          signal: AbortSignal.timeout(15000),
-        }),
-      })
-      .then((r) => r.text());
+    const read = () =>
+      this.http
+        .request(url.toString(), {
+          headers,
+          ...(body && { method: 'POST', body }),
+          ...(['apis.data.go.kr', 'minwon24.police.go.kr'].includes(
+            url.hostname,
+          ) && {
+            signal: AbortSignal.timeout(9500),
+          }),
+          ...(url.hostname === 'www.hansung.ac.kr' && {
+            signal: AbortSignal.timeout(15000),
+          }),
+        })
+        .then((r) => r.text());
+    // 학교 서버가 연속 요청을 끊는 경우가 있어 백그라운드 수집을 천천히 직렬화합니다.
+    const school = url.hostname === 'www.hansung.ac.kr';
+    const value = school
+      ? this.schoolReads
+          .catch(() => '')
+          .then(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 350));
+            return read();
+          })
+      : read();
+    if (school) this.schoolReads = value;
     this.cache.set(key, { until: Date.now() + 120000, observedAt, value });
     void value.catch(() => {
       if (this.cache.get(key)?.value === value) this.cache.delete(key);
@@ -394,7 +407,7 @@ export class InstitutionItemsService
             ? record
             : null;
         }),
-      4,
+      1,
     );
     const items = results.flatMap((r) =>
       r.status === 'fulfilled' && r.value ? [r.value] : [],
