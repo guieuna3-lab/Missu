@@ -53,6 +53,7 @@ export function HistoryScreen() {
           </Text>
           <TextLink label="정보 수정" onPress={() => setEditing(true)} />
           <TextLink label="계정 관리" onPress={() => router.push('/account')} />
+          <TextLink label="비슷한 습득물 알림" onPress={() => router.push('/notifications')} />
         </View>
         {activity.reportsError && (
           <Card title={activity.reportsError} onPress={activity.retryReports}>
