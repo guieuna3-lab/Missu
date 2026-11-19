@@ -83,6 +83,14 @@ export class SearchResultsService {
     private readonly institutions: InstitutionItemsService,
   ) {}
 
+  private ranked(query: Prisma.Sql) {
+    return this.db.$transaction(async (tx) => {
+      // 짧은 동적 검색에 LLVM 컴파일 비용이 발생하지 않도록 이 조회에만 적용합니다.
+      await tx.$executeRaw`SET LOCAL jit = off`;
+      return tx.$queryRaw<RankedKey[]>(query);
+    }, { timeout: 30000 });
+  }
+
   async search(query: SearchResultsDto) {
     const now = Date.now();
     const search = itemSearch(query.q, query.place);
@@ -135,7 +143,7 @@ export class SearchResultsService {
     const [memberKeys, portalKeys, school, memberTotal] = await Promise.all([
       // MATERIALIZED는 점수/정규화를 한 번만 계산하게 합니다. 다음 페이지 조건에서
       // 같은 식을 반복 실행하면 대량 자료의 정확도순 조회가 크게 느려집니다.
-      this.db.$queryRaw<RankedKey[]>(Prisma.sql`
+      this.ranked(Prisma.sql`
         WITH candidates AS MATERIALIZED (
           SELECT id::text AS id, to_char(found_at AT TIME ZONE 'Asia/Seoul', 'YYYY-MM-DD') AS day,
             ${normalize(Prisma.sql`name`)} AS normalized_name,
@@ -146,7 +154,13 @@ export class SearchResultsService {
         ), ranked AS MATERIALIZED (SELECT id, day, ${rank} AS score FROM candidates)
         SELECT * FROM ranked WHERE ${afterSql(after)}
         ORDER BY score DESC, day DESC, id COLLATE "C" ASC LIMIT 26`),
-      this.db.$queryRaw<RankedKey[]>(Prisma.sql`
+      this.ranked(query.sort === 'recent' ? Prisma.sql`
+        SELECT * FROM (
+          SELECT id, day, 0 AS score FROM verified_portal_items
+          WHERE stored AND day BETWEEN ${from} AND ${through} AND ${searchWhereSql(search, true)}
+        ) AS ranked WHERE ${afterSql(after)}
+        ORDER BY day DESC, id COLLATE "C" ASC LIMIT 26`
+        : Prisma.sql`
         WITH candidates AS MATERIALIZED (
           SELECT id, day, ${normalize(Prisma.sql`name`)} AS normalized_name,
             ${normalize(Prisma.sql`kind_name`)} AS normalized_features FROM verified_portal_items
