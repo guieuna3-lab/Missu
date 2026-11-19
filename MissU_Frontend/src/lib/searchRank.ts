@@ -4,24 +4,6 @@ import type { PublicItem, SearchFilters } from './items';
 export type SearchSort = 'recent' | 'distance' | 'relevance';
 type Item = PublicItem | InstitutionItem;
 
-const normalize = (text: string) => text.toLocaleLowerCase().replace(/\s+/g, '');
-
-/**
- * 검색어와 물품명이 얼마나 맞는지 점수(0~100)를 매깁니다.
- * 완전 일치 > 앞부분 일치 > 검색어 전체 포함 > 단어별 포함 비율 순입니다.
- */
-export function relevance(name: string, query: string) {
-  const target = normalize(name);
-  const whole = normalize(query);
-  if (!whole) return 0;
-  if (target === whole) return 100;
-  if (target.startsWith(whole)) return 85;
-  if (target.includes(whole)) return 70;
-  const words = query.toLocaleLowerCase().split(/\s+/).filter(Boolean);
-  const hits = words.filter((w) => target.includes(w)).length;
-  return words.length ? Math.round((hits / words.length) * 60) : 0;
-}
-
 /** 두 좌표 사이 거리(m). */
 export function metersBetween(a: { lat: number; lng: number }, b: { lat: number; lng: number }) {
   const rad = Math.PI / 180;
@@ -46,15 +28,11 @@ export function formatDistance(m: number) {
 }
 
 const timeOf = (item: Item) =>
-  Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : (item.createdAt ?? item.foundAt));
+  Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : item.foundAt);
 
-/** 불러온 결과를 정렬합니다. 같은 점수·거리는 최신순으로 둡니다. */
+/** 최신순·정확도순은 서버 순서를 보존합니다. 가까운 순만 좌표로 정렬합니다. */
 export function sortResults<T extends Item>(items: T[], sort: SearchSort, filters: SearchFilters) {
   const byTime = (a: T, b: T) => timeOf(b) - timeOf(a) || a.id.localeCompare(b.id);
-  if (sort === 'relevance')
-    return [...items].sort(
-      (a, b) => relevance(b.name, filters.query) - relevance(a.name, filters.query) || byTime(a, b),
-    );
   if (sort === 'distance')
     return [...items].sort((a, b) => {
       const da = distanceOf(a, filters.near);
