@@ -21,8 +21,16 @@ import { ProfileModal } from './ProfileModal';
 // Figma 01.05 with its loading (01.05-L), empty (01.05-E), logout confirmation (01.05-C)
 // and session-expired (01.04-S) states.
 export function HistoryScreen() {
-  const { profile, accessToken, sessionExpired, updateProfile, exitMemberPreview, startLogin } =
-    usePreview();
+  const {
+    profile,
+    accessToken,
+    sessionExpired,
+    updateProfile,
+    exitMemberPreview,
+    startLogin,
+    sessionNotice,
+    retrySession,
+  } = usePreview();
   const activity = useActivity();
   const [editing, setEditing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
@@ -55,6 +63,16 @@ export function HistoryScreen() {
           <TextLink label="계정 관리" onPress={() => router.push('/account')} />
           <TextLink label="비슷한 습득물 알림" onPress={() => router.push('/notifications')} />
         </View>
+        {!!sessionNotice && (
+          <Card title={sessionNotice} onPress={retrySession}>
+            다시 확인하기
+          </Card>
+        )}
+        {activity.requestsError && (
+          <Card title={activity.requestsError} onPress={activity.retryRequests}>
+            다시 불러오기
+          </Card>
+        )}
         {activity.reportsError && (
           <Card title={activity.reportsError} onPress={activity.retryReports}>
             다시 불러오기
@@ -76,7 +94,12 @@ export function HistoryScreen() {
         ) : (
           <>
             <Text accessibilityRole="header" style={typography.heading}>
-              {empty && !activity.foundError && !activity.foundLoading && !activity.reportsError
+              {empty &&
+              !activity.foundError &&
+              !activity.foundLoading &&
+              !activity.reportsError &&
+              !activity.requestsError &&
+              !activity.requestsLoading
                 ? '아직 활동 내역이 없어요'
                 : '내 활동'}
             </Text>
@@ -97,11 +120,14 @@ export function HistoryScreen() {
               icon="search"
               tint={colors.lightBlue}
               title="내 반환 요청"
-              count={sent.length}
+              count={activity.requestsError || activity.requestsLoading ? undefined : sent.length}
               description={
                 sent.length
                   ? `${plural(sent[0].itemName, sent.length)} · 진행 상태 보기`
-                  : '보낸 반환 요청이 없어요'
+                  : activity.requestsError ||
+                    (activity.requestsLoading
+                      ? '반환 요청을 불러오고 있어요'
+                      : '보낸 반환 요청이 없어요')
               }
               onPress={() => openList('requests')}
             />

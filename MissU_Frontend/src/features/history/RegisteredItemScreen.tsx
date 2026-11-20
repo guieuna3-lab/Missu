@@ -18,6 +18,19 @@ export function RegisteredItemScreen() {
   const item = activity.foundItems.find((i) => i.id === id);
   const back = () => goBack('/history');
 
+  if (!item && (activity.foundLoading || activity.foundError))
+    return (
+      <FlowScreen
+        title="내 등록 물품"
+        onBack={back}
+        heading={activity.foundError || '등록한 물품을 불러오고 있어요'}
+        actions={
+          activity.foundError && (
+            <ActionButton label="다시 불러오기" onPress={activity.retryFound} />
+          )
+        }
+      />
+    );
   if (!item)
     return (
       <FlowScreen
@@ -42,6 +55,12 @@ export function RegisteredItemScreen() {
   const edit = () => router.push({ pathname: '/my-items/[id]/edit', params: { id: item.id } });
 
   const summary = (() => {
+    if (!main && (activity.requestsLoading || activity.requestsError))
+      return {
+        title: '받은 주인 확인 요청',
+        body: activity.requestsError || '요청을 불러오고 있어요.',
+        action: undefined,
+      };
     if (!main)
       return {
         title: '받은 주인 확인 요청 · 0건',
@@ -104,6 +123,13 @@ export function RegisteredItemScreen() {
       <Card title={foundItemStatusLabel[status]}>
         {`${item.storage}\n습득일: ${formatDate(item.foundAt)} · 사진 ${item.photos}장`}
       </Card>
+      {activity.requestsError && (
+        <ActionButton
+          label="반환 요청 다시 불러오기"
+          variant="outline"
+          onPress={activity.retryRequests}
+        />
+      )}
       <Card title={summary.title} blue>
         {summary.body}
       </Card>

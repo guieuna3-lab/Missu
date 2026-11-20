@@ -48,9 +48,17 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
     ? (params.tab as HistoryTab)
     : 'lost';
   const listError =
-    tab === 'found' ? activity.foundError : tab === 'lost' ? activity.reportsError : undefined;
+    tab === 'found'
+      ? activity.foundError
+      : tab === 'lost'
+        ? activity.reportsError
+        : activity.requestsError;
   const loading =
-    tab === 'found' ? activity.foundLoading : tab === 'lost' && activity.status === 'loading';
+    tab === 'found'
+      ? activity.foundLoading
+      : tab === 'lost'
+        ? activity.status === 'loading'
+        : activity.requestsLoading;
 
   async function remove() {
     if (!selection || busy.current) return;
@@ -142,7 +150,13 @@ function MemberHistoryList({ memberName }: { memberName: string }) {
             <Text style={typography.body}>{listError}</Text>
             <TextLink
               label="다시 불러오기"
-              onPress={tab === 'found' ? activity.retryFound : activity.retryReports}
+              onPress={
+                tab === 'found'
+                  ? activity.retryFound
+                  : tab === 'lost'
+                    ? activity.retryReports
+                    : activity.retryRequests
+              }
             />
           </>
         ) : loading ? (
