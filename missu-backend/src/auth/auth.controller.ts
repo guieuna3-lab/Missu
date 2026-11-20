@@ -143,7 +143,15 @@ export class AuthController {
     @Res({ passthrough: true }) res: Response,
   ) {
     await this.db.session.updateMany({
-      where: { id: req.authSession!.id },
+      where: req.authSession!.rememberId
+        ? {
+            OR: [
+              { id: req.authSession!.id },
+              { id: req.authSession!.rememberId },
+              { rememberId: req.authSession!.rememberId },
+            ],
+          }
+        : { id: req.authSession!.id },
       data: { expiresAt: new Date() },
     });
     if (!req.get('Authorization'))
