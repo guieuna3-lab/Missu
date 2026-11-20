@@ -16,11 +16,36 @@ import { goBack, leaveFlowTo } from '@/lib/navigation';
 // completed → 08-B.04. The requester moves it from handed to completed.
 export function HolderRequestScreen() {
   const { id = '', requestId = '' } = useLocalSearchParams<{ id: string; requestId: string }>();
-  const { foundItems, requests } = useActivity();
+  const {
+    foundItems,
+    requests,
+    foundLoading,
+    foundError,
+    retryFound,
+    requestsLoading,
+    requestsError,
+    retryRequests,
+  } = useActivity();
   const item = foundItems.find((i) => i.id === id);
   const request = requests.find((r) => r.id === requestId && r.itemId === id);
   const backToItem = () => goBack({ pathname: '/my-items/[id]', params: { id } });
 
+  if ((!item && (foundLoading || foundError)) || (!request && (requestsLoading || requestsError)))
+    return (
+      <FlowScreen
+        title="받은 주인 확인 요청"
+        onBack={backToItem}
+        heading={(!item && foundError) || requestsError || '요청을 불러오고 있어요'}
+        actions={
+          (foundError || requestsError) && (
+            <ActionButton
+              label="다시 불러오기"
+              onPress={!item && foundError ? retryFound : retryRequests}
+            />
+          )
+        }
+      />
+    );
   if (!item || !request)
     return (
       <FlowScreen
