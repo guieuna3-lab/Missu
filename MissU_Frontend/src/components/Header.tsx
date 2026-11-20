@@ -23,7 +23,7 @@ export function Header({
   /** Text button at the right end of a titled header, such as 신고 in the return chat. */
   action?: { label: string; onPress: () => void; accessibilityLabel?: string; danger?: boolean };
 }) {
-  const { profile, startLogin } = usePreview();
+  const { profile, startLogin, restoringSession } = usePreview();
   const showAccount = !welcome && (title === undefined || accountOrigin !== undefined);
   return (
     <View style={[styles.header, welcome && { paddingHorizontal: 24 }]}>
@@ -86,7 +86,8 @@ export function Header({
           </Pressable>
         ) : (
           <ActionButton
-            label="로그인"
+            label={restoringSession ? '로그인 확인 중' : '로그인'}
+            disabled={restoringSession}
             onPress={() => startLogin(accountOrigin ?? 'home')}
             style={styles.login}
           />
