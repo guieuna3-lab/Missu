@@ -9,7 +9,7 @@ import { DatabaseService } from '../database/database.service';
 import { decrypt, digest, encrypt } from '../common/crypto';
 import { fail } from '../common/http';
 import { Prisma } from '../generated/prisma/client';
-import { FirebaseSender } from './firebase-sender';
+import { NotificationSender, webSubscription } from './web-push-sender';
 import { similarItem, type MatchItem, type MatchReport } from './match-rule';
 
 type Report = MatchReport & { id: string; enabledAt: Date };
@@ -19,7 +19,7 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
   private timer?: ReturnType<typeof setInterval>;
   private busy = false;
   private readonly logger = new Logger(NotificationsService.name);
-  readonly sender = new FirebaseSender();
+  readonly sender = new NotificationSender();
   constructor(private readonly db: DatabaseService) {}
   onModuleInit() {
     this.timer = setInterval(() => {
@@ -61,7 +61,13 @@ export class NotificationsService implements OnModuleInit, OnModuleDestroy {
     return { enabled };
   }
   async register(userId: string, token: string, binding: string) {
-    if (!this.sender.configured())
+    if (token.startsWith('webpush:') && !webSubscription(token))
+      fail(
+        400,
+        'INVALID_PUSH_SUBSCRIPTION',
+        '알림 연결 정보를 다시 확인해 주세요.',
+      );
+    if (!this.sender.configured(token))
       fail(
         503,
         'PUSH_UNAVAILABLE',
