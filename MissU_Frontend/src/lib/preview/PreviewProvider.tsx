@@ -142,14 +142,15 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('missu-open-notifications', open);
   }, [accessToken, profile]);
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !backgroundRoute || restoringSession || sessionNotice) return;
+    if (!backgroundRoute || restoringSession || sessionNotice) return;
     // 위치 이벤트에 의해 백그라운드에서 시작한 경우에는 로그인 화면으로 간주하지 않습니다.
-    if (AppState.currentState === 'active') reconcileRouteAccount(accessToken);
+    if (AppState.currentState === 'active')
+      reconcileRouteAccount(accessToken, profile?.email ?? null);
     const listener = AppState.addEventListener('change', (state) => {
-      if (state === 'active') reconcileRouteAccount(accessToken);
+      if (state === 'active') reconcileRouteAccount(accessToken, profile?.email ?? null);
     });
     return () => listener.remove();
-  }, [accessToken, restoringSession, sessionNotice]);
+  }, [accessToken, profile?.email, restoringSession, sessionNotice]);
   const nextSession = () => {
     sessionGeneration.current++;
     setRestoringSession(false);
