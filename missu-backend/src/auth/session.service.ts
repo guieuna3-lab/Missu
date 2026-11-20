@@ -48,7 +48,7 @@ export class SessionService {
     return session;
   }
   async issue(
-    transport: 'cookie' | 'bearer',
+    transport: 'cookie' | 'bearer' | 'remember',
     userId: string | null,
     client: Pick<DatabaseService, 'session'> = this.db,
   ) {
@@ -57,7 +57,13 @@ export class SessionService {
     const session = await client.session.create({
       data: {
         userId,
-        tokenDigest: digest(transport === 'bearer' ? 'mobile:' + raw : raw),
+        tokenDigest: digest(
+          transport === 'bearer'
+            ? 'mobile:' + raw
+            : transport === 'remember'
+              ? 'remember:' + raw
+              : raw,
+        ),
         csrfDigest: digest(csrfToken),
         expiresAt: new Date(Date.now() + (userId ? 7 * 86400000 : 30 * 60000)),
       },

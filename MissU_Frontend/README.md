@@ -1,6 +1,11 @@
 # MissU Frontend
 
 React Native + Expo + TypeScript로 개발하는 미슈 모바일 앱이다.
+운영 웹은 https://missu-web.onrender.com 이며 main 병합 후 자동 배포한다.
+2026-11-20 기준 회원·신고·등록·통합 검색·근처·반환·경로·알림을 실제 API에 연결했다.
+웹 로그인 복원은 같은 출처의 HttpOnly 쿠키, 네이티브는 SecureStore를 사용한다.
+Render 정적 사이트의 `/session-api/*` rewrite 설정은 [연결 계약](../missu-backend/docs/FRONTEND_CONNECTION.md)을 따른다.
+새 APK 제작은 보류 중이며, 휴대폰 푸시 실수신과 iOS 네이티브 배포는 완료로 표시하지 않는다.
 Figma 1번 영역의 환영, 홈, 내역, 로그인 안내, 등록 물품과 프로필 수정 화면,
 2번 영역의 로그인·회원가입·비밀번호 재설정, 3번 영역의 습득물 검색·상세, 10번 영역의 근처 화면을 제공한다.
 API 주소를 설정하면 모바일 토큰 로그인, 습득물 사진 등록, 검색과 상세 조회를 실제 백엔드에서 실행한다.
@@ -40,7 +45,7 @@ npm start
 - `src/app/index.tsx`: 기본 환영 화면. 개발용 guest/member 미리보기에서는 홈으로 이동한다.
 - `src/app/search/index.tsx`: 검색 전·조건·결과·결과 없음 화면.
 - `src/app/items/[id].tsx`: 물품 상세와 비회원·회원별 하단 버튼.
-- `src/app/nearby.tsx`: 근처 예시 지도·목록·장소 검색. [근처 구현 안내](../docs/NEARBY_IMPLEMENTATION.md).
+- `src/app/nearby.tsx`: 실제 지도·주변 물품·카카오 장소 검색. 개발 미리보기만 예시 자료를 사용한다.
 - 검색 예시·팀원 연결 지점·검증 기록: [검색 구현 안내](../docs/SEARCH_IMPLEMENTATION.md).
 - `@/`: `src/`를 가리키는 별칭.
 - 기능 추가 시 `src/features/<기능>/`에 화면을 두고, 두 곳 이상에서 쓰는 UI만 `src/components/`로 올린다. API 공통 처리는 `src/lib/`에 둔다.

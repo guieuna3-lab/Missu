@@ -535,7 +535,8 @@ describe('기관 습득물', () => {
   it('학교 저장 목록은 기관 네트워크를 기다리지 않고 건수와 더보기를 함께 준다', async () => {
     process.env.SIGNING_KEY = '2'.repeat(64);
     process.env.PII_KEY = '1'.repeat(64);
-    process.env.DATABASE_URL = 'postgresql://postgres@127.0.0.1:55439/sort_test';
+    process.env.DATABASE_URL =
+      'postgresql://postgres@127.0.0.1:55439/sort_test';
     const http = {
       request: jest.fn().mockRejectedValue(Error('network must not run')),
     };
@@ -953,7 +954,7 @@ describe('기관 습득물', () => {
       incomplete: [],
     });
     const filtered = { ...fresh, category: 'WALLET_BAG' as const };
-    api.nearbyTotal(filtered);
+    await api.nearbyTotal(filtered);
     await new Promise<void>((resolve) => setImmediate(resolve));
     expect(await api.nearbyTotal(filtered)).toMatchObject({
       status: 'complete',
@@ -1130,7 +1131,7 @@ describe('기관 습득물', () => {
       },
     } as ExternalHttpService);
     const query = Object.assign(new NearbyDto(), { lat: 37.5, lng: 127 });
-    api.nearbyTotal(query);
+    await api.nearbyTotal(query);
     const first = await api.nearby(query);
     const next = await api.nearby(
       Object.assign(new NearbyDto(), query, { cursor: first.nextCursor! }),

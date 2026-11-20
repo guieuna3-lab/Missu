@@ -9,7 +9,7 @@ import { typography } from '@/constants/theme';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
 export function LoginGateScreen({ kind }: { kind: 'history' | 'report' }) {
-  const { startLogin } = usePreview();
+  const { startLogin, restoringSession, sessionNotice, retrySession } = usePreview();
   const report = kind === 'report';
   return (
     <Screen>
@@ -19,7 +19,11 @@ export function LoginGateScreen({ kind }: { kind: 'history' | 'report' }) {
           <Icon name="lock" />
         </View>
         <Text accessibilityRole="header" style={[typography.heading, styles.center]}>
-          {report ? '신고·등록은 로그인 후 가능해요' : '로그인이 필요해요'}
+          {restoringSession
+            ? '저장된 로그인을 확인하고 있어요'
+            : report
+              ? '신고·등록은 로그인 후 가능해요'
+              : '로그인이 필요해요'}
         </Text>
         <Text style={[typography.body, styles.center]}>
           {report
@@ -27,6 +31,11 @@ export function LoginGateScreen({ kind }: { kind: 'history' | 'report' }) {
             : '내 신고와 반환 요청 내역은\n로그인 후 확인할 수 있어요.'}
         </Text>
         <View style={styles.card}>
+          {!!sessionNotice && (
+            <Card title={sessionNotice} onPress={retrySession}>
+              다시 확인하기
+            </Card>
+          )}
           <Card
             blue
             centered
@@ -40,7 +49,8 @@ export function LoginGateScreen({ kind }: { kind: 'history' | 'report' }) {
       </ScrollView>
       <ActionBar>
         <ActionButton
-          label="로그인하고 계속하기"
+          label={restoringSession ? '로그인 확인 중' : '로그인하고 계속하기'}
+          disabled={restoringSession}
           onPress={() => startLogin(report ? 'report' : 'mine')}
         />
       </ActionBar>

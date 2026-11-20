@@ -19,10 +19,19 @@ import { ReturnChatScreen } from './ReturnChatScreen';
 // rejected → 08-A.00. The screen re-renders as the holder moves the request along.
 export function RequestStatusScreen() {
   const { id = '' } = useLocalSearchParams<{ id: string }>();
-  const { requests } = useActivity();
+  const { requests, requestsLoading, requestsError, retryRequests } = useActivity();
   const request = requests.find((r) => r.id === id && r.viewerRole !== 'holder');
   const back = () => goBack('/history');
 
+  if (!request && (requestsLoading || requestsError))
+    return (
+      <FlowScreen
+        title="내 반환 요청"
+        onBack={back}
+        heading={requestsError || '반환 요청을 불러오고 있어요'}
+        actions={requestsError && <ActionButton label="다시 불러오기" onPress={retryRequests} />}
+      />
+    );
   if (!request)
     return (
       <FlowScreen

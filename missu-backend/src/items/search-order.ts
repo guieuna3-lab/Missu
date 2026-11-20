@@ -148,7 +148,19 @@ export function searchWhereSql(
       Prisma.sql`NOT (name ${likeOperator(word)} ${'%' + likeLiteral(word)})`,
     );
   if (search.place) {
-    if (portal)
+    if (portal) {
+      // 원문 조건은 그대로 두고 습득 장소·현재 보관처 양쪽에서 후보만 먼저 좁힙니다.
+      // 한국어 조각 함수는 DB 로캘이 C여도 같은 결과를 보장합니다.
+      const places = [
+        ...new Set([
+          search.place.replace(/[\s()]/gu, '').toLowerCase(),
+          search.place.toLowerCase(),
+        ]),
+      ];
+      if (places.every((place) => /^[가-힣a-z0-9 ]+$/u.test(place)))
+        terms.push(
+          Prisma.sql`missu_search_fragments(place_key, found_place) && ARRAY[${Prisma.join(places.map((place) => place.slice(0, 3)))}]::text[]`,
+        );
       terms.push(
         orSql([
           contains(
@@ -158,7 +170,7 @@ export function searchWhereSql(
           contains(Prisma.sql`found_place`, search.place),
         ]),
       );
-    else {
+    } else {
       const places = [
         ...new Set([
           search.place,
