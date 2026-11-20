@@ -6,6 +6,7 @@ import { Global, Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { AuthGuard } from './auth/auth.guard';
 import { AuthController } from './auth/auth.controller';
+import { PersistentSessionController } from './auth/persistent-session.controller';
 import { SessionService } from './auth/session.service';
 import { DatabaseService } from './database/database.service';
 import { IdempotencyService } from './common/idempotency.service';
@@ -44,6 +45,7 @@ import { NotificationsService } from './notifications/notifications.service';
 @Module({
   controllers: [
     AuthController,
+    PersistentSessionController,
     ItemsController,
     SearchResultsController,
     UploadsController,

@@ -37,6 +37,7 @@ export function setupApp(app: INestApplication) {
       'Authorization',
       'X-CSRF-Token',
       'Idempotency-Key',
+      'X-Missu-Session',
     ],
   });
   app.useGlobalPipes(
