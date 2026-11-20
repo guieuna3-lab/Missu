@@ -4,9 +4,18 @@ import {
   routeCommand,
 } from '@/features/nearby/backgroundRoute';
 import { logout, type AuthSession } from '@/features/auth/authApi';
+import { clearSavedSession, restoreSession, saveSession } from '@/features/auth/persistentSession';
 import { disconnectPush, nativePush, syncPush } from '@/features/notifications/push';
 import { router, type Href } from 'expo-router';
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
 import { AppState, Platform } from 'react-native';
 import { apiBase } from '../backend';
 import { previewProfile, type Profile } from './fixtures';
@@ -33,6 +42,9 @@ function getSearchReturnTo(origin: LoginOrigin | null): Href | undefined {
 export type ActivityPreset = 'sample' | 'empty';
 
 type PreviewState = {
+  restoringSession: boolean;
+  sessionNotice: string;
+  retrySession: () => void;
   profile: Profile | null;
   /** Changes whenever a member session starts or ends, so session-scoped data can reset. */
   sessionId: number;
@@ -63,6 +75,65 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
   const [loginOrigin, setLoginOrigin] = useState<LoginOrigin | null>(null);
   const [activityPreset, setActivityPreset] = useState<ActivityPreset>('sample');
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [restoringSession, setRestoringSession] = useState(!isPreview && !!apiBase);
+  const [sessionNotice, setSessionNotice] = useState('');
+  const [sessionId, setSessionId] = useState(0);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const sessionGeneration = useRef(0);
+  const restoring = useRef(false);
+  const lastRestore = useRef(0);
+  const saveFailed = useRef(false);
+  const mounted = useRef(true);
+  const currentProfile = useRef(profile);
+  useEffect(() => {
+    currentProfile.current = profile;
+  }, [profile]);
+  const restore = useCallback(async () => {
+    if (restoring.current || isPreview || !apiBase) return;
+    restoring.current = true;
+    const run = sessionGeneration.current;
+    setRestoringSession(true);
+    try {
+      const session = await restoreSession();
+      if (!mounted.current || run !== sessionGeneration.current) return;
+      if (session && currentProfile.current?.email !== session.profile.email)
+        setSessionId((n) => n + 1);
+      setAccessToken(session?.accessToken ?? null);
+      setProfile(session?.profile ?? null);
+      if (session) {
+        setActivityPreset('empty');
+        setSessionExpired(false);
+      }
+      setSessionNotice('');
+      lastRestore.current = Date.now();
+    } catch {
+      if (mounted.current && run === sessionGeneration.current)
+        setSessionNotice('저장된 로그인을 확인하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요.');
+    } finally {
+      restoring.current = false;
+      if (mounted.current && run === sessionGeneration.current) setRestoringSession(false);
+    }
+  }, []);
+  useEffect(() => {
+    mounted.current = true;
+    const initial = setTimeout(() => {
+      void restore();
+    }, 0);
+    const refresh = () => {
+      if (AppState.currentState === 'active' && Date.now() - lastRestore.current >= 15 * 60000)
+        void restore();
+    };
+    const timer = setInterval(refresh, 60000);
+    const listener = AppState.addEventListener('change', (status) => {
+      if (status === 'active') refresh();
+    });
+    return () => {
+      mounted.current = false;
+      clearTimeout(initial);
+      clearInterval(timer);
+      listener.remove();
+    };
+  }, [restore]);
   useEffect(() => {
     if (!nativePush) return;
     const open = () => router.push('/notifications');
@@ -71,30 +142,56 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('missu-open-notifications', open);
   }, [accessToken, profile]);
   useEffect(() => {
-    if (Platform.OS !== 'ios' || !backgroundRoute) return;
+    if (Platform.OS !== 'ios' || !backgroundRoute || restoringSession || sessionNotice) return;
     // 위치 이벤트에 의해 백그라운드에서 시작한 경우에는 로그인 화면으로 간주하지 않습니다.
     if (AppState.currentState === 'active') reconcileRouteAccount(accessToken);
     const listener = AppState.addEventListener('change', (state) => {
       if (state === 'active') reconcileRouteAccount(accessToken);
     });
     return () => listener.remove();
-  }, [accessToken]);
-  const [sessionId, setSessionId] = useState(0);
-  const [sessionExpired, setSessionExpired] = useState(false);
+  }, [accessToken, restoringSession, sessionNotice]);
   const nextSession = () => {
+    sessionGeneration.current++;
+    setRestoringSession(false);
+    lastRestore.current = Date.now();
     setSessionId((current) => current + 1);
     setSessionExpired(false);
   };
+  function remember(session: AuthSession) {
+    const run = sessionGeneration.current;
+    void saveSession(session).then(
+      () => {
+        if (mounted.current && run === sessionGeneration.current) {
+          saveFailed.current = false;
+          setSessionNotice('');
+        }
+      },
+      () => {
+        if (mounted.current && run === sessionGeneration.current) {
+          saveFailed.current = true;
+          setSessionNotice(
+            '로그인은 됐지만 로그인 유지 설정을 저장하지 못했어요. 다시 시도해 주세요.',
+          );
+        }
+      },
+    );
+  }
   return (
     <PreviewContext.Provider
       value={{
         profile,
+        restoringSession,
+        sessionNotice,
+        retrySession: () => {
+          if (saveFailed.current && profile && accessToken) remember({ profile, accessToken });
+          else void restore();
+        },
         sessionId,
         accessToken,
         sessionExpired,
         markSessionExpired: () => {
           setSessionExpired(true);
-          if (accessToken) void disconnectPush(accessToken).catch(() => undefined);
+          void restore();
         },
         activityPreset,
         updateProfile: (next) =>
@@ -107,6 +204,8 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           ),
         exitMemberPreview: () => {
           nextSession();
+          setSessionNotice('');
+          void clearSavedSession().catch(() => undefined);
           if (Platform.OS === 'ios' && backgroundRoute) reconcileRouteAccount(null);
           else if (backgroundRoute && accessToken)
             void routeCommand('stop', { token: accessToken }).catch(() => undefined);
@@ -131,6 +230,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           setActivityPreset('empty');
           setAccessToken('accessToken' in next ? next.accessToken : (token ?? null));
           setProfile('profile' in next ? next.profile : next);
+          if ('accessToken' in next) remember(next);
         },
         completeSignup: (next) => {
           // A new account has no activity yet (Figma 01.05-E).
@@ -138,6 +238,7 @@ export function PreviewProvider({ children }: { children: ReactNode }) {
           setActivityPreset('empty');
           setAccessToken('accessToken' in next ? next.accessToken : null);
           setProfile('profile' in next ? next.profile : next);
+          if ('accessToken' in next) remember(next);
           if (getSearchReturnTo(loginOrigin)) {
             router.dismissTo('/login');
           } else if (router.canDismiss()) {
