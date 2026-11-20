@@ -49,7 +49,7 @@ public final class MissuLauncher extends Activity {
         settings.setGeolocationEnabled(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
-        settings.setUserAgentString(settings.getUserAgentString() + " MissUAndroidRoute/2 MissUPush/1");
+        settings.setUserAgentString(settings.getUserAgentString() + " MissUAndroidRoute/3 MissUPush/1");
         web.setWebViewClient(new SiteClient());
         web.setWebChromeClient(new ChromeClient());
         if (Build.VERSION.SDK_INT >= 33) {
@@ -161,6 +161,11 @@ public final class MissuLauncher extends Activity {
             JSONObject args = new JSONObject(raw);
             request = args.getInt("request");
             if (args.getString("command").startsWith("push")) { handlePush(request,args); return; }
+            String account = args.optString("account", "");
+            if ("reconcile".equals(args.getString("command"))) {
+                RouteService.reconcile(account, args.isNull("token") ? "" : args.optString("token", ""));
+                reply(request, new JSONObject(), null); return;
+            }
             String token = args.getString("token");
             if (token.isEmpty() || token.length() > 4096) throw new IllegalStateException("다시 로그인해 주세요.");
             switch (args.getString("command")) {
@@ -184,7 +189,7 @@ public final class MissuLauncher extends Activity {
                         throw new IllegalStateException("이동 경로 화면에서 다시 기록을 시작해 주세요.");
                     preparedToken = null;
                     if (!locationEnabled()) throw new IllegalStateException("휴대폰 위치를 켠 뒤 다시 시작해 주세요.");
-                    RouteService.begin(this, token, args.getString("id"), args.getLong("start"), args.getLong("end"));
+                    RouteService.begin(this, account, token, args.getString("id"), args.getLong("start"), args.getLong("end"));
                     break;
                 case "status": break;
                 case "stop": RouteService.stopFor(token); break;

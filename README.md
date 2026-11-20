@@ -25,5 +25,5 @@
 - 프론트: 필수 흐름 화면을 실제 API에 연결했고, 웹 버전을 Render에 배포했다.
 - 배포 주소: 웹 https://missu-web.onrender.com · API https://missu-api-wkdu.onrender.com/api/v1
 - `main`에 병합하면 Render가 웹과 API를 자동으로 다시 배포한다.
-- 로그인 유지, 알림 목록 갱신, 통합 검색·기관 사진 표시를 연결했다. 새 APK 제작과 휴대전화 푸시 수신 확인은 보류 중이다.
+- 로그인 유지, 알림 목록 갱신, 통합 검색·기관 사진 표시를 연결했다. Android 1.2.0 APK에 푸시 수신을 포함했으며 실제 휴대전화 수신 확인은 남아 있다. iPhone iOS 16.4 이상은 홈 화면 웹 푸시를 지원한다. 네이티브 iOS 설치본의 배포·서명은 별도다.
 - 사용 방법과 남은 검증 범위는 [백엔드 README](missu-backend/README.md)를 본다.

@@ -78,7 +78,8 @@ function ReportAlertSettings({ id }: { id: string }) {
       />
       {!nativePush && (
         <FormMessage>
-          휴대폰 푸시는 알림 기능이 추가된 안드로이드 APK에서 사용할 수 있어요.
+          아이폰은 Safari에서 미슈를 홈 화면에 추가한 뒤 아이콘으로 열어 주세요. iOS 16.4 이상에서
+          알림을 켤 수 있어요. 안드로이드는 알림 기능이 추가된 APK를 사용해 주세요.
         </FormMessage>
       )}
       {!!message && <FormMessage>{message}</FormMessage>}

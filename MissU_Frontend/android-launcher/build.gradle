@@ -13,11 +13,14 @@ android {
         versionCode 4
         versionName '1.2.0'
     }
+    testOptions.unitTests.includeAndroidResources = true
 }
 
 dependencies {
     // 기존 Android 6(API 23) 설치 기기와 호환되는 FCM 버전을 고정합니다.
     implementation 'com.google.firebase:firebase-messaging:25.1.3'
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.15.1'
 }
 
 // 운영 웹을 직접 사용하므로 오래된 화면을 APK에 중복 포함하지 않습니다.

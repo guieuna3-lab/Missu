@@ -38,6 +38,11 @@ export class NotificationsController {
     private readonly notifications: NotificationsService,
     private readonly limits: RateLimitService,
   ) {}
+  @Get('web-push') webPush() {
+    return {
+      data: { publicKey: this.notifications.sender.publicKey() ?? null },
+    };
+  }
   @Get() async list(@Req() req: SessionRequest, @Query() q: ListDto) {
     return {
       data: await this.notifications.list(req.authSession!.userId!, q.cursor),
