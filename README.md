@@ -19,10 +19,11 @@
 - [협업 규칙](docs/CONTRIBUTING.md)
 - [이번 설정의 적용 방법과 효과](docs/SETUP_GUIDE.md)
 
-## 현재 상태 (2026-11-16)
+## 현재 상태 (2026-11-20)
 
 - 백엔드: 회원·인증, 습득물·분실 신고, 검색·근처 지도, 주인 확인 요청·승인, 대화·전달·수령, 내역·신고, 하루 이동 경로 API를 구현해 Render에 배포했다.
 - 프론트: 필수 흐름 화면을 실제 API에 연결했고, 웹 버전을 Render에 배포했다.
 - 배포 주소: 웹 https://missu-web.onrender.com · API https://missu-api-wkdu.onrender.com/api/v1
 - `main`에 병합하면 Render가 웹과 API를 자동으로 다시 배포한다.
-- 남은 작업과 보류 범위는 [백엔드 README](missu-backend/README.md)의 "남은 연결 작업과 보류 범위"를 본다.
+- 로그인 유지, 알림 목록 갱신, 통합 검색·기관 사진 표시를 연결했다. 새 APK 제작과 휴대전화 푸시 수신 확인은 보류 중이다.
+- 사용 방법과 남은 검증 범위는 [백엔드 README](missu-backend/README.md)를 본다.
