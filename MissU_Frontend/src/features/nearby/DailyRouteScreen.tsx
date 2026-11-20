@@ -1,7 +1,7 @@
 import { ConfirmDialog } from '@/components/Dialog';
-import { formatDateTime } from '@/lib/dateTime';
+import { formatDateTime, formatTime } from '@/lib/dateTime';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppState, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AppState, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 import * as Crypto from 'expo-crypto';
 import type { LocationObject, LocationSubscription } from 'expo-location';
@@ -15,6 +15,7 @@ import { campus, mapApi, type MapItem, type Coordinates, type RoutePoint } from 
 import { readDeviceLocation, watchDeviceLocation } from './deviceLocation';
 import { usableLocation } from './locationFix';
 import { backgroundRoute, routeCommand, stopHint } from './backgroundRoute';
+import { routeHistory } from './routeHistory';
 
 function seoulDay(offset: number) {
   return new Date(Date.now() + 9 * 3600000 - offset * 86400000).toISOString().slice(0, 10);
@@ -29,13 +30,14 @@ type Sample = {
 };
 const noPoints: RoutePoint[] = [];
 export function DailyRouteScreen() {
-  const { accessToken, startLogin } = usePreview();
+  const { accessToken, sessionId, startLogin } = usePreview();
   const [day, setDay] = useState(() => seoulDay(0));
   const [result, setResult] = useState<{
     day: string;
-    token: string;
+    sessionId: number;
     refresh: number;
     points: RoutePoint[];
+    error?: string;
   }>();
   const [message, setMessage] = useState('');
   const [activeId, setActiveId] = useState<string>();
@@ -45,14 +47,21 @@ export function DailyRouteScreen() {
   const [refresh, setRefresh] = useState(0);
   const loading =
     !!accessToken &&
-    (result?.token !== accessToken || result.day !== day || result.refresh !== refresh);
-  const points = accessToken === result?.token && result?.day === day ? result.points : noPoints;
+    (result?.sessionId !== sessionId || result.day !== day || result.refresh !== refresh);
+  const points =
+    accessToken && result?.sessionId === sessionId && result.day === day ? result.points : noPoints;
+  const loadError =
+    result?.sessionId === sessionId && result.day === day ? result.error : undefined;
   const today = day === seoulDay(0);
-  const liveDay = today && (!!activeId || busy);
-  const path = useMemo(
-    () => (liveDay ? points.filter((p) => p.recordingId === activeId) : points),
-    [activeId, liveDay, points],
-  );
+  const [selection, setSelection] = useState<{ day: string; sessionId: number; id: string }>();
+  const selectedRecordingId =
+    selection?.day === day && selection.sessionId === sessionId ? selection.id : undefined;
+  const history = useMemo(() => routeHistory(points), [points]);
+  // 새 기록을 시작해도 기존 경로를 숨기지 않습니다. 사용자가 고른 기록만 별도로 봅니다.
+  const path = selectedRecordingId
+    ? (history.find((entry) => entry.id === selectedRecordingId)?.points ?? noPoints)
+    : points;
+  const waitingForFirstPoint = today && activeId && !history.some((entry) => entry.id === activeId);
   const [selectedPoint, setSelectedPoint] = useState<string>();
   const selectedIndex = path.findIndex((p) => p.id === selectedPoint);
   const point = path[selectedIndex];
@@ -85,12 +94,22 @@ export function DailyRouteScreen() {
       });
     return () => abort.abort();
   }, [nearbyPointId, accessToken]);
-  const startPoint = path[0] ?? (liveDay && origin?.id === activeId ? origin?.point : undefined);
+  const startPoint =
+    path[0] ??
+    (today &&
+    activeId &&
+    origin?.id === activeId &&
+    (!selectedRecordingId || selectedRecordingId === activeId)
+      ? origin.point
+      : undefined);
   const current = today && device?.token === accessToken ? device?.point : undefined;
   const deviceError = today && device?.token === accessToken ? device?.error : undefined;
   const useCampus = !!deviceError && !current;
   // 오늘은 휴대폰 위치를 중심으로 열고, 지난 날짜는 그날 저장된 경로를 보여 줍니다.
-  const deviceCenter = today ? (current ?? (useCampus ? campus : undefined)) : startPoint;
+  const deviceCenter =
+    selectedRecordingId || !today
+      ? startPoint
+      : (current ?? startPoint ?? (useCampus ? campus : undefined));
   const center = point ?? deviceCenter;
   const [confirmed, setConfirmed] = useState(false);
   const watch = useRef<LocationSubscription | null>(null);
@@ -215,17 +234,24 @@ export function DailyRouteScreen() {
           if (!abort.signal.aborted) {
             // 시연용으로 생성된 좌표는 개인 이동 경로의 출발점이나 경로선에 포함하지 않습니다.
             const points = data.points.filter((p) => p.source !== 'DEMO');
-            setResult({ day, token: accessToken, refresh, points });
+            setResult({ day, sessionId, refresh, points });
           }
         })
         .catch(() => {
           if (!abort.signal.aborted) {
-            setResult({ day, token: accessToken, refresh, points: [] });
-            setMessage('경로를 불러오지 못했어요. 다시 조회해 주세요.');
+            // 일시적인 조회 실패가 저장된 기록의 삭제처럼 보이지 않게 마지막 결과를 유지합니다.
+            setResult((previous) => ({
+              day,
+              sessionId,
+              refresh,
+              points:
+                previous?.day === day && previous.sessionId === sessionId ? previous.points : [],
+              error: '경로를 갱신하지 못했어요. 마지막으로 확인한 기록을 표시해요.',
+            }));
           }
         });
     return () => abort.abort();
-  }, [accessToken, day, refresh]);
+  }, [accessToken, sessionId, day, refresh]);
   async function removeRoute() {
     if (!deleteScope || !accessToken || lock.current) return;
     const scope = deleteScope;
@@ -241,6 +267,7 @@ export function DailyRouteScreen() {
       setResult(undefined);
       setNearby(undefined);
       setSelectedPoint(undefined);
+      setSelection(undefined);
       setMessage('이동 경로를 삭제했어요.');
       setRefresh((n) => n + 1);
     } catch (e) {
@@ -256,6 +283,9 @@ export function DailyRouteScreen() {
     lock.current = true;
     setBusy(true);
     setDay(seoulDay(0));
+    setSelection(undefined);
+    setSelectedPoint(undefined);
+    setNearby(undefined);
     setOrigin(undefined);
     setMessage('기기의 현재 위치에서 출발 지점을 확인하고 있어요.');
     const version = ++epoch.current;
@@ -294,6 +324,7 @@ export function DailyRouteScreen() {
           throw error;
         }
         setActiveId(id);
+        setRefresh((n) => n + 1);
         setConfirmed(false);
         setMessage('휴대폰이 위치를 기록하고 있어요. ' + stopHint);
         return;
@@ -429,12 +460,16 @@ export function DailyRouteScreen() {
                 position={current}
                 startPoint={startPoint}
                 path={path}
-                fitPath={!today && !point}
+                fitPath={(!today || !!selectedRecordingId) && !point}
               />
             ) : (
               <View style={styles.panel}>
                 <Text accessibilityLiveRegion="polite">
-                  {today ? '현재 위치를 확인하고 있어요.' : '이 날짜에 표시할 경로가 없어요.'}
+                  {selectedRecordingId
+                    ? '선택한 기록에 표시할 위치가 없어요.'
+                    : today
+                      ? '현재 위치를 확인하고 있어요.'
+                      : '이 날짜에 표시할 경로가 없어요.'}
                 </Text>
               </View>
             )}
@@ -449,7 +484,10 @@ export function DailyRouteScreen() {
               </Text>
             )}
             <Text style={typography.label}>
-              {day} · {loading ? '조회 중' : path.length + '개 위치'}
+              {day} ·{' '}
+              {loading && !points.length
+                ? '조회 중'
+                : history.length + '개 기록 · ' + points.length + '개 위치'}
             </Text>
             <View style={styles.days}>
               {['오늘', '어제', '그제'].map((label, i) => (
@@ -460,6 +498,7 @@ export function DailyRouteScreen() {
                   onPress={() => {
                     setSelectedPoint(undefined);
                     setNearby(undefined);
+                    setSelection(undefined);
                     setDay(seoulDay(i));
                     setRefresh((n) => n + 1);
                   }}
@@ -469,6 +508,63 @@ export function DailyRouteScreen() {
                 </Text>
               ))}
             </View>
+            {(history.length > 0 || waitingForFirstPoint) && (
+              <View style={{ gap: 8 }}>
+                <Text style={typography.label}>기록 목록 · 눌러서 경로 보기</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: !selectedRecordingId }}
+                  style={[styles.recording, !selectedRecordingId && styles.selectedRecording]}
+                  onPress={() => {
+                    setSelection(undefined);
+                    setSelectedPoint(undefined);
+                    setNearby(undefined);
+                  }}
+                >
+                  <Text>전체 경로 · {points.length}개 위치</Text>
+                </Pressable>
+                {history.map((entry, index) => (
+                  <Pressable
+                    key={entry.id}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selectedRecordingId === entry.id }}
+                    style={[
+                      styles.recording,
+                      selectedRecordingId === entry.id && styles.selectedRecording,
+                    ]}
+                    onPress={() => {
+                      setSelection({ day, sessionId, id: entry.id });
+                      setSelectedPoint(undefined);
+                      setNearby(undefined);
+                    }}
+                  >
+                    <Text>
+                      기록 {index + 1} · {formatTime(entry.points[0].recordedAt)}
+                      {entry.points.length > 1 &&
+                        ' ~ ' + formatTime(entry.points[entry.points.length - 1].recordedAt)}
+                      {' · ' + entry.points.length + '개 위치'}
+                      {today && entry.id === activeId && ' · 기록 중'}
+                    </Text>
+                  </Pressable>
+                ))}
+                {waitingForFirstPoint && (
+                  <Text>새 기록의 첫 위치를 기다리고 있어요. 이전 경로는 그대로 보관돼요.</Text>
+                )}
+                {selectedRecordingId && !path.length && !loading && !loadError && (
+                  <Text>선택한 기록이 만료됐거나 삭제됐어요. 다른 기록을 선택해 주세요.</Text>
+                )}
+              </View>
+            )}
+            {loadError && (
+              <>
+                <Text accessibilityRole="alert">{loadError}</Text>
+                <ActionButton
+                  variant="outline"
+                  label="경로 다시 조회"
+                  onPress={() => setRefresh((n) => n + 1)}
+                />
+              </>
+            )}
             {path.length > 0 && (
               <View style={styles.panel}>
                 <ActionButton
@@ -519,7 +615,9 @@ export function DailyRouteScreen() {
               </View>
             )}
             {!!message && <Text accessibilityLiveRegion="polite">{message}</Text>}
-            {!loading && !points.length && <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>}
+            {!loading && !loadError && !points.length && (
+              <Text>이 날짜에 보관 중인 이동 경로가 없어요.</Text>
+            )}
             <Text>
               {backgroundRoute
                 ? '기록을 시작하면 화면을 잠그거나 다른 앱을 사용해도 위치를 내 계정에 저장해요. ' +
@@ -580,4 +678,13 @@ const styles = StyleSheet.create({
   days: { flexDirection: 'row', gap: 12 },
   day: { padding: 8 },
   selected: { color: '#2167da', fontWeight: '700' },
+  recording: {
+    padding: 12,
+    minHeight: 44,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d8dde5',
+    backgroundColor: 'white',
+  },
+  selectedRecording: { borderColor: '#2167da', backgroundColor: '#edf4ff' },
 });
