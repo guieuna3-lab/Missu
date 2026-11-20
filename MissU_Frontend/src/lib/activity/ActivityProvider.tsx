@@ -49,6 +49,9 @@ import type {
 
 // 로그인한 회원의 반환 내역은 서버에서 읽고, 개발용 예시 세션은 기존 데이터를 사용합니다.
 type ActivityValue = ActivityState & {
+  requestsError?: string;
+  requestsLoading: boolean;
+  retryRequests: () => void;
   foundError?: string;
   foundLoading: boolean;
   retryFound: () => void;
@@ -99,6 +102,11 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     client: typeof reportsClient;
     error?: string;
   }>();
+  const [requestsLoad, setRequestsLoad] = useState<{
+    client: typeof claimClient;
+    error?: string;
+  }>();
+  const [reloadRequests, setReloadRequests] = useState(0);
   const [reloadReports, setReloadReports] = useState(0);
   const [foundLoad, setFoundLoad] = useState<{ session: number; error?: string }>();
   const [reloadFound, setReloadFound] = useState(0);
@@ -282,8 +290,14 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
         const next = { ...current, requests };
         stateRef.current = next;
         setLoaded({ session: sessionId, state: next });
+        setRequestsLoad({ client: claimClient });
       } catch {
-        // 일시적인 네트워크 오류가 이미 읽은 대화나 내역을 지우지 않도록 합니다.
+        // 기존 내역은 보존하되 첫 조회 실패를 '요청 없음'으로 표시하지 않습니다.
+        if (active && activeClient.current === claimClient)
+          setRequestsLoad({
+            client: claimClient,
+            error: '반환 요청을 불러오지 못했어요. 다시 시도해 주세요.',
+          });
       } finally {
         if (active && watching) timer = setTimeout(refresh, 4000);
       }
@@ -293,7 +307,7 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       active = false;
       clearTimeout(timer);
     };
-  }, [claimClient, sessionId, claimId, watching]);
+  }, [claimClient, sessionId, claimId, watching, reloadRequests]);
 
   const changeClaim = useCallback(
     async (path: string, body: object, id?: string) => {
@@ -577,6 +591,9 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       ...state,
       status:
         reportsClient && reportsLoad?.client !== reportsClient ? ('loading' as const) : status,
+      requestsError: requestsLoad?.client === claimClient ? requestsLoad?.error : undefined,
+      requestsLoading: claimClient ? requestsLoad?.client !== claimClient : status === 'loading',
+      retryRequests: () => setReloadRequests((n) => n + 1),
       foundLoading: accessToken ? foundLoad?.session !== sessionId : status === 'loading',
       foundError: foundLoad?.session === sessionId ? foundLoad.error : undefined,
       retryFound: () => {
@@ -587,7 +604,18 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
       retryReports: () => setReloadReports((n) => n + 1),
       ...actions,
     }),
-    [state, status, actions, reportsClient, reportsLoad, accessToken, foundLoad, sessionId],
+    [
+      state,
+      status,
+      actions,
+      reportsClient,
+      reportsLoad,
+      accessToken,
+      foundLoad,
+      sessionId,
+      claimClient,
+      requestsLoad,
+    ],
   );
   return <ActivityContext.Provider value={value}>{children}</ActivityContext.Provider>;
 }
