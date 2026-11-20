@@ -18,7 +18,8 @@ export class MaintenanceService {
       cutoff = new Date(+now - 86400000);
     const sessions = await this.db.session.findMany({
       where: {
-        OR: [{ expiresAt: { lt: cutoff } }, { lastSeenAt: { lt: cutoff } }],
+        // 로그인 복원 자격은 최대 7일 유효합니다. 미접속 하루만으로 지우지 않습니다.
+        expiresAt: { lt: cutoff },
       },
       select: { id: true },
     });
