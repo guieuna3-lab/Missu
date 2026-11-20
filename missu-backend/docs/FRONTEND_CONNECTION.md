@@ -2,7 +2,33 @@
 
 백엔드 API 상세 명세: 실행 중인 백엔드의 <http://localhost:3000/docs>.
 
-## 인증과 요청
+## 현재 팀 앱의 인증과 요청 (2026-11-20)
+
+현재 팀 웹·앱은 `POST /api/v1/auth/mobile/login`에 `{email, password}`를 보내고
+`{data: {user, accessToken, expiresAt}}`를 받습니다. 업무 API는
+`Authorization: Bearer <accessToken>`, `credentials: 'omit'`으로 호출합니다.
+쿠키와 Bearer를 같은 업무 요청에 섞지 않습니다. 회원 정보는 `GET /api/v1/me`입니다.
+
+로그인 유지는 아래 별도 복원 자격을 사용합니다. 비밀번호는 저장하지 않습니다.
+
+| 대상                                  | 보관·복원                                                                                                                                                          |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 배포 웹·홈 화면 웹·웹 기반 Android 앱 | 같은 출처의 `POST /session-api/save`(로그인 Bearer), `restore`, `forget`. 모두 `X-Missu-Session: 1`과 `credentials: same-origin`. HttpOnly 쿠키는 JS에서 읽지 않음 |
+| 네이티브 Expo 앱                      | `POST /auth/mobile/remember`(로그인 Bearer)로 받은 `data.token`을 SecureStore에 저장. `mobile/restore`, `mobile/forget`에는 `{token}` 전송                         |
+
+웹의 `/session-api/*`는 API의 `/api/v1/auth/browser/*`로 rewrite합니다.
+Render 대시보드에서 직접 만든 정적 사이트라면 YAML만 커밋하지 말고 같은 규칙을 SPA의 `/* → /index.html` **앞에** 추가해야 합니다.
+복원은 `data.user`, `data.accessToken`, `data.expiresAt`를 돌려줍니다.
+복원 자격은 최대 7일이며 갱신해도 절대 만료가 늘어나지 않습니다. 앱 토큰의 30분 미사용 제한은 유지합니다.
+로그아웃·비밀번호 변경/재설정·탈퇴 후에는 복원이 거절됩니다.
+Origin·전용 헤더 검사를 우회하거나 복원 토큰을 웹 localStorage에 저장하지 마세요.
+
+물품 등록·반환 결정 등 지정된 변경은 UUID `Idempotency-Key`를 사용하고,
+메시지는 `clientMessageId`로 재시도 중복을 방지합니다.
+
+## 기존 쿠키 API를 사용하는 별도 클라이언트
+
+아래 계약은 기존 쿠키 클라이언트 호환용입니다. 현재 팀 앱의 Bearer 호출과 혼합하지 않습니다.
 
 1. 먼저 `GET /api/v1/auth/csrf`를 호출해 `data.csrfToken`을 보관합니다.
 2. 로그인·가입 등 변경 요청에 `X-CSRF-Token`을 넣습니다. 브라우저 `fetch`에는 `credentials: 'include'`를 지정합니다.
