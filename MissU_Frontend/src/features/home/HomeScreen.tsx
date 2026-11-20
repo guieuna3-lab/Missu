@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from 'expo-router';
 import { useState, useCallback, useRef } from 'react';
-import { recentResults } from '@/lib/searchResults';
+import { cachedRecentResults, recentResults } from '@/lib/searchResults';
 import { openInstitution } from '@/lib/institutionItems';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActionButton } from '@/components/ActionButton';
@@ -18,23 +18,31 @@ const pageSize = 10;
 const recentTime = (item: HomeItem) =>
   Date.parse('source' in item ? item.date + 'T00:00:00+09:00' : (item.createdAt ?? item.foundAt));
 export function HomeScreen() {
-  const [recent, setRecent] = useState<HomeItem[]>([]);
+  const [initialPage] = useState(cachedRecentResults);
+  const [retry, setRetry] = useState(0);
+  const [refreshing, setRefreshing] = useState(true);
+  const [recent, setRecent] = useState<HomeItem[]>(initialPage?.items ?? []);
   const [visibleCount, setVisibleCount] = useState(pageSize);
-  const [cursor, setCursor] = useState<string | null>();
+  const [cursor, setCursor] = useState<string | null | undefined>(initialPage?.nextCursor);
   const [moreStatus, setMoreStatus] = useState<'idle' | 'loading' | 'error'>('idle');
   const generation = useRef(0);
   const fetchingMore = useRef(false);
-  const [notice, setNotice] = useState('');
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [notice, setNotice] = useState(initialPage?.notices?.join(' ') ?? '');
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>(
+    initialPage ? 'ready' : 'loading',
+  );
   useFocusEffect(
     useCallback(() => {
       const current = ++generation.current;
+      setRefreshing(true);
       fetchingMore.current = false;
       setVisibleCount(pageSize);
-      setCursor(undefined);
+      const saved = retry ? undefined : cachedRecentResults();
+      setRecent(saved?.items ?? []);
+      setCursor(saved?.nextCursor);
       setMoreStatus('idle');
-      setState('loading');
-      setNotice('');
+      setState(saved ? 'ready' : 'loading');
+      setNotice(saved?.notices?.join(' ') ?? '');
       // 저장된 세 출처를 서버에서 함께 정렬한 결과만 한 번에 표시합니다.
       // 학교·공공포털의 새 자료 수집은 서버 뒤에서 이어집니다.
       void recentResults()
@@ -46,16 +54,21 @@ export function HomeScreen() {
           setState('ready');
         })
         .catch(() => {
-          if (current === generation.current) setState('error');
+          if (current !== generation.current) return;
+          if (saved) setNotice('새 목록을 불러오지 못해 마지막 확인 목록을 표시하고 있어요.');
+          else setState('error');
+        })
+        .finally(() => {
+          if (current === generation.current) setRefreshing(false);
         });
       return () => {
         generation.current++;
       };
-    }, []),
+    }, [retry]),
   );
 
   async function showMore() {
-    if (fetchingMore.current || cursor === undefined) return;
+    if (refreshing || fetchingMore.current || cursor === undefined) return;
     if (visibleCount + pageSize <= recent.length || !cursor) {
       setVisibleCount((count) => Math.min(count + pageSize, recent.length));
       return;
@@ -115,7 +128,14 @@ export function HomeScreen() {
           {/* Figma 01.03-E: no recent items yet. */}
           {state === 'loading' && <Text style={styles.secondary}>최근 습득물을 불러오는 중…</Text>}
           {state === 'error' && (
-            <Text style={styles.secondary}>최근 습득물을 불러오지 못했어요.</Text>
+            <View style={styles.items}>
+              <Text style={styles.secondary}>최근 습득물을 불러오지 못했어요.</Text>
+              <ActionButton
+                label="다시 시도"
+                variant="outline"
+                onPress={() => setRetry((value) => value + 1)}
+              />
+            </View>
           )}
           {state === 'ready' && !recent.length && (
             <Text style={styles.secondary}>현재 확인된 최근 습득물이 없어요.</Text>
@@ -150,6 +170,7 @@ export function HomeScreen() {
                       : '더보기'
                 }
                 variant="outline"
+                disabled={refreshing}
                 onPress={moreStatus === 'loading' ? undefined : () => void showMore()}
               />
             )}
