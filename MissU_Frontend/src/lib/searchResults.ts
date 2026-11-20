@@ -33,8 +33,26 @@ async function page(path: string) {
   const { data } = await api<{ data: SearchPage }>(path);
   return { ...data, items: data.items.map((item) => ('source' in item ? item : fromServer(item))) };
 }
-export function recentResults(cursor?: string) {
-  return page('/search-items/recent' + (cursor ? '?cursor=' + encodeURIComponent(cursor) : ''));
+type RecentPage = Awaited<ReturnType<typeof page>>;
+let recentPage: { value: RecentPage; until: number } | undefined;
+let recentRequest: Promise<RecentPage> | undefined;
+/** 잠깐 다른 탭에 다녀와도 마지막 통합 목록을 바로 표시합니다. 기기에는 저장하지 않습니다. */
+export function cachedRecentResults() {
+  return recentPage && recentPage.until > Date.now() ? recentPage.value : undefined;
+}
+export function recentResults(cursor?: string): Promise<RecentPage> {
+  if (cursor) return page('/search-items/recent?cursor=' + encodeURIComponent(cursor));
+  // 화면 전환 도중 겹친 요청은 공유하며, 실패한 응답이나 다음 페이지는 보관하지 않습니다.
+  if (recentRequest) return recentRequest;
+  recentRequest = page('/search-items/recent')
+    .then((result) => {
+      recentPage = { value: result, until: Date.now() + 60000 };
+      return result;
+    })
+    .finally(() => {
+      recentRequest = undefined;
+    });
+  return recentRequest;
 }
 
 /** 회원·학교·포털의 전체 검색 대상을 서버에서 정렬한 25건을 받습니다. */
