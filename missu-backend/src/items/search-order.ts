@@ -150,16 +150,27 @@ export function searchWhereSql(
   if (search.place) {
     if (portal) {
       // 원문 조건은 그대로 두고 습득 장소·현재 보관처 양쪽에서 후보만 먼저 좁힙니다.
-      // 한국어 조각 함수는 DB 로캘이 C여도 같은 결과를 보장합니다.
+      // UTF-8을 ASCII로 표현해 C 로캘에서도 빠른 기본 trigram 색인을 사용합니다.
       const places = [
         ...new Set([
           search.place.replace(/[\s()]/gu, '').toLowerCase(),
           search.place.toLowerCase(),
         ]),
       ];
-      if (places.every((place) => /^[가-힣a-z0-9 ]+$/u.test(place)))
+      if (
+        places.every(
+          (place) =>
+            /^[가-힣a-z0-9 ]+$/u.test(place) &&
+            Buffer.byteLength(place, 'utf8') >= 2,
+        )
+      )
         terms.push(
-          Prisma.sql`missu_search_fragments(place_key, found_place) && ARRAY[${Prisma.join(places.map((place) => place.slice(0, 3)))}]::text[]`,
+          orSql(
+            places.map(
+              (place) =>
+                Prisma.sql`missu_place_hex(place_key, found_place) LIKE ${'%' + Buffer.from(place, 'utf8').toString('hex') + '%'}`,
+            ),
+          ),
         );
       terms.push(
         orSql([

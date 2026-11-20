@@ -6,6 +6,7 @@ import { NearbyDto } from './nearby.dto';
 import { koreaDay, type InstitutionItem } from './institution-records';
 import { InstitutionItemsService } from './institution-items.service';
 import { ExternalHttpService } from '../integrations/external-http.service';
+import { searchWhereSql } from './search-order';
 
 const url = process.env.SEARCH_ORDER_TEST_DATABASE_URL;
 (url ? describe : describe.skip)('첫 검색 색인과 저장된 주변 목록', () => {
@@ -80,6 +81,24 @@ const url = process.env.SEARCH_ORDER_TEST_DATABASE_URL;
         today,
       ),
     ).toEqual([]);
+  });
+  it('한글·영문 부분 장소와 이관된 물품을 원래 습득 장소에서 찾는다', async () => {
+    for (const [place, expected] of [
+      ['강남역', ['moved']],
+      ['왕십리', ['moved']],
+      ['상상관', ['school']],
+      ['AbC', ['english']],
+      ['A', ['english']],
+      ['없는역', []],
+    ] as const) {
+      const rows = await db.$queryRaw<{ id: string }[]>`SELECT id FROM (VALUES
+        ('moved', '왕십리유실물센터', '강남역 2호선'),
+        ('school', '한성대학교', '한성대 상상관'),
+        ('english', 'abc센터', '다른 보관처')
+      ) AS places(id,place_key,found_place)
+      WHERE ${searchWhereSql(itemSearch('', place), true)} ORDER BY id`;
+      expect(rows.map((row) => row.id)).toEqual(expected);
+    }
   });
   it('학교 40건과 기관 63건을 같은 반경에서 세고 더보기로 모두 읽는다', async () => {
     const school: InstitutionItem[] = Array.from({ length: 40 }, (_, i) => ({
