@@ -15,6 +15,7 @@ const day = 24 * 60 * 60 * 1000;
 type Session = {
   id: string;
   token: string;
+  owner: string;
   start: number;
   end: number;
   stopped: boolean;
@@ -51,6 +52,7 @@ function locked<T>(fn: () => Promise<T>): Promise<T> {
   return result;
 }
 let account: string | null | undefined;
+let owner: string | null | undefined;
 let prepared: { token: string; until: number } | undefined;
 let retryAt = 0;
 let upload: Promise<void> | undefined;
@@ -205,17 +207,22 @@ if (backgroundRoute && !Tasks.isTaskDefined(task)) {
   });
 }
 
-export function reconcileRouteAccount(token: string | null) {
+export function reconcileRouteAccount(token: string | null, identity: string | null = null) {
   if (!backgroundRoute) return;
   account = token;
+  owner = identity;
   if (prepared?.token !== token) prepared = undefined;
   // 새 로그인 세션이 이전 계정의 저장 대기 중인 위치나 토큰을 재사용하지 않습니다.
   void locked(async () => {
     const s = await read();
-    if (s && s.token !== account) {
+    if (s && (!account || !owner || s.owner !== owner)) {
       await stopLocal(s);
       await erase(s);
       void requestStop(s).catch(() => undefined);
+    } else if (s && account && s.token !== account) {
+      // 15분마다 로그인 토큰이 갱신돼도 같은 계정의 기록은 이어집니다.
+      s.token = account;
+      await write(s);
     }
   }).catch(() => undefined);
 }
@@ -224,7 +231,7 @@ export async function routeCommand(command: string, args: Args): Promise<State> 
   const { token } = args;
   if (!backgroundRoute || !token) throw new Error('아이폰용 미슈에 로그인해 주세요.');
   if (command === 'prepare') {
-    if (account !== token || AppState.currentState !== 'active')
+    if (account !== token || !owner || AppState.currentState !== 'active')
       throw new Error('미슈 화면에서 다시 시작해 주세요.');
     if (!(await Tasks.isAvailableAsync()) || !(await Location.hasServicesEnabledAsync()))
       throw new Error('아이폰의 위치 서비스를 켜 주세요.');
@@ -263,6 +270,7 @@ export async function routeCommand(command: string, args: Args): Promise<State> 
       const { id, start, end } = args;
       if (
         account !== token ||
+        !owner ||
         prepared?.token !== token ||
         prepared.until < Date.now() ||
         AppState.currentState !== 'active'
@@ -284,6 +292,7 @@ export async function routeCommand(command: string, args: Args): Promise<State> 
       const s: Session = {
         id,
         token,
+        owner,
         start,
         end,
         first: 0,
