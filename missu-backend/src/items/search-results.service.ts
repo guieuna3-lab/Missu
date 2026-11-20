@@ -181,7 +181,7 @@ export class SearchResultsService {
           notices: !school
             ? ['한성대 자료를 불러오지 못해 확인 가능한 자료만 집계했어요.']
             : this.institutions.schoolSnapshotStale()
-              ? ['학교 목록을 갱신 중이에요. 마지막 확인 자료를 표시해요.']
+              ? ['한성대 자료는 마지막 확인 목록을 표시하고 있어요.']
               : [],
         };
       },
@@ -395,7 +395,7 @@ export class SearchResultsService {
               '한성대 자료를 일시적으로 불러오지 못했어요. 다른 기관과 회원 물품을 먼저 표시합니다. 다시 검색하면 한성대 자료도 재확인해요.',
             ]
           : this.institutions.schoolSnapshotStale()
-            ? ['학교 목록을 갱신 중이에요. 마지막 확인 자료를 표시해요.']
+            ? ['한성대 자료는 마지막 확인 목록을 표시하고 있어요.']
             : []),
         ...(query.sort === 'distance'
           ? [
