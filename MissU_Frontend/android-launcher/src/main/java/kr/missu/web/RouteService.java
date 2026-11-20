@@ -25,15 +25,16 @@ public final class RouteService extends Service implements LocationListener {
     private LocationManager locations;
 
     private static final class Session {
-        final String token, id;
+        volatile String token;
+        final String account, id;
         final long start, end;
         final ArrayList<JSONObject> pending = new ArrayList<>();
         long lastFix, retryAfter, finishBy;
         int saved, failures;
         boolean uploading, stopped;
         String message = "출발 지점의 위치 신호를 기다리고 있어요.";
-        Session(String token, String id, long start, long end) {
-            this.token = token; this.id = id; this.start = start; this.end = end;
+        Session(String account, String token, String id, long start, long end) {
+            this.account = account; this.token = token; this.id = id; this.start = start; this.end = end;
         }
     }
 
@@ -50,17 +51,17 @@ public final class RouteService extends Service implements LocationListener {
         return (Build.VERSION.SDK_INT < 24 || notifications.areNotificationsEnabled())
             && (Build.VERSION.SDK_INT < 26 || notifications.getNotificationChannel(CHANNEL).getImportance() != NotificationManager.IMPORTANCE_NONE);
     }
-    static void begin(Context context, String token, String id, long start, long end) {
+    static void begin(Context context, String account, String token, String id, long start, long end) {
         UUID.fromString(id);
         long now = System.currentTimeMillis();
-        if (token.isEmpty() || start <= 0 || end <= now || end - start > DAY + 1000 || end <= start)
+        if (account.isEmpty() || account.length() > 256 || token.isEmpty() || start <= 0 || end <= now || end - start > DAY + 1000 || end <= start)
             throw new IllegalArgumentException("기록 시간이 만료됐어요. 다시 시작해 주세요.");
         if (!allowed(context)) throw new IllegalStateException("정확한 위치와 기록 알림을 허용해 주세요.");
         if (current != null) {
             if (current.id.equals(id) && current.token.equals(token)) return;
             throw new IllegalStateException("먼저 알림에서 이전 경로 기록을 중지해 주세요.");
         }
-        current = new Session(token, id, start, end);
+        current = new Session(account, token, id, start, end);
         Intent intent = new Intent(context, RouteService.class);
         try {
             if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent);
@@ -78,6 +79,12 @@ public final class RouteService extends Service implements LocationListener {
         if (current != null && current.token.equals(token)) finish(current);
     }
     static boolean isRecording() { return current != null; }
+    // 갱신은 같은 계정에만 적용하고, 로그아웃·계정 변경은 센서를 중지합니다.
+    static void reconcile(String account, String token) {
+        if (current == null) return;
+        if (token.isEmpty() || account.isEmpty() || !current.account.equals(account)) finish(current);
+        else if (token.length() <= 4096) current.token = token;
+    }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         running = this;
@@ -90,6 +97,11 @@ public final class RouteService extends Service implements LocationListener {
         startForeground(NOTICE, notification());
         locations = getSystemService(LocationManager.class);
         try {
+            // 시작 직전에 권한을 다시 확인합니다. 설정에서 취소한 경우 센서를 켜지 않습니다.
+            if (checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                finish(current);
+                return START_NOT_STICKY;
+            }
             boolean available = false;
             for (String provider : new String[]{LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER}) {
                 if (!locations.isProviderEnabled(provider)) continue;
