@@ -39,7 +39,7 @@ type SearchState = {
   memberCursor?: string | null;
   agencyCursor?: string | null;
   memberNotice?: string;
-  agencyNotice?: string;
+  agencyNotice?: string[];
   agencyPageIssues?: string[];
 };
 const initialState: SearchState = { status: 'idle', items: [], visible: 0 };
@@ -59,7 +59,7 @@ async function loadResults(
     visible: items.length,
     memberCursor: page.nextCursor,
     agencyCursor: null,
-    agencyNotice: page.notices?.join(' ') || undefined,
+    agencyNotice: page.notices,
   };
 }
 
@@ -138,7 +138,7 @@ export default function SearchScreen() {
       if (id === requestId.current)
         setState((previous) => ({
           ...previous,
-          agencyNotice: '다음 물품을 불러오지 못했어요. 다시 시도해 주세요.',
+          agencyNotice: ['다음 물품을 불러오지 못했어요. 다시 시도해 주세요.'],
         }));
     } finally {
       if (id === requestId.current) {
@@ -173,6 +173,17 @@ export default function SearchScreen() {
       : countError
         ? '습득물 건수를 불러오지 못했어요'
         : '확인된 습득물 건수 조회 중';
+  // 목록과 건수가 같은 출처 안내를 반환해도 한 번만 읽히게 합니다.
+  const notices = [
+    ...new Set(
+      [
+        state.memberNotice,
+        ...(state.agencyPageIssues ?? []),
+        ...(state.agencyNotice ?? []),
+        ...(agencyCount?.notices ?? []),
+      ].filter(Boolean),
+    ),
+  ];
   const heading = (
     <>
       <FormField
@@ -288,15 +299,10 @@ export default function SearchScreen() {
             미슈 · 한성대 · 포털기관(지하철·공항·상점 등) · 경찰의 확인된 자료
           </Text>
         )}
-      {!!(state.memberNotice || state.agencyNotice || state.agencyPageIssues?.length) && (
+      {!!notices.length && (
         <Text accessibilityLiveRegion="polite" style={typography.body}>
-          {[state.memberNotice, ...(state.agencyPageIssues ?? []), state.agencyNotice]
-            .filter(Boolean)
-            .join(' ')}
+          {notices.join(' ')}
         </Text>
-      )}
-      {!!agencyCount?.notices.length && (
-        <Text style={typography.body}>{agencyCount.notices.join(' ')}</Text>
       )}
       {state.status === 'loading' && confirmedCount !== null && (
         <Text style={typography.body}>목록을 불러오는 중…</Text>
