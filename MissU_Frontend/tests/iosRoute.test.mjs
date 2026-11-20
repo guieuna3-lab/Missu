@@ -87,7 +87,7 @@ function phone() {
   }
   const device = load(),
     start = async () => {
-      device.reconcileRouteAccount(token);
+      device.reconcileRouteAccount(token, 'same-account');
       await device.routeCommand('prepare', { token });
       const id = randomUUID();
       await device.routeCommand('start', {
@@ -161,7 +161,7 @@ test('denial, logout, account switch, and expired sessions cannot upload new loc
   assert.equal(p.store.size, 0);
   p.state.allow = true;
   await p.start();
-  p.device.reconcileRouteAccount('new-account');
+  p.device.reconcileRouteAccount('new-token', 'different-account');
   await flush();
   assert.equal(p.state.running, false);
   await p.deliver([p.fix(p.state.now)]);
@@ -175,4 +175,19 @@ test('denial, logout, account switch, and expired sessions cannot upload new loc
   p.device.reconcileRouteAccount(null);
   await flush();
   assert.equal(p.state.running, false);
+});
+
+test('renewed login for the same account keeps the route and uses the new token', async () => {
+  const p = phone();
+  const id = await p.start();
+  p.device.reconcileRouteAccount('renewed-token', 'same-account');
+  await flush();
+  assert.equal(p.state.running, true);
+  await p.deliver([p.fix(p.state.now - 20000)]);
+  assert.equal(p.sent[0].auth, 'Bearer renewed-token');
+  assert.equal((await p.device.routeCommand('status', { token: 'renewed-token' })).id, id);
+  await p.device.routeCommand('stop', { token: 'renewed-token' });
+  await flush();
+  assert.equal(p.state.running, false);
+  assert.equal(p.store.size, 0);
 });
