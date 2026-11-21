@@ -6,6 +6,13 @@
     "scheme": "missu",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
+    "android": {
+      "icon": "./assets/app-icon/missu-figma.png",
+      "adaptiveIcon": {
+        "foregroundImage": "./android-launcher/src/main/res/drawable-nodpi/ic_launcher_foreground.png",
+        "backgroundColor": "#FFFFFF"
+      }
+    },
     "ios": {
       "bundleIdentifier": "kr.missu.app",
       "icon": "./public/missu-512.png"

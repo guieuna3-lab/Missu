@@ -6,6 +6,8 @@
 
 ## 안드로이드 APK 다시 만들기
 
+다음 빌드는 1.2.1 (versionCode 5)입니다. Figma의 흰 배경 `MissU.` 앱 아이콘을 적용했으며, Android 6·7용 밀도별 PNG와 Android 8 이상용 적응형 아이콘을 함께 제공합니다. 원본과 재생성 방법은 [앱 아이콘 안내](../assets/app-icon/README.md)에 있습니다. 기존 배포 APK는 새 빌드로 교체하기 전까지 이전 아이콘을 표시합니다.
+
 JDK 17, Gradle 8.11.1, Android SDK 플랫폼 36과 Build Tools 35.0.0을 사용합니다. 이 폴더에서 `gradle assembleRelease`를 실행합니다. 웹 화면은 별도로 배포하며 APK에 중복 포함하지 않습니다. 서명 전 APK는 `build/outputs/apk/release/`에 생깁니다.
 
 런처 자체를 바꿀 때는 `build.gradle`의 `versionCode`를 올리고, 기존 릴리스 서명 키로 APK에 서명합니다. 서명 후 `apksigner verify --verbose --print-certs`로 확인합니다. 설치된 앱을 덮어쓸 수 있도록 패키지명 `kr.missu.web`과 서명 키를 유지합니다.
