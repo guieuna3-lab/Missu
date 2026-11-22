@@ -23,8 +23,8 @@ self.addEventListener('push', (event) => {
         return;
       await self.registration.showNotification('비슷한 습득물을 확인했어요', {
         body: '미슈에서 내 분실 신고와 비슷한 물품을 확인해 주세요.',
-        icon: '/missu-192.png',
-        badge: '/missu-192.png',
+        icon: '/missu-192-v2.png',
+        badge: '/missu-192-v2.png',
         tag: 'missu-matches',
         data: { binding: state.binding },
       });
