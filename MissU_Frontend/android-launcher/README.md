@@ -6,7 +6,7 @@
 
 ## 안드로이드 APK 다시 만들기
 
-다음 빌드는 1.2.1 (versionCode 5)입니다. Figma의 흰 배경 `MissU.` 앱 아이콘을 적용했으며, Android 6·7용 밀도별 PNG와 Android 8 이상용 적응형 아이콘을 함께 제공합니다. 원본과 재생성 방법은 [앱 아이콘 안내](../assets/app-icon/README.md)에 있습니다. 기존 배포 APK는 새 빌드로 교체하기 전까지 이전 아이콘을 표시합니다.
+배포 빌드는 1.2.1 (versionCode 5)입니다. Figma의 흰 배경 `MissU.` 앱 아이콘을 적용했으며, Android 6·7용 밀도별 PNG와 Android 8 이상용 적응형 아이콘을 함께 제공합니다. 원본과 재생성 방법은 [앱 아이콘 안내](../assets/app-icon/README.md)에 있습니다. 설치 안내 페이지에서 1.2.1 APK를 받아 기존 앱 위에 업데이트합니다.
 
 JDK 17, Gradle 8.11.1, Android SDK 플랫폼 36과 Build Tools 35.0.0을 사용합니다. 이 폴더에서 `gradle assembleRelease`를 실행합니다. 웹 화면은 별도로 배포하며 APK에 중복 포함하지 않습니다. 서명 전 APK는 `build/outputs/apk/release/`에 생깁니다.
 
@@ -16,7 +16,7 @@ JDK 17, Gradle 8.11.1, Android SDK 플랫폼 36과 Build Tools 35.0.0을 사용�
 
 ## 1.2.0 분실 신고 알림
 
-릴리스 APK: `public/downloads/MissU-1.2.0.apk` (versionCode 4). 기존 1.1.1과 같은 서명으로 설치 업데이트합니다. 현재 운영 웹과 연결하므로 이전의 경로별 목록·사진·검색·반환 기능도 그대로 사용합니다.
+현재 릴리스 APK: `public/downloads/MissU-1.2.1.apk` (versionCode 5). 기존 1.1.1과 같은 서명으로 설치 업데이트합니다. 현재 운영 웹과 연결하므로 이전의 경로별 목록·사진·검색·반환 기능도 그대로 사용합니다.
 
 로그인 정보가 자동 갱신돼도 같은 계정의 경로를 유지하고 전송 토큰만 갱신합니다. 로그아웃이나 계정 변경은 센서를 중지합니다. 위치 서비스 시작 직전에 권한을 다시 확인합니다.
 

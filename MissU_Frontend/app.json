@@ -15,7 +15,7 @@
     },
     "ios": {
       "bundleIdentifier": "kr.missu.app",
-      "icon": "./public/missu-512.png"
+      "icon": "./assets/app-icon/missu-ios.png"
     },
     "plugins": [
       "expo-router",
