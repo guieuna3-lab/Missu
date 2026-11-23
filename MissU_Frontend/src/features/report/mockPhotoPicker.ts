@@ -1,9 +1,7 @@
 import { respond } from '@/lib/mockRequest';
 
-// Stand-in for the camera / photo library picker of Figma 05.01-A. The app has no image
-// picker dependency yet (expo-image-picker would be the Expo Go compatible choice), so this
-// only counts photos and never returns image data. A real picker reports 'denied' when the
-// OS permission is refused, which shows the 05.01-P notice.
+// 개발용 예시 화면에서 사진 장수만 확인하는 대체 동작입니다.
+// 실제 등록·신고 화면은 choosePhoto와 expo-image-picker/웹 파일 선택을 사용합니다.
 export type PhotoSource = 'camera' | 'library';
 export type PhotoPickResult = { status: 'added' } | { status: 'denied' } | { status: 'cancelled' };
 
