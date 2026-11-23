@@ -7,7 +7,7 @@ import { FormField, FormMessage } from '@/components/FormField';
 import { requestErrorMessage } from '@/lib/mockRequest';
 import { goBack } from '@/lib/navigation';
 import { usePreview } from '@/lib/preview/PreviewProvider';
-import { requestPhoneCode } from './mockPhoneApi';
+import { requestPhoneCode } from './phoneApi';
 import { formatPhoneInput, isPhoneNumber, normalizePhone } from './phone';
 
 // Figma 07.01 and 07.01-E (format error).
