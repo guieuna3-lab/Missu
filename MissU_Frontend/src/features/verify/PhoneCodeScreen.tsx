@@ -13,7 +13,7 @@ import {
   pendingPhoneChallenge,
   InvalidCodeError,
   requestPhoneCode,
-} from './mockPhoneApi';
+} from './phoneApi';
 import { maskPhone } from './phone';
 
 const INVALID_CODE_MESSAGE =

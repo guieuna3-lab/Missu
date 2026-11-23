@@ -4,7 +4,6 @@
 
 - `MissU_Frontend/`: React Native + Expo + TypeScript 앱. 해당 경로 작업 전 `MissU_Frontend/AGENTS.md`를 읽는다.
 - `missu-backend/`: NestJS + Prisma 서버. 해당 경로 작업 전 `missu-backend/AGENTS.md`와 `missu-backend/README.md`를 읽는다. 기술 스택과 계약은 실제 파일과 팀 합의에서 확인한다. Render 배포(`render.yaml`, `start-render-api.cjs`)가 이 폴더 이름을 쓰므로 이름을 바꾸지 않는다.
-- `MissU_Backend/`: 초기 설정 때 만든 빈 폴더(README만 있음). 서버 코드를 두지 않는다.
 - `.github/`: 저장소 공통 이슈·PR·검사 설정.
 - `docs/`: 협업 및 작업 가이드.
 

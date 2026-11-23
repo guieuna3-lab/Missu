@@ -67,8 +67,8 @@ export function PhotoSourceSheet({
   );
 }
 
-// Figma 05.01 "물품 사진 *" card (empty and filled). Photos are counted only; see
-// mockPhotoPicker.ts.
+// Figma 05.01 사진 첨부 카드. 실제 화면은 chooseAsset과 attachments를 전달하며,
+// 이를 생략한 개발용 예시에서만 사진 장수를 사용하는 대체 동작을 적용합니다.
 export function PhotoAttachment({
   count,
   attachments,

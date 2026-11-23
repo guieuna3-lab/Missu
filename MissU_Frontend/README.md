@@ -5,11 +5,11 @@ React Native + Expo + TypeScript로 개발하는 미슈 모바일 앱이다.
 2026-11-20 기준 회원·신고·등록·통합 검색·근처·반환·경로·알림을 실제 API에 연결했다.
 웹 로그인 복원은 같은 출처의 HttpOnly 쿠키, 네이티브는 SecureStore를 사용한다.
 Render 정적 사이트의 `/session-api/*` rewrite 설정은 [연결 계약](../missu-backend/docs/FRONTEND_CONNECTION.md)을 따른다.
-Android 1.2.0 APK에 푸시 수신과 백그라운드 경로 기록을 포함했다. 휴대폰 실제 수신·설치 확인과 iOS 네이티브 배포는 완료로 표시하지 않는다. iPhone iOS 16.4 이상은 Safari → 홈 화면 추가 → 내 분실 신고 → 휴대폰 알림 켜기로 웹 푸시를 연결한다. iOS 네이티브 배포용 멤버십·서명과 실기기 확인은 별도다.
+Android 1.2.1 APK에 푸시 수신과 백그라운드 경로 기록을 포함했다. 휴대폰 실제 수신·설치 확인과 iOS 네이티브 배포는 완료로 표시하지 않는다. iPhone iOS 16.4 이상은 Safari → 홈 화면 추가 → 내 분실 신고 → 휴대폰 알림 켜기로 웹 푸시를 연결한다. iOS 네이티브 배포용 멤버십·서명과 실기기 확인은 별도다.
 Figma 1번 영역의 환영, 홈, 내역, 로그인 안내, 등록 물품과 프로필 수정 화면,
 2번 영역의 로그인·회원가입·비밀번호 재설정, 3번 영역의 습득물 검색·상세, 10번 영역의 근처 화면을 제공한다.
 API 주소를 설정하면 모바일 토큰 로그인, 습득물 사진 등록, 검색과 상세 조회를 실제 백엔드에서 실행한다.
-구현 범위와 검증 기록은 [1번 영역](docs/AREA_ONE.md), [3번 영역](../docs/SEARCH_IMPLEMENTATION.md)을 확인한다.
+현재 기능은 이 문서와 [백엔드 안내](../missu-backend/README.md)를 기준으로 확인한다. [1번 영역](docs/AREA_ONE.md), [3번 영역](../docs/SEARCH_IMPLEMENTATION.md)의 날짜별 확인 결과는 당시 개발 기록이다.
 
 ## 실행 (Windows PowerShell / VS Code 터미널)
 

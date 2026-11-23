@@ -10,8 +10,8 @@ import { PASSWORD_HINT, passwordProblem, requestErrorMessage } from '@/features/
 import { goBack, leaveFlowTo } from '@/lib/navigation';
 import { usePreview } from '@/lib/preview/PreviewProvider';
 
-// Figma 02-A.05, reached from 계정 관리. After the change the design returns to the login
-// screen, so the mock session ends here as well.
+// 계정 관리의 비밀번호 변경과 이메일 인증 후 재설정 화면입니다.
+// 실제 API 변경이 완료되면 로그인 화면으로 돌아갑니다.
 export function NewPasswordScreen() {
   const { exitMemberPreview, accessToken } = usePreview();
   const { mode } = useLocalSearchParams<{ mode?: string }>();

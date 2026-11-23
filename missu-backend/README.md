@@ -3,7 +3,7 @@
 정리 기준: **2026-11-20**. 팀 프론트와 연결된 NestJS API가 Render에서 운영 중입니다.
 웹: https://missu-web.onrender.com · API: https://missu-api-wkdu.onrender.com/api/v1
 
-`main`에 병합하면 Render가 웹과 API를 자동 배포합니다. 운영 중인 코드는 소문자 `missu-backend/`에 있으며 `MissU_Backend/`는 초기 빈 폴더입니다.
+`main`에 병합하면 Render가 웹과 API를 자동 배포합니다. 운영 중인 서버 코드는 `missu-backend/` 한 곳에서 관리합니다.
 
 ## 기술 구성
 
