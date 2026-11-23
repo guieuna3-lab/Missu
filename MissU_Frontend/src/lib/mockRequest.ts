@@ -1,10 +1,9 @@
 import { ApiError } from './backend';
 import { ActivityError } from './activity/transitions';
 
-// Development-only stand-in for server calls made by the report, verification and return
-// screens (the auth flow has its own copy in features/auth/mockAuthApi.ts). Nothing is sent
-// anywhere. Release builds reject every call instead of pretending to succeed, and the
-// screens show the message below. Replace with the real API once the contract exists.
+// 개발용 예시 세션에서만 사용하는 지연 응답입니다. 실제 API와 예시 데이터는 분리합니다.
+// 운영 빌드에서 이 함수가 호출되면 성공 처리하지 않고 거절합니다.
+// 아래 requestErrorMessage는 실제 API 오류를 표시하는 화면에서도 사용합니다.
 export class RequestUnavailableError extends Error {}
 
 // A short wait keeps the submitting state visible, like a network request.
