@@ -18,9 +18,9 @@ export const mapArt = {
     bag: require('../../../assets/nearby/pin-bag.svg'),
   },
   rows: {
-    buds: require('../../../assets/nearby/row-buds.svg'),
-    key: require('../../../assets/nearby/row-key.svg'),
-    wallet: require('../../../assets/nearby/row-wallet.svg'),
+    buds: require('../../../assets/icons/buds.svg'),
+    key: require('../../../assets/icons/key.svg'),
+    wallet: require('../../../assets/icons/wallet.svg'),
     id: require('../../../assets/nearby/row-id.svg'),
     bag: require('../../../assets/nearby/row-bag.svg'),
   },
